@@ -1,0 +1,253 @@
+services:
+  odysseus:
+    build: .
+    ports:
+      - "${APP_PORT:-7000}:7000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ../cortex:/app/cortex:ro
+      # The live AURIX brain's memory tiers (hot/working/auto/longterm) and wiki, READ-ONLY, at /aurix.
+      # chat_processor injects "AURIX LIVE MEMORY" from $AURIX_BRAIN/memory and the wiki is indexed from
+      # $AURIX_BRAIN/wiki. Before this mount those paths pointed at a host path that did not exist inside the
+      # container, so the injection silently found nothing. Set AURIX_BRAIN_HOST in .env to the real host dir.
+      - ${AURIX_BRAIN_HOST:-./data/aurix-brain}/memory:/aurix/memory:ro
+      - ${AURIX_BRAIN_HOST:-./data/aurix-brain}/wiki:/aurix/wiki:ro
+      # The brain's runtime/ (paper-trading state + journal), read-only, for the `trades` command.
+      - ${AURIX_BRAIN_HOST:-./data/aurix-brain}/runtime:/aurix/runtime:ro
+      # The trading agent's own log (read-only): the dashboard shows its live thoughts.
+      - ${AURIX_BRAIN_HOST:-./data/aurix-brain}/logs:/aurix/logs:ro
+      # Repo links: requests go out, the host fetcher's facts/results come back (scripts/aurix_absorb_agent.py). Inside sandbox/, which Syncthing ignores.
+      - ${AURIX_BRAIN_HOST:-./data/aurix-brain}/sandbox/absorb:/aurix/absorb
+      # Pause switches: paused.json here is read by the app AND by the host cron scripts (Syncthing-ignored, inside sandbox/).
+      - ${AURIX_BRAIN_HOST:-./data/aurix-brain}/sandbox/shards:/aurix/shards
+      # Upgrade lane: signed approvals go out, the host agent's results come back (scripts/aurix_upgrade_agent.py). Inside sandbox/, which Syncthing ignores.
+      - ${AURIX_BRAIN_HOST:-./data/aurix-brain}/sandbox/upgrades:/aurix/upgrades
+      # Game doctor: the PC's fact report comes in, signed approvals go out (gaming/, synced with the Windows PC).
+      - ${AURIX_BRAIN_HOST:-./data/aurix-brain}/gaming:/aurix/gaming
+      # Cookbook remote-server SSH identity. Odysseus can generate a key here;
+      # add the shown public key to each remote server's authorized_keys.
+      - ./data/ssh:/app/.ssh
+      # Cookbook local model cache. Inside Docker, "Local" means the Odysseus
+      # container, so persist its HuggingFace cache under ./data/huggingface.
+      - ./data/huggingface:/app/.cache/huggingface
+      # Cookbook-installed Python CLIs/packages (vLLM, llama-cpp-python, etc.)
+      # land under /app/.local for the odysseus user. Persist them so a
+      # container recreate does not silently remove installed serve engines.
+      - ./data/local:/app/.local
+    extra_hosts:
+      # Lets the container reach local services on the Docker host, including
+      # Ollama at http://host.docker.internal:11434.
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    environment:
+      - SEARXNG_INSTANCE=http://searxng:8080
+      - CHROMADB_HOST=chromadb
+      - CHROMADB_PORT=8000
+      # Mission sandbox (see mission_sandbox/). SANDBOX_TOKEN comes from .env.
+      - SANDBOX_URL=http://sandbox-gateway:8765
+      # Owner's timezone: scheduled tasks ("07:00" reports) and standing missions run on THIS
+      # clock. Unset = UTC (a 07:00 daily report fired at 01:00 Mountain).
+      - AURIX_TIMEZONE=${AURIX_TIMEZONE:-America/Denver}
+      # PUID / PGID — the user/group the container drops to before
+      # running uvicorn (entrypoint also chowns /app/data + /app/logs
+      # to match, so bind-mounted files stay editable from the host).
+      # 1000 is the default first user on most Linux installs. If your
+      # host user has a different id, override here or via .env, e.g.:
+      #   PUID=1001
+      #   PGID=1001
+      # Find yours with:  id -u  /  id -g
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      # Knowledge graph (src/graph_memory.py). NEO4J_PASSWORD comes from .env; there is no default on purpose.
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+    depends_on:
+      searxng:
+        condition: service_healthy
+      chromadb:
+        condition: service_started
+      neo4j:
+        condition: service_started        # not "healthy": the app must still boot (and say so) if the graph is down
+    restart: unless-stopped
+
+  chromadb:
+    image: docker.io/chromadb/chroma:latest
+    ports:
+      - "${CHROMADB_BIND:-127.0.0.1}:8100:8000"
+    volumes:
+      - chromadb-data:/chroma/chroma
+    environment:
+      - ANONYMIZED_TELEMETRY=FALSE
+    restart: unless-stopped
+
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        if [ ! -s /etc/searxng/settings.yml ] || grep -q 'odysseus-local-searxng-json-2026-05-30\|__SEARXNG_SECRET__' /etc/searxng/settings.yml; then
+          secret="$${SEARXNG_SECRET:-}"
+          if [ -z "$$secret" ]; then
+            secret="$$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+          fi
+          sed "s|__SEARXNG_SECRET__|$$secret|g" /tmp/searxng-settings.yml.template > /etc/searxng/settings.yml
+        fi
+        exec /usr/local/searxng/entrypoint.sh
+    ports:
+      - "127.0.0.1:8180:8080"
+    volumes:
+      - searxng-data:/etc/searxng
+      - ./config/searxng/settings.yml:/tmp/searxng-settings.yml.template:ro
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5).read(1)\""]
+      interval: 5s
+      timeout: 6s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  ntfy:
+    image: docker.io/binwiederhier/ntfy
+    command: serve
+    ports:
+      - "${NTFY_BIND:-127.0.0.1}:8091:80"
+    volumes:
+      - ntfy-cache:/var/cache/ntfy
+    environment:
+      - NTFY_BASE_URL=${NTFY_BASE_URL:-http://localhost:8091}
+    restart: unless-stopped
+
+  # ---- Mission sandbox -------------------------------------------------------
+  # Mission bash/python run HERE, not in the app container that holds the secrets.
+  # No secrets, no internet, no LAN, read-only root, only the workspace tree writable.
+  sandbox:
+    # NOT named "sandbox/": the repo's Syncthing ignore list has a `sandbox/` rule (for
+    # repo_absorb's cloned repos) that would silently keep this folder off the host.
+    build: ./mission_sandbox
+    environment:
+      - SANDBOX_TOKEN=${SANDBOX_TOKEN:-}
+      - SANDBOX_WORKROOT=/app/data/workspace
+      - SANDBOX_MAX_TIMEOUT=3600
+      # Non-secret settings mission code may see: where the model proxy is, and which model.
+      - LLM_BASE_URL=http://llm-gateway:11434/v1
+      - LLM_MODEL=${SANDBOX_LLM_MODEL:-qwen2.5:7b}
+    volumes:
+      - ./data/workspace:/app/data/workspace
+    networks:
+      - sandbox_net            # internal: no route to the internet or the LAN
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 512
+    mem_limit: 6g
+    cpus: 3
+    restart: unless-stopped
+
+  # The ONLY bridge between the app and the sandbox. It forwards to the sandbox and nothing
+  # else, so sandbox code cannot reach the app container (which would expose its HTTP API).
+  sandbox-gateway:
+    image: alpine/socat
+    command: TCP-LISTEN:8765,fork,reuseaddr TCP:sandbox:8765
+    networks:
+      - default
+      - sandbox_net
+    read_only: true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+  # Sandbox -> model server, INFERENCE ENDPOINTS ONLY (mission_sandbox/llm_proxy.py). Lets coding
+  # agents and mission scripts talk to the LLM without being able to pull/delete/create models
+  # on the GPU box. Defaults to the Docker host's own Ollama; set LLM_UPSTREAM in .env to point at
+  # a different machine on your network instead.
+  llm-gateway:
+    image: python:3.12-slim
+    command: ["python", "/opt/llm_proxy.py"]
+    environment:
+      - LLM_UPSTREAM=${LLM_UPSTREAM:-host.docker.internal:11434}
+    volumes:
+      - ./mission_sandbox/llm_proxy.py:/opt/llm_proxy.py:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - sandbox_net
+    user: "1000:1000"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    restart: unless-stopped
+
+  # God's Eye View: the real 3D-globe OSINT viewer (gods_eye/Dockerfile, pinned commit). Kept apart from AURIX on
+  # purpose: its own network (internet for public feeds, no route to the app/chromadb/sandbox), no AURIX secrets,
+  # no capabilities, and published ONLY on ${GODSEYE_BIND} (default localhost; set it to the host's Tailscale IP
+  # in .env to reach it from your PC). Its server middleware brokers whatever API keys you give it to anyone who
+  # can reach the port, so keys are opt-in via GEV_* variables and nothing else from .env is passed in.
+  gods-eye:
+    build: ./gods_eye
+    ports:
+      - "${GODSEYE_BIND:-127.0.0.1}:${GODSEYE_PORT:-4173}:4173"
+    environment:
+      - OPENSKY_AUTH_MODE=anon
+      - GOOGLE_MAPS_API_KEY=${GEV_GOOGLE_MAPS_API_KEY:-}
+      - CESIUM_ION_TOKEN=${GEV_CESIUM_ION_TOKEN:-}
+      - GEV_RATELIMIT_GOOGLE_PER_MIN=${GEV_RATELIMIT_GOOGLE_PER_MIN:-30}
+    networks:
+      - gods_eye_net
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1200m
+    cpus: 1.5
+    restart: unless-stopped
+
+  # Knowledge graph (src/graph_memory.py): wiki pages + [[wikilinks]] + chunk vectors + the owner's profile.
+  # Bolt is reachable only on the compose network (no published ports); the password comes from .env
+  # (NEO4J_PASSWORD, never in code). Heap is capped because the host is a small box shared with everything else.
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env (openssl rand -hex 24)}
+      - NEO4J_server_memory_heap_initial__size=384m
+      - NEO4J_server_memory_heap_max__size=768m
+      - NEO4J_server_memory_pagecache_size=256m
+      - NEO4J_server_config_strict__validation_enabled=false
+    volumes:
+      - neo4j-data:/data
+      - neo4j-logs:/logs
+    mem_limit: 1536m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+networks:
+  gods_eye_net: {}
+  sandbox_net:
+    internal: true
+
+volumes:
+  searxng-data:
+  chromadb-data:
+  ntfy-cache:
+  neo4j-data:
+  neo4j-logs:

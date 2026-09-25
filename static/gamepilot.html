@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GamePilot</title>
+<style>
+  :root { --bg:#0b0d10; --fg:#e8f4f8; --dim:#8aa0a8; --ok:#50fa7b; --warn:#f0ad4e; --bad:#ff5d6c; --accent:#7fdbff; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg); font:26px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; overflow:hidden; }
+  #screen { position:fixed; inset:0; width:100vw; height:100vh; object-fit:contain; background:#000; }
+  #cursor { position:fixed; width:26px; height:26px; margin:-13px 0 0 -13px; border:3px solid var(--accent); border-radius:50%; pointer-events:none; box-shadow:0 0 12px #000; z-index:4; }
+  .center { position:fixed; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:6vh 8vw; gap:2vh; z-index:2; }
+  .center h1 { font-size:2.2em; margin:0; letter-spacing:.06em; } .center p { max-width:34em; color:var(--dim); margin:0; }
+  .code { font:800 4.2em/1 ui-monospace, Consolas, monospace; letter-spacing:.18em; color:var(--accent); padding:.25em .5em; border:3px solid var(--accent); border-radius:18px; }
+  .pulse { animation:beat 1.4s ease-in-out infinite; } @keyframes beat { 0%,100% { opacity:1; } 50% { opacity:.45; } }
+  #hud { position:fixed; left:0; right:0; top:0; z-index:5; display:flex; gap:22px; align-items:center; padding:14px 26px; background:linear-gradient(#000c, #0000); font-size:.7em; transition:opacity .4s; }
+  #hud.hide { opacity:0; } #hud .sp { flex:1; }
+  .pill { padding:2px 14px; border:2px solid var(--dim); border-radius:999px; } .pill.ok { color:var(--ok); border-color:var(--ok); } .pill.bad { color:var(--bad); border-color:var(--bad); } .pill.warn { color:var(--warn); border-color:var(--warn); }
+  #banner { position:fixed; left:50%; bottom:5vh; transform:translateX(-50%); z-index:6; background:#000d; border:2px solid var(--warn); border-radius:14px; padding:.5em 1.2em; font-size:.75em; display:none; max-width:80vw; text-align:center; }
+  #help { position:fixed; left:0; right:0; bottom:0; z-index:5; padding:10px 26px; font-size:.55em; color:var(--dim); background:linear-gradient(#0000, #000c); transition:opacity .4s; text-align:center; } #help.hide { opacity:0; }
+</style>
+</head>
+<body>
+<img id="screen" alt="Your gaming PC screen" style="display:none">
+<div id="cursor" style="display:none"></div>
+
+<div class="center" id="pairing">
+  <h1>🎮 GamePilot</h1>
+  <p id="pair-msg">Getting a pairing code…</p>
+  <div class="code pulse" id="code" style="display:none"></div>
+  <p id="pair-help" style="display:none">Send this to AURIX in Telegram: <b id="pair-cmd"></b><br>Then this screen connects by itself. The code works for 10 minutes.</p>
+</div>
+
+<div class="center" id="wait" style="display:none">
+  <h1 id="wait-title">Connecting to your PC…</h1>
+  <p id="wait-msg">Start the GamePilot agent on the gaming PC. This screen only ever shows a game or Steam, never your desktop.</p>
+</div>
+
+<div id="hud" class="hide"><b>GamePilot</b><span class="pill" id="pc">PC</span><span class="pill" id="fg">-</span><span class="sp"></span><span class="pill" id="arm">watch only</span><span class="pill" id="mode">Menu</span></div>
+<div id="banner"></div>
+<div id="help" class="hide">OK / arrows: menu keys · Menu (☰) or M: switch mode (Menu → Cursor → Game) · Back: Esc · Hold Play/Pause 2 s to forget this TV · Control needs <b>arm</b> in Telegram</div>
+
+<script nonce="{{CSP_NONCE}}">
+"use strict";
+const $ = (id) => document.getElementById(id);
+const KEY = "aurix-gamepilot-token";
+let token = ""; try { token = localStorage.getItem(KEY) || ""; } catch (e) {}
+const H = () => ({ "X-GP-Token": token });
+let seq = 0, armed = false, mode = 0, lastState = null, hudTimer = null, cursor = { x: 0.5, y: 0.5 };
+const MODES = ["Menu", "Cursor", "Game"];
+
+function show(id, on) { $(id).style.display = on ? "" : "none"; }
+function banner(msg) { const b = $("banner"); if (!msg) { b.style.display = "none"; return; } b.textContent = msg; b.style.display = "block"; }
+function wake() { $("hud").classList.remove("hide"); $("help").classList.remove("hide"); clearTimeout(hudTimer); hudTimer = setTimeout(() => { $("hud").classList.add("hide"); $("help").classList.add("hide"); }, 5000); }
+
+// ---- pairing ---------------------------------------------------------------------------------------------------------------
+async function startPairing() {
+  show("pairing", true); show("wait", false); show("screen", false);
+  try {
+    const r = await fetch("/api/gamepilot/pair", { method: "POST" });
+    if (!r.ok) { $("pair-msg").textContent = "Too many pairing tries. Wait a few minutes and reload."; return; }
+    const j = await r.json();
+    $("pair-msg").textContent = "Show AURIX that this is your TV:"; $("code").textContent = j.code; show("code", true);
+    $("pair-cmd").textContent = "pair " + j.code; show("pair-help", true);
+    for (let i = 0; i < 320; i++) {
+      await new Promise((ok) => setTimeout(ok, 2000));
+      const s = await (await fetch("/api/gamepilot/pair/status?poll=" + encodeURIComponent(j.poll))).json();
+      if (s.state === "paired") { token = s.token; try { localStorage.setItem(KEY, token); } catch (e) {} return begin(); }
+      if (s.state === "expired") break;
+    }
+    $("pair-msg").textContent = "The code expired. Reload this page for a new one."; show("code", false); show("pair-help", false);
+  } catch (e) { $("pair-msg").textContent = "Cannot reach AURIX (" + e + "). Retrying…"; setTimeout(startPairing, 5000); }
+}
+
+// ---- state + frames --------------------------------------------------------------------------------------------------------
+async function pollState() {
+  try {
+    const r = await fetch("/api/gamepilot/state", { headers: H(), cache: "no-store" });
+    const s = await r.json();
+    if (!s.paired) { token = ""; try { localStorage.removeItem(KEY); } catch (e) {} return startPairing(); }
+    lastState = s; armed = !!s.armed;
+    $("pc").textContent = s.pc_online ? "PC online" : "PC offline"; $("pc").className = "pill " + (s.pc_online ? "ok" : "bad");
+    $("fg").textContent = s.foreground || "no game in front"; $("fg").className = "pill " + (s.blocked ? "warn" : "");
+    $("arm").textContent = armed ? "CONTROL ON " + Math.floor(s.armed_left / 60) + ":" + String(s.armed_left % 60).padStart(2, "0") : "watch only"; $("arm").className = "pill " + (armed ? "ok" : "");
+    const waiting = !s.pc_online || s.blocked;
+    show("wait", waiting);
+    if (waiting) { $("wait-title").textContent = !s.pc_online ? "Waiting for your PC…" : "Paused: " + s.foreground + " is in front"; $("wait-msg").textContent = !s.pc_online ? "Start the GamePilot agent on the gaming PC." : "Switch to your game or Steam on the PC. Nothing else is ever shown here."; }
+  } catch (e) { banner("Lost contact with AURIX. Retrying…"); }
+  setTimeout(pollState, 1500);
+}
+
+let lastUrl = "";
+async function frameLoop() {
+  for (;;) {
+    try {
+      const r = await fetch("/api/gamepilot/frame.jpg?after=" + seq, { headers: H(), cache: "no-store" });
+      if (r.status === 401) return startPairing();
+      if (r.status === 200) {
+        seq = parseInt(r.headers.get("X-GP-Seq") || String(seq + 1), 10);
+        const url = URL.createObjectURL(await r.blob()); $("screen").src = url; show("screen", true);
+        if (lastUrl) URL.revokeObjectURL(lastUrl); lastUrl = url;
+      } else { await new Promise((ok) => setTimeout(ok, 300)); }
+    } catch (e) { await new Promise((ok) => setTimeout(ok, 1000)); }
+  }
+}
+
+// ---- input -----------------------------------------------------------------------------------------------------------------
+let outbox = [], sending = false;
+function send(ev) { outbox.push(ev); if (outbox.length > 200) outbox.splice(0, outbox.length - 200); }
+async function flush() {
+  if (!sending && outbox.length) {
+    sending = true; const batch = outbox.splice(0, 40);
+    try {
+      const r = await fetch("/api/gamepilot/input", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, H()), body: JSON.stringify({ events: batch }) });
+      if (r.status === 403) { banner("Control is off. Send  arm  to AURIX in Telegram to press keys from here."); outbox = []; }
+      else if (r.ok) banner("");
+    } catch (e) { /* the next tick tries again */ }
+    sending = false;
+  }
+  setTimeout(flush, 40);
+}
+const tap = (k) => send({ t: "key", k, d: "tap" });
+const down = (k) => send({ t: "key", k, d: "down" }), up = (k) => send({ t: "key", k, d: "up" });
+const clickAt = (b) => send({ t: "mouse", x: cursor.x, y: cursor.y, b, d: "click" });
+
+// Remote / keyboard. Fire TV remote: arrows, OK = Enter, Menu = ContextMenu, Back is trapped (see below).
+const NAV = { ArrowUp: "up", ArrowDown: "down", ArrowLeft: "left", ArrowRight: "right", Enter: "enter", Escape: "escape", " ": "space", Tab: "tab", Backspace: "backspace" };
+document.addEventListener("keydown", (ev) => {
+  wake();
+  if (ev.key === "m" || ev.key === "M" || ev.key === "ContextMenu") { mode = (mode + 1) % 3; $("mode").textContent = MODES[mode]; ev.preventDefault(); return; }
+  const k = NAV[ev.key] || (/^[a-z0-9]$/i.test(ev.key) ? ev.key.toLowerCase() : /^F([1-9]|1[0-2])$/.test(ev.key) ? ev.key.toLowerCase() : null);
+  if (!k) return;
+  ev.preventDefault();
+  if (mode === 1 && (k === "up" || k === "down" || k === "left" || k === "right")) {
+    const step = ev.repeat ? 0.04 : 0.02; cursor.x = Math.min(1, Math.max(0, cursor.x + (k === "right" ? step : k === "left" ? -step : 0))); cursor.y = Math.min(1, Math.max(0, cursor.y + (k === "down" ? step : k === "up" ? -step : 0)));
+    send({ t: "mouse", x: cursor.x, y: cursor.y, b: "none", d: "move" }); drawCursor(); return;
+  }
+  if (mode === 1 && k === "enter") { clickAt("left"); return; }
+  if (mode === 2) { if (!ev.repeat) down(k); return; }
+  tap(k);
+});
+document.addEventListener("keyup", (ev) => { if (mode === 2) { const k = NAV[ev.key] || (/^[a-z0-9]$/i.test(ev.key) ? ev.key.toLowerCase() : null); if (k) up(k); } });
+function drawCursor() { const c = $("cursor"); c.style.display = mode === 1 ? "block" : "none"; c.style.left = (cursor.x * 100) + "vw"; c.style.top = (cursor.y * 100) + "vh"; }
+history.pushState({ gp: 1 }, ""); window.addEventListener("popstate", () => { history.pushState({ gp: 1 }, ""); tap("escape"); wake(); });   // the remote's Back button = Esc, not "leave the page"
+
+// Gamepad (Bluetooth pad on the Fire TV): Game mode maps it to keys + mouse look; Menu mode is a d-pad.
+const PAD = { 0: "space", 1: "ctrl", 2: "e", 3: "r", 4: "shift", 5: "f", 9: "escape", 8: "tab", 12: "up", 13: "down", 14: "left", 15: "right" };
+let padHeld = {}, stickKeys = { w: false, a: false, s: false, d: false }, padTimer = null;
+function pads() {
+  const gp = (navigator.getGamepads ? navigator.getGamepads() : []).find((g) => g && g.connected);
+  if (gp) {
+    wake();
+    if (mode === 2) {
+      gp.buttons.forEach((b, i) => { const k = PAD[i]; if (k && !!b.pressed !== !!padHeld[i]) { padHeld[i] = b.pressed; (b.pressed ? down : up)(k); } });
+      [[6, "right"], [7, "left"]].forEach(([i, btn]) => { if (gp.buttons[i] && gp.buttons[i].pressed !== !!padHeld["m" + i]) { padHeld["m" + i] = gp.buttons[i].pressed; send({ t: "mouse", x: cursor.x, y: cursor.y, b: btn, d: gp.buttons[i].pressed ? "down" : "up" }); } });
+      const want = { w: gp.axes[1] < -0.45, s: gp.axes[1] > 0.45, a: gp.axes[0] < -0.45, d: gp.axes[0] > 0.45 };
+      Object.keys(want).forEach((k) => { if (want[k] !== stickKeys[k]) { stickKeys[k] = want[k]; (want[k] ? down : up)(k); } });
+      const dx = Math.abs(gp.axes[2]) > 0.15 ? Math.round(gp.axes[2] * 24) : 0, dy = Math.abs(gp.axes[3]) > 0.15 ? Math.round(gp.axes[3] * 24) : 0;
+      if (dx || dy) send({ t: "rel", dx: dx, dy: dy });
+    } else {
+      [[12, "up"], [13, "down"], [14, "left"], [15, "right"], [0, "enter"], [1, "escape"]].forEach(([i, k]) => { const p = gp.buttons[i] && gp.buttons[i].pressed; if (p && !padHeld["n" + i]) tap(k); padHeld["n" + i] = p; });
+    }
+  }
+  requestAnimationFrame(pads);
+}
+
+let holdTimer = null;
+document.addEventListener("keydown", (ev) => { if (ev.key === "MediaPlayPause" && !holdTimer) holdTimer = setTimeout(() => { try { localStorage.removeItem(KEY); } catch (e) {} location.reload(); }, 2000); });
+document.addEventListener("keyup", (ev) => { if (ev.key === "MediaPlayPause") { clearTimeout(holdTimer); holdTimer = null; } });
+
+function begin() { show("pairing", false); wake(); pollState(); frameLoop(); flush(); requestAnimationFrame(pads); }
+if (token) begin(); else startPairing();
+</script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+fastapi
+uvicorn
+python-multipart
+python-dotenv
+httpx
+pydantic>=2.0
+pydantic-settings>=2.0
+SQLAlchemy
+pypdf
+beautifulsoup4
+charset-normalizer
+numpy
+# Vector store + local embeddings for RAG, semantic memory, and tool
+# selection. Used on core agent paths, so installed by default — the app
+# still degrades to keyword fallback if they're ever missing.
+# chromadb-client is the lightweight HTTP client (talks to a standalone
+# ChromaDB service); fastembed runs local ONNX embeddings.
+chromadb-client
+fastembed
+youtube-transcript-api
+# Markdown rendering for research reports (src/visual_report.py).
+# Imported at module-top so it's a hard core dep, not optional.
+markdown
+# Calendar .ics import/export (routes/calendar_routes.py).
+icalendar
+# Recurrence rule expansion for calendar events (routes/calendar_routes.py).
+# Imported directly as dateutil.rrule — make it explicit even though caldav
+# pulls it in transitively.
+python-dateutil
+# CalDAV sync (src/caldav_sync.py). Handles PROPFIND discovery + REPORT
+# fetch across Radicale, Nextcloud, Apple, Fastmail; we'd be reinventing
+# the protocol without it.
+caldav
+cryptography
+bcrypt
+# Pinned below 2.x: mcp 2.0 removed the @server.list_tools()/call_tool() decorators that the built-in
+# Memory and RAG MCP servers (mcp_servers/*.py) use, so an unpinned rebuild silently broke both.
+mcp>=1.23,<2
+# Knowledge graph client (src/graph_memory.py). 5.x matches the neo4j:5 server image.
+neo4j>=5.20,<6
+pyotp
+qrcode[pil]
+croniter
+# Timezone database for zoneinfo: slim images ship none, so AURIX_TIMEZONE silently
+# fell back to UTC (a "07:00" report fired at 01:00 Mountain).
+tzdata
+pytest
+pytest-asyncio
+psutil
+# Local speech-to-text for the transcription money workstream (src/foundation/transcription.py). CPU-only (device="cpu",
+# compute_type="int8" in that module) - no GPU/CUDA deps pulled in, and no account or API key needed.
+faster-whisper

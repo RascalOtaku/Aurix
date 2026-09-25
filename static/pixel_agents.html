@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0f;color:#ccc;font-family:monospace;overflow:hidden;height:100vh}
+#office{position:relative;width:100%;height:100%;background:#0a0a0f}
+canvas{position:absolute;top:0;left:0}
+#hud{position:absolute;top:10px;right:10px;background:#111;border:1px solid #222;border-radius:6px;padding:10px;font-size:11px;min-width:160px;z-index:10}
+#hud h3{color:#00ff88;margin-bottom:8px;font-size:12px}
+.row{display:flex;align-items:center;gap:6px;padding:3px 0}
+.dot{width:6px;height:6px;border-radius:50%;background:#00ff88;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.name{color:#aaa;flex:1}
+.status{color:#444;font-size:10px}
+</style>
+</head>
+<body>
+<div id="office">
+<canvas id="c"></canvas>
+<div id="hud">
+  <h3>🤖 AURIX Agents</h3>
+  <div class="row"><div class="dot"></div><div class="name">Brain</div><div class="status">running</div></div>
+  <div class="row"><div class="dot"></div><div class="name">Ollama</div><div class="status">inference</div></div>
+  <div class="row"><div class="dot"></div><div class="name">Cortex</div><div class="status">:8888</div></div>
+  <div class="row"><div class="dot"></div><div class="name">ChromaDB</div><div class="status">:8100</div></div>
+  <div class="row"><div class="dot"></div><div class="name">Neo4j</div><div class="status">:7474</div></div>
+  <div class="row"><div class="dot"></div><div class="name">Jellyfin</div><div class="status">:8096</div></div>
+  <div class="row"><div class="dot"></div><div class="name">Tailscale</div><div class="status">online</div></div>
+</div>
+</div>
+<script nonce="{{CSP_NONCE}}">
+const C = document.getElementById('c');
+const ctx = C.getContext('2d');
+C.width = window.innerWidth;
+C.height = window.innerHeight;
+
+const AGENTS = [
+  {name:'Brain',      color:'#00ff88', task:'supervising', x:0,y:0,tx:0,ty:0,frame:0,anim:0},
+  {name:'Ollama',     color:'#4488ff', task:'inferring',   x:0,y:0,tx:0,ty:0,frame:0,anim:0},
+  {name:'Cortex',     color:'#ff88ff', task:'visualizing', x:0,y:0,tx:0,ty:0,frame:0,anim:0},
+  {name:'ChromaDB',   color:'#ffaa00', task:'indexing',    x:0,y:0,tx:0,ty:0,frame:0,anim:0},
+  {name:'Neo4j',      color:'#00aaff', task:'graphing',    x:0,y:0,tx:0,ty:0,frame:0,anim:0},
+  {name:'Jellyfin',   color:'#ff6644', task:'serving',     x:0,y:0,tx:0,ty:0,frame:0,anim:0},
+  {name:'Tailscale',  color:'#aaffaa', task:'tunneling',   x:0,y:0,tx:0,ty:0,frame:0,anim:0},
+];
+
+// Init positions
+AGENTS.forEach((a,i)=>{
+  a.x = 80 + (i%4)*180;
+  a.y = 100 + Math.floor(i/4)*200;
+  a.tx = a.x; a.ty = a.y;
+});
+
+function drawAgent(a){
+  const x=a.x, y=a.y;
+  const bob = Math.sin(a.anim*3)*2;
+  // Body
+  ctx.fillStyle=a.color;
+  ctx.fillRect(x-6,y-16+bob,12,14);
+  // Head
+  ctx.fillRect(x-5,y-28+bob,10,10);
+  // Eyes
+  ctx.fillStyle='#0a0a0f';
+  ctx.fillRect(x-3,y-26+bob,2,2);
+  ctx.fillRect(x+1,y-26+bob,2,2);
+  // Legs (walking anim)
+  const leg = Math.sin(a.anim*6)*4;
+  ctx.fillStyle=a.color;
+  ctx.fillRect(x-5,y-2+bob,4,6+leg);
+  ctx.fillRect(x+1,y-2+bob,4,6-leg);
+  // Name tag
+  ctx.fillStyle=a.color;
+  ctx.font='9px monospace';
+  ctx.textAlign='center';
+  ctx.fillText(a.name,x,y+14+bob);
+  // Speech bubble occasionally
+  if(Math.floor(a.anim*10)%40===0){
+    ctx.fillStyle='#ffffff11';
+    ctx.fillRect(x+8,y-34+bob,60,14);
+    ctx.fillStyle='#666';
+    ctx.font='8px monospace';
+    ctx.textAlign='left';
+    ctx.fillText(a.task+'...',x+10,y-23+bob);
+  }
+}
+
+function drawDesk(x,y){
+  ctx.fillStyle='#1a1a2e';
+  ctx.fillRect(x-30,y+5,60,8);
+  ctx.fillStyle='#222';
+  ctx.fillRect(x-20,y-10,40,16);
+  // Screen glow
+  ctx.fillStyle='#003311';
+  ctx.fillRect(x-18,y-8,36,13);
+  ctx.fillStyle='#00ff88';
+  ctx.font='6px monospace';
+  ctx.textAlign='center';
+  ctx.fillText('AURIX',x,y+1);
+}
+
+function drawFloor(){
+  ctx.fillStyle='#0f0f1a';
+  ctx.fillRect(0,C.height-60,C.width,60);
+  ctx.strokeStyle='#1a1a2e';
+  ctx.lineWidth=1;
+  for(let x=0;x<C.width;x+=40){
+    ctx.beginPath();ctx.moveTo(x,C.height-60);ctx.lineTo(x,C.height);ctx.stroke();
+  }
+}
+
+function newTarget(a){
+  a.tx = 60 + Math.random()*(C.width-120);
+  a.ty = 80 + Math.random()*(C.height-200);
+}
+
+window.addEventListener("load", function(){ AGENTS.forEach(a=>newTarget(a)); });
+
+let t=0;
+function loop(){
+  ctx.clearRect(0,0,C.width,C.height);
+  drawFloor();
+
+  // Draw desks
+  AGENTS.forEach((a,i)=>{
+    drawDesk(80+(i%4)*180, 60+Math.floor(i/4)*200);
+  });
+
+  // Move and draw agents
+  AGENTS.forEach(a=>{
+    const dx=a.tx-a.x, dy=a.ty-a.y;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist>2){
+      a.x+=dx*0.015;
+      a.y+=dy*0.015;
+      a.anim+=0.05;
+    } else {
+      if(Math.random()<0.003) newTarget(a);
+      a.anim=0;
+    }
+    drawAgent(a);
+  });
+
+  // Particle data streams between agents
+  if(Math.random()<0.05){
+    const a=AGENTS[Math.floor(Math.random()*AGENTS.length)];
+    const b=AGENTS[Math.floor(Math.random()*AGENTS.length)];
+    ctx.strokeStyle=a.color+'44';
+    ctx.lineWidth=1;
+    ctx.setLineDash([2,4]);
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  t++;
+  requestAnimationFrame(loop);
+}
+loop();
+
+window.addEventListener('resize',()=>{
+  C.width=window.innerWidth;
+  C.height=window.innerHeight;
+});
+</script>
+</body>
+</html>

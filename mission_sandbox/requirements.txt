@@ -1,0 +1,18 @@
+# Tools available to mission code. The sandbox is OFFLINE at run time, so anything a mission
+# needs must be listed here and the image rebuilt:  docker compose build sandbox
+numpy
+scipy
+pandas
+matplotlib
+pillow
+httpx
+pypdf
+# medical imaging / 3D printing
+pydicom
+SimpleITK
+scikit-image
+trimesh
+numpy-stl
+pymeshlab
+# transcription
+faster-whisper

@@ -1,0 +1,1082 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AURIX Command Center</title>
+<style>
+  /* Tokens match Odysseus: the chosen theme's colours are read from localStorage['odysseus-theme'] at load. */
+  :root { --bg:#282c34; --fg:#9cdef2; --panel:#111111; --border:#355a66; --red:#e06c75;
+          --ok:#50fa7b; --warn:#f0ad4e; --bad:#ff5d6c; --idle:#6b7280; --accent:var(--fg);
+          --card: color-mix(in srgb, var(--panel) 88%, var(--bg)); --dim: color-mix(in srgb, var(--fg) 55%, var(--bg)); }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 var(--font-family, system-ui, -apple-system, "Segoe UI", sans-serif); }
+  a { color: inherit; }
+  header { display:flex; flex-wrap:wrap; align-items:center; gap:10px 18px; padding:12px 20px; background:var(--panel);
+           border-bottom:1px solid var(--border); position:sticky; top:0; z-index:5; }
+  header h1 { margin:0; font-size:16px; letter-spacing:.14em; font-weight:600; }
+  .back { text-decoration:none; padding:4px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px; }
+  .spacer { flex:1; }
+  .chip { padding:2px 10px; border:1px solid var(--border); border-radius:999px; font-size:12px; color:var(--dim); }
+  .chip.ok { color:var(--ok); } .chip.bad { color:var(--bad); } .chip.warn { color:var(--warn); }
+  button, .btn { font:inherit; color:var(--fg); background:transparent; border:1px solid var(--border); border-radius:8px; padding:6px 12px;
+                 cursor:pointer; text-decoration:none; display:inline-block; }
+  button:hover, .btn:hover { border-color:var(--fg); }
+  #stop { color:#ffb3bb; border-color:#7a2a33; background:#3a111655; font-weight:700; letter-spacing:.1em; }
+  #stop:hover { background:var(--bad); color:#fff; border-color:var(--bad); }
+  main { display:grid; grid-template-columns:repeat(12, 1fr); gap:14px; padding:16px 20px 40px; max-width:1400px; margin:0 auto; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:14px 16px; min-width:0; }
+  .card h2 { margin:0 0 10px; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--dim); font-weight:600;
+             display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c6 { grid-column: span 6; } .c7 { grid-column: span 7; }
+  .c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
+  @media (max-width:1000px){ .c4,.c5,.c6,.c7,.c8 { grid-column: span 12; } }
+  .dim { color:var(--dim); } .small { font-size:12px; }
+  .row { padding:8px 0; border-bottom:1px solid color-mix(in srgb, var(--border) 60%, transparent); } .row:last-child { border-bottom:0; }
+  .tag { font-size:11px; padding:1px 7px; border-radius:6px; border:1px solid var(--border); color:var(--dim); margin-left:6px; }
+  .tag.active { color:var(--ok); } .tag.proposed { color:var(--warn); } .tag.failed,.tag.stopped { color:var(--bad); }
+  .bar { height:6px; border-radius:4px; background:color-mix(in srgb, var(--border) 45%, transparent); overflow:hidden; margin-top:6px; }
+  .bar i { display:block; height:100%; background:var(--fg); transition:width .6s; }
+  /* level card */
+  .level { display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
+  .ring { --p:0; width:104px; height:104px; border-radius:50%; flex:none; display:grid; place-items:center;
+          background: conic-gradient(var(--fg) calc(var(--p) * 1%), color-mix(in srgb, var(--border) 45%, transparent) 0); }
+  .ring > div { width:82px; height:82px; border-radius:50%; background:var(--card); display:grid; place-items:center; text-align:center; line-height:1.05; }
+  .ring b { font-size:30px; display:block; } .ring span { font-size:10px; letter-spacing:.14em; color:var(--dim); }
+  .rank { font-size:20px; font-weight:700; letter-spacing:.04em; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+  .up { animation: pop 1.6s ease-out 1; }
+  @keyframes pop { 0% { transform:scale(.6); opacity:0; } 30% { transform:scale(1.12); opacity:1; } 100% { transform:scale(1); } }
+  /* health dots */
+  .organs { display:flex; flex-wrap:wrap; gap:8px; }
+  .dot { display:flex; align-items:center; gap:6px; padding:3px 10px 3px 8px; border:1px solid var(--border); border-radius:999px; font-size:12px; }
+  .dot i { width:9px; height:9px; border-radius:50%; background:var(--idle); }
+  .dot.ok i { background:var(--ok); } .dot.warn i { background:var(--warn); } .dot.bad i { background:var(--bad); }
+  .approve { color:var(--ok); border-color:color-mix(in srgb, var(--ok) 50%, transparent); }
+  .deny { color:var(--bad); border-color:color-mix(in srgb, var(--bad) 50%, transparent); }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:6px 16px; }
+  .stat b { font-size:20px; display:block; } .stat span { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.1em; }
+  #ticker { font:12px/1.55 ui-monospace, Consolas, monospace; max-height:230px; overflow:auto; }
+  #ticker div { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #err { display:none; margin:12px 20px 0; padding:10px 14px; border-radius:8px; background:#2d1216; border:1px solid #7a2a33; color:#ffb3bb; }
+  #toast { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:var(--panel); border:1px solid var(--border); padding:10px 16px;
+           border-radius:10px; display:none; max-width:90vw; z-index:9; }
+  .launch { display:flex; flex-wrap:wrap; gap:8px; }
+  .tag.pending { color:var(--warn); border-color:color-mix(in srgb, var(--warn) 55%, transparent); }
+  .tag.denied,.tag.retired,.tag.draft { color:var(--idle); }
+  .code { white-space:pre-wrap; word-break:break-word; font:12px/1.5 ui-monospace, Consolas, monospace; max-height:280px; overflow:auto;
+          background:color-mix(in srgb, var(--bg) 70%, #000); border:1px solid var(--border); border-radius:8px; padding:8px 10px; margin-top:8px; }
+  .btns { margin-top:6px; display:flex; flex-wrap:wrap; gap:8px; } .btns button { padding:3px 10px; font-size:12px; }
+  .svc { display:flex; align-items:center; gap:10px; padding:5px 0; border-bottom:1px solid color-mix(in srgb, var(--border) 45%, transparent); }
+  .svc:last-child { border-bottom:0; } .svc i { width:9px; height:9px; border-radius:50%; background:var(--idle); flex:none; }
+  .svc.ok i { background:var(--ok); } .svc.bad i { background:var(--bad); } .svc b { min-width:150px; font-weight:600; }
+  .svc.bad span { color:var(--bad); }
+  .bar.warn i { background:var(--warn); } .bar.bad i { background:var(--bad); }
+  .meter { margin:6px 0 10px; } .meter .top { display:flex; justify-content:space-between; gap:10px; font-size:12px; }
+  .pulse { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ok); margin-right:6px; animation:beat 1.4s ease-in-out infinite; }
+  @keyframes beat { 0%,100% { opacity:1; } 50% { opacity:.25; } }
+
+  /* one-push button, add-on tiles, monitor strip, result panel */
+  .primary { color:var(--ok); border-color:color-mix(in srgb, var(--ok) 60%, transparent); background:color-mix(in srgb, var(--ok) 14%, transparent);
+             font-weight:700; letter-spacing:.06em; }
+  .primary:hover { background:var(--ok); color:#06210f; border-color:var(--ok); }
+  .primary[disabled] { opacity:.65; cursor:progress; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(255px, 1fr)); gap:12px; }
+  .tile { border:1px solid var(--border); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:3px; min-width:0;
+          background:color-mix(in srgb, var(--panel) 70%, var(--bg)); transition:border-color .2s, transform .2s; }
+  .tile:hover { border-color:var(--fg); transform:translateY(-1px); }
+  .tile.warn { border-color:color-mix(in srgb, var(--warn) 55%, var(--border)); }
+  .tile.bad { border-color:color-mix(in srgb, var(--bad) 65%, var(--border)); }
+  .tile .top { display:flex; align-items:center; gap:9px; } .tile .ic { font-size:20px; line-height:1; }
+  .tile .top b { flex:1; font-size:14px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tile .st { width:10px; height:10px; border-radius:50%; background:var(--idle); flex:none; }
+  .tile.ok .st { background:var(--ok); box-shadow:0 0 8px color-mix(in srgb, var(--ok) 60%, transparent); }
+  .tile.warn .st { background:var(--warn); } .tile.bad .st { background:var(--bad); }
+  .tile .sum { font-size:13px; } .tile .det { font-size:12px; color:var(--dim); }
+  .tile .how { font-size:11px; color:var(--dim); font-style:italic; margin-top:4px; }
+  .tile .say { margin-top:6px; display:flex; gap:6px; align-items:center; }
+  .tile .say button { font:12px ui-monospace, Consolas, monospace; padding:2px 9px; border-radius:6px; }
+  .mon { display:flex; flex-wrap:wrap; gap:8px; }
+  .mon .dot { cursor:default; } .mon .dot span { color:var(--dim); font-size:11px; margin-left:2px; max-width:230px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #card-runall { display:none; } #card-runall.show { display:block; animation:pop .5s ease-out 1; }
+  .step { display:flex; gap:10px; align-items:baseline; padding:6px 0; border-bottom:1px solid color-mix(in srgb, var(--border) 45%, transparent); }
+  .step:last-child { border-bottom:0; } .step b { min-width:150px; } .step .ok { color:var(--ok); } .step .bad { color:var(--warn); }
+  .runsum { font-size:16px; font-weight:700; margin-bottom:6px; }
+
+  /* decisions, always-running, growth, trust */
+  #card-decide { display:none; border-color:color-mix(in srgb, var(--warn) 60%, var(--border)); }
+  #card-decide.show { display:block; }
+  .dcard { border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:10px; background:color-mix(in srgb, var(--panel) 70%, var(--bg)); }
+  .dcard:last-child { margin-bottom:0; }
+  .dcard .ttl { font-size:15px; font-weight:700; } .dcard .ln { font-size:13px; margin-top:3px; } .dcard .ln.dim { font-size:12px; }
+  .dcard .btns { margin-top:10px; gap:10px; } .dcard .btns button { padding:7px 18px; font-size:13px; font-weight:600; }
+  .dcard .btns .approve { background:color-mix(in srgb, var(--ok) 14%, transparent); }
+  .dcard .btns .deny { background:color-mix(in srgb, var(--bad) 10%, transparent); }
+  .alive { display:flex; gap:12px; padding:9px 0; border-bottom:1px solid color-mix(in srgb, var(--border) 50%, transparent); align-items:flex-start; }
+  .alive:last-child { border-bottom:0; } .alive .ic { font-size:20px; line-height:1.2; flex:none; }
+  .alive .mid { flex:1; min-width:0; } .alive .nm { font-weight:600; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .alive .th { font-size:13px; font-style:italic; margin-top:2px; overflow-wrap:anywhere; } .alive .wh { font-size:12px; color:var(--dim); margin-top:2px; }
+  .alive .what { font-size:11px; color:var(--dim); margin-top:2px; }
+  .st2 { font-size:11px; padding:1px 8px; border-radius:999px; border:1px solid var(--border); color:var(--dim); font-weight:400; }
+  .st2.running { color:var(--ok); border-color:color-mix(in srgb, var(--ok) 55%, transparent); }
+  .st2.bad { color:var(--bad); border-color:color-mix(in srgb, var(--bad) 55%, transparent); }
+  .st2.asleep, .st2.off { color:var(--idle); }
+  .feed { font-size:13px; max-height:340px; overflow:auto; }
+  .feed .f { display:flex; gap:8px; padding:5px 0; border-bottom:1px solid color-mix(in srgb, var(--border) 40%, transparent); }
+  .feed .f:last-child { border-bottom:0; } .feed .f .t { color:var(--dim); font-size:11px; min-width:44px; padding-top:2px; } .feed .f .x { flex:1; min-width:0; overflow-wrap:anywhere; }
+  .then-now { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; margin-bottom:14px; }
+  .tn { border:1px solid var(--border); border-radius:12px; padding:10px 12px; background:color-mix(in srgb, var(--panel) 70%, var(--bg)); }
+  .tn b { font-size:22px; display:block; } .tn span { font-size:11px; color:var(--dim); text-transform:uppercase; letter-spacing:.1em; } .tn i { font-size:11px; color:var(--ok); font-style:normal; display:block; margin-top:2px; }
+  .spark { width:100%; height:64px; display:block; margin:4px 0 10px; }
+  .tl { border-left:2px solid var(--border); margin-left:8px; padding-left:16px; max-height:520px; overflow:auto; }
+  .tl .day { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim); margin:14px 0 6px; position:relative; }
+  .tl .day::before { content:""; position:absolute; left:-23px; top:3px; width:10px; height:10px; border-radius:50%; background:var(--fg); }
+  .tl .ev { padding:5px 0; } .tl .ev .h { font-weight:600; } .tl .ev .h .lv { font-size:10px; color:var(--ok); border:1px solid color-mix(in srgb, var(--ok) 50%, transparent); border-radius:999px; padding:0 6px; margin-left:6px; font-weight:400; }
+  .tl .ev .d { font-size:12px; color:var(--dim); margin-top:1px; }
+  .rail { padding:4px 0; font-size:13px; } .weekgrid { display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:8px; margin-top:10px; }
+  .tile .acts { margin-top:8px; display:flex; flex-wrap:wrap; gap:6px; } .tile .acts button { padding:4px 11px; font-size:12px; }
+  .tile .acts button.working { opacity:.6; cursor:progress; }
+
+  /* apps grid, games, trading, self-check, lessons */
+  .apps { display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:10px; }
+  .app { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; text-decoration:none;
+         background:color-mix(in srgb, var(--panel) 70%, var(--bg)); transition:border-color .2s, transform .2s; min-width:0; }
+  .app:hover { border-color:var(--fg); transform:translateY(-1px); } .app .ic { font-size:20px; } .app b { font-size:13px; display:block; } .app span { font-size:11px; color:var(--dim); display:block; }
+  .app.off { opacity:.55; pointer-events:none; }
+  .grow { display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid color-mix(in srgb, var(--border) 45%, transparent); }
+  .grow:last-child { border-bottom:0; } .grow i { width:10px; height:10px; border-radius:50%; background:var(--idle); flex:none; }
+  .grow.ok i { background:var(--ok); } .grow.warn i { background:var(--warn); } .grow.bad i { background:var(--bad); }
+  .grow b { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .grow .m { font-size:12px; color:var(--dim); text-align:right; }
+  .life { margin:4px 0 12px; } .life .top { display:flex; justify-content:space-between; font-size:13px; gap:10px; flex-wrap:wrap; } .life .top b { font-size:24px; }
+  .life .bar { height:12px; margin-top:6px; position:relative; } .life .bar em { position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--bad); }
+  .pos { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; } .pos .tag { margin:0; } .pos .tag.up { color:var(--ok); } .pos .tag.down { color:var(--bad); }
+  .tier { padding:6px 0; } .tier .top { display:flex; justify-content:space-between; gap:10px; }
+  .sendrepo { display:flex; gap:10px; flex-wrap:wrap; } .sendrepo input { flex:1; min-width:220px; font:inherit; color:var(--fg); background:color-mix(in srgb, var(--bg) 70%, #000);
+              border:1px solid var(--border); border-radius:8px; padding:8px 12px; } .sendrepo input:focus { outline:none; border-color:var(--fg); }
+  .repo { padding:8px 0; border-bottom:1px solid color-mix(in srgb, var(--border) 45%, transparent); } .repo:last-child { border-bottom:0; }
+  .repo .lv { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; background:var(--idle); } .repo .lv.ok { background:var(--ok); }
+  .repo .lv.careful { background:var(--warn); } .repo .lv.stop { background:var(--bad); }
+  .mem { display:flex; gap:10px; align-items:flex-start; padding:8px 0; border-bottom:1px solid color-mix(in srgb, var(--border) 45%, transparent); }
+  .mem:last-child { border-bottom:0; } .mem .t { flex:1; min-width:0; overflow-wrap:anywhere; } .mem .m { font-size:11px; color:var(--dim); margin-top:2px; }
+  .mem .b { display:flex; gap:6px; flex:none; } .mem .b button { padding:2px 9px; font-size:12px; }
+  .upg { padding:10px 0; border-bottom:1px solid color-mix(in srgb, var(--border) 45%, transparent); } .upg:last-child { border-bottom:0; }
+  .upg pre { white-space:pre-wrap; word-break:break-word; font:12px/1.5 ui-monospace, Consolas, monospace; max-height:320px; overflow:auto; margin:6px 0 0; padding:8px 10px;
+             background:color-mix(in srgb, var(--bg) 70%, #000); border:1px solid var(--border); border-radius:8px; }
+  .upg details { margin-top:6px; } .upg summary { cursor:pointer; color:var(--dim); font-size:12px; }
+  .upgbar { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:10px; }
+  .tbl { width:100%; border-collapse:collapse; font-size:13px; } .tbl th { text-align:left; font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim); font-weight:600; padding:4px 8px 6px 0; }
+  .tbl td { padding:6px 8px 6px 0; border-top:1px solid color-mix(in srgb, var(--border) 45%, transparent); vertical-align:top; } .tbl td.n { text-align:right; white-space:nowrap; }
+  .tbl .up { color:var(--ok); } .tbl .down { color:var(--bad); } .tblwrap { overflow-x:auto; }
+  .idea { padding:9px 0; border-top:1px solid color-mix(in srgb, var(--border) 45%, transparent); } .idea .h { display:flex; gap:8px; align-items:baseline; flex-wrap:wrap; }
+  .idea .h b { font-size:14px; } .idea .m { font-size:12px; color:var(--dim); margin-top:2px; } .idea details summary { cursor:pointer; color:var(--dim); font-size:12px; margin-top:4px; }
+  .idea .btns button { padding:2px 10px; font-size:12px; }
+  @media (prefers-reduced-motion: reduce) { .tile, .tile:hover, #card-runall.show { transition:none; transform:none; animation:none; } }
+</style>
+</head>
+<body>
+<header>
+  <a class="back" href="/">&larr; Chat</a>
+  <h1>AURIX &middot; COMMAND CENTER</h1>
+  <span class="chip" id="clock">--</span>
+  <span class="chip" id="overall">health --</span>
+  <span class="chip" id="audit">audit --</span>
+  <span class="spacer"></span>
+  <span class="chip" id="live">connecting...</span>
+  <button id="runall-btn" class="primary" type="button" title="Re-check every monitor and add-on and ask your game PC for fresh facts. Changes nothing.">&#9654; Check everything</button>
+  <button id="stop" type="button" title="Halt everything: mission, approvals, standing missions, sandbox processes">STOP</button>
+</header>
+<div id="err"></div>
+<main>
+  <section class="card c12" id="card-runall" aria-live="polite"><h2>Check everything <button type="button" id="runall-x" class="small">dismiss</button></h2><div id="runall-body"></div></section>
+  <section class="card c12" id="card-decide" aria-live="polite"><h2>Waiting for your yes / no <span class="small" id="decide-n"></span></h2><div id="decide"></div></section>
+  <section class="card c12"><h2>Send AURIX a repo <span class="small" id="repos-n">paste a GitHub link, then approve the report</span></h2>
+    <div class="sendrepo"><input id="repo-url" type="url" inputmode="url" autocomplete="off" placeholder="https://github.com/owner/repo" aria-label="GitHub repository link">
+      <button type="button" id="repo-go" class="primary">Look inside it</button></div>
+    <div class="dim small" style="margin:6px 0 8px">It copies the repo read-only, reads it as text and tells you what is in it. Nothing is run or installed. Yes stores it inert in a library.</div>
+    <div id="repos"></div></section>
+  <section class="card c12"><h2>What AURIX knows about you <span class="small" id="mind-n"></span></h2>
+    <div class="sendrepo"><input id="mem-text" type="text" maxlength="400" autocomplete="off" placeholder="Tell it something to remember, e.g. I prefer short answers" aria-label="Something for AURIX to remember">
+      <button type="button" id="mem-go" class="primary">Remember</button><button type="button" id="mem-undo">Undo last forget</button></div>
+    <div class="dim small" style="margin:6px 0 8px">Pinned things are always in its context; the rest are recalled when relevant. Things you say about yourself show up above for a yes/no. Secrets are refused.</div>
+    <div id="mind"></div></section>
+  <section class="card c12"><h2>Upgrade lane <span class="small" id="upg-n"></span></h2>
+    <div class="upgbar"><button type="button" id="upg-toggle" class="primary">Turn on</button><button type="button" id="upg-now">Work on one now</button>
+      <span class="dim small" id="upg-info"></span></div>
+    <div class="sendrepo"><input id="upg-idea" type="text" maxlength="600" autocomplete="off" placeholder="Queue an upgrade idea, e.g. the dashboard should show trades per week" aria-label="An upgrade idea">
+      <button type="button" id="upg-add">Queue it</button></div>
+    <div class="dim small" style="margin:6px 0 8px">Your API tokens go here while you are away: it drafts one small upgrade at a time, tests it in the isolated sandbox against everything that already passes, and asks you. Approve deploys it with a health check that rolls itself back; Undo restores the old code.</div>
+    <div id="upgrades"></div></section>
+  <section class="card c12"><h2>Money <span class="small" id="money-n"></span></h2>
+    <div class="dim small" style="margin-bottom:8px">Simulation and estimates only. AURIX never moves real money or opens accounts; every idea says what only you can do.</div>
+    <div class="tblwrap"><table class="tbl" id="lab-table"><thead><tr><th>Paper strategy</th><th class="n">Per year</th><th class="n">Sharpe</th><th class="n">Worst drop</th><th class="n">Out-of-sample</th><th class="n">Live</th><th>Verdict</th></tr></thead><tbody id="lab-rows"></tbody></table></div>
+    <div class="dim small" id="lab-note" style="margin:6px 0 12px"></div>
+    <h2 style="margin-top:6px">Ways to make or save money <span class="small">ranked by expected $ per hour of your time</span></h2><div id="ideas"></div></section>
+  <section class="card c12"><h2>Freelance drafts <span class="small" id="fl-n"></span></h2>
+    <div class="dim small" style="margin-bottom:8px">Send AURIX a job brief with <code>freelance: &lt;brief&gt;</code> and it drafts a working script. You review, keep or discard, and deliver it yourself.</div>
+    <div id="freelance"></div></section>
+  <section class="card c12"><h2>Content drafts <span class="small" id="ct-n"></span></h2>
+    <div class="dim small" style="margin-bottom:8px">Send AURIX a topic with <code>content: &lt;topic&gt;</code> for your niche channel/site and it drafts a piece. Claims it isn't sure of are flagged [VERIFY]. You review, keep or discard, and record/edit/publish yourself.</div>
+    <div id="content"></div></section>
+  <section class="card c12"><h2>Reading library <span class="small" id="lib-n"></span></h2>
+    <div class="dim small" style="margin-bottom:8px">Send AURIX a link or pasted text with <code>learn: &lt;link or text&gt;</code> and it fetches/reads it, summarizes it, and flags the single best takeaway. Video links are tracked by title only - no transcription yet. You review, keep or discard.</div>
+    <div id="library"></div></section>
+  <section class="card c12"><h2>Subscriptions <span class="small" id="sub-n"></span></h2>
+    <div class="dim small" style="margin-bottom:8px">List what you pay for with <code>subscriptions: &lt;one per line&gt;</code> (e.g. "Netflix $15.49 monthly renews 15th") and AURIX tracks a running total, flags duplicates, and adds a to-do near each renewal. Reviewing statements and cancelling stay yours.</div>
+    <div id="subscriptions"></div></section>
+  <section class="card c12"><h2>Transcription <span class="small" id="tr-n"></span></h2>
+    <div class="dim small" style="margin-bottom:8px">Send AURIX a voice note, an audio file, or an audio document on Telegram. It transcribes it locally with Whisper (free, no account) and sends the text back; delivering it and getting paid stays yours.</div>
+    <div id="transcripts"></div></section>
+  <section class="card c12"><h2>Earnings ledger <span class="small" id="earn-n"></span></h2>
+    <div class="dim small" style="margin-bottom:8px">Estimated (~) entries are what finished work is roughly worth, logged automatically; confirmed entries are real payments you tell AURIX landed. AURIX never touches the money itself.</div>
+    <div id="earnings"></div></section>
+  <section class="card c12"><h2>While you were away <span class="small" id="ns-n"></span></h2>
+    <div class="upgbar"><button type="button" id="ns-now" class="primary">Run a shift now</button>
+      <span class="dim small">Every night AURIX builds a pile of finished things for your morning message: a health check, a money idea researched, quiet projects, strategy lab news. Free and local.</span></div>
+    <div id="nightshift"></div></section>
+  <section class="card c12"><h2>GamePilot <span class="small" id="gp-n"></span></h2>
+    <div class="dim small" style="margin-bottom:8px">See and control your gaming PC from a Fire TV Stick or any browser. It only ever shows a game or Steam, never your desktop; control is off until you arm it and turns itself off.</div>
+    <div class="upgbar"><button type="button" id="gp-arm" class="primary">Arm control (15 min)</button><button type="button" id="gp-disarm">Disarm</button><button type="button" id="gp-unpair" class="deny">Unpair all screens</button>
+      <a class="btn" id="gp-open" href="/gamepilot" target="_blank" rel="noopener">Open the viewer</a></div>
+    <div class="sendrepo"><input id="gp-code" type="text" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="Code shown on the TV, e.g. 123456" aria-label="Pairing code shown on the TV"><button type="button" id="gp-pair">Pair this screen</button></div>
+    <div class="dim small" style="margin-top:8px">On the Fire TV open the Silk browser and go to <code id="gp-url"></code>. The PC agent has to be running (<code>python gaming\agent\aurix_gamepilot_agent.py run</code>); nothing starts it automatically.</div></section>
+  <section class="card c12"><h2>Helpers that work on their own <span class="small" id="shards-n"></span></h2>
+    <div class="upgbar"><button type="button" id="sh-pause-all" class="deny">Pause everything</button><button type="button" id="sh-resume-all" class="primary">Resume everything</button>
+      <span class="dim small">Each helper lists what it can spend and what only you can approve. Pausing also stops its cron job on the server.</span></div>
+    <div id="shards"></div></section>
+  <section class="card c7"><h2>Always running <span class="small" id="alive-n"></span></h2><div id="alive"></div></section>
+  <section class="card c5"><h2>What it is doing <span class="small">live</span></h2><div class="feed" id="feed"></div></section>
+  <section class="card c12"><h2>Growth &middot; from day one to now <span class="small" id="growth-n"></span></h2>
+    <div class="then-now" id="thennow"></div><div class="dim small" id="spark-label"></div><div id="spark"></div>
+    <div class="tl" id="timeline"></div><div style="margin-top:10px"><button type="button" id="tl-more" class="small">Show the whole timeline</button></div></section>
+  <section class="card c6"><h2>Why you can trust it <span class="small" id="trust-n"></span></h2><div id="trust"></div></section>
+  <section class="card c6"><h2>How it learns from every fail, test and message <span class="small" id="learn-n"></span></h2><div id="learning"></div></section>
+  <section class="card c12"><h2>Open anything in AURIX <span class="small">every screen, one tap</span></h2><div class="apps" id="apps"></div></section>
+  <section class="card c7"><h2>Your games <span class="small" id="games-n"></span></h2><div id="games"></div></section>
+  <section class="card c5"><h2>Paper trading <span class="small" id="trade-n"></span></h2><div id="trading"></div></section>
+  <section class="card c6"><h2>Self-check exam <span class="small" id="checks-n"></span></h2><div id="checks"></div></section>
+  <section class="card c6"><h2>Lessons from the teacher <span class="small" id="lessons-n"></span></h2><div id="lessons"></div></section>
+  <section class="card c12"><h2>Add-ons <span class="small" id="addons-n"></span></h2><div class="tiles" id="addons"></div></section>
+  <section class="card c12"><h2>Monitors <span class="small" id="mon-n"></span></h2><div class="mon" id="monitors"></div></section>
+  <section class="card c5" id="card-level"><h2>Agent level <span class="small" id="lvl-today"></span></h2><div class="level" id="level"></div></section>
+  <section class="card c7"><h2>Needs you <span class="small" id="need-n"></span></h2><div id="approvals"></div>
+    <div id="skill-nudge" class="small" style="margin-top:8px"></div></section>
+  <section class="card c7"><h2>Skills <span class="small" id="skills-n"></span></h2><div id="skills"></div>
+    <div class="dim small" style="margin-top:10px">Make one in Telegram: <code>forge: &lt;a small tool&gt;</code>. It is tested in the sandbox first; nothing runs until you approve it here or with <code>approve skill &lt;name&gt;</code>.</div></section>
+  <section class="card c5"><h2>Running now</h2><div id="running"></div>
+    <h2 style="margin-top:14px">Launch pad</h2>
+    <div class="launch"><a class="btn" href="/">&#128172; Odysseus chat</a>
+      <a class="btn" id="l-godseye" href="#" target="_blank" rel="noopener">&#127757; God's Eye View</a>
+      <a class="btn" href="/systems">&#129504; Systems + STOP</a>
+      <a class="btn" id="l-kuma" href="#" target="_blank" rel="noopener">&#128200; Uptime Kuma</a></div>
+    <div class="dim small" style="margin-top:10px">Homelab <span id="homelab-n"></span></div>
+    <div class="launch" id="homelab" style="margin-top:6px"></div></section>
+  <section class="card c7"><h2>Missions <span class="small">say <code>mission: &lt;goal&gt;</code> in Telegram</span></h2><div id="missions"></div>
+    <h2 style="margin-top:14px">Standing (scheduled)</h2><div id="standing"></div></section>
+  <section class="card c5"><h2>Tasks &amp; projects <span class="small" id="tasks-n"></span></h2>
+    <div class="dim small">Scheduled tasks</div><div id="sched"></div>
+    <div class="dim small" style="margin-top:10px">To-dos <span>(<code>todo: &lt;text&gt;</code>)</span></div><div id="todos"></div>
+    <div class="dim small" style="margin-top:10px">Unfinished projects <span>(<code>project: &lt;name&gt;</code>)</span></div><div id="projects"></div></section>
+  <section class="card c7"><h2>Services <span class="small" id="services-n"></span></h2><div id="services"></div></section>
+  <section class="card c5"><h2>Server <span class="small" id="server-n"></span></h2><div id="server"></div>
+    <h2 style="margin-top:16px">Systems <a class="small" href="/systems">details &rarr;</a></h2><div class="organs" id="organs"></div></section>
+  <section class="card c6"><h2>Memory &amp; knowledge graph</h2><div class="grid2" id="memory"></div>
+    <h2 style="margin-top:14px">Knowledge gaps <span class="small">pages the wiki links to but that do not exist</span></h2><div id="gaps"></div></section>
+  <section class="card c6"><h2>Live audit ticker</h2><div id="ticker"></div></section>
+</main>
+<div id="toast"></div>
+<script nonce="{{CSP_NONCE}}">
+"use strict";
+// Rendering uses textContent / setAttribute only: mission text and tool previews are model-influenced.
+const $ = (id) => document.getElementById(id);
+function el(tag, attrs, text) { const n = document.createElement(tag); for (const k in (attrs || {})) n.setAttribute(k, attrs[k]); if (text !== undefined) n.textContent = text; return n; }
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => t.style.display = "none", 6000); }
+
+// Match the Odysseus theme the user picked (colours live in localStorage['odysseus-theme'].colors).
+try {
+  const saved = JSON.parse(localStorage.getItem("odysseus-theme") || "null");
+  const c = saved && saved.colors;
+  if (c) { const r = document.documentElement.style;
+    if (c.bg) r.setProperty("--bg", c.bg); if (c.fg) r.setProperty("--fg", c.fg); if (c.panel) r.setProperty("--panel", c.panel);
+    if (c.border) r.setProperty("--border", c.border); if (c.red) r.setProperty("--red", c.red); }
+} catch (e) { /* default theme */ }
+
+let state = null;
+
+function empty(parent, text) { parent.appendChild(el("div", { class: "dim small" }, text)); }
+
+function drawLevel(x) {
+  const box = $("level"); box.textContent = "";
+  if (!x) { empty(box, "XP unavailable"); return; }
+  const pct = x.level_span ? Math.min(100, Math.round(100 * x.into_level / x.level_span)) : 100;
+  const ring = el("div", { class: "ring" }); ring.style.setProperty("--p", pct);
+  const inner = el("div"); const b = el("b", {}, String(x.level)); inner.appendChild(b); inner.appendChild(el("span", {}, "LEVEL")); ring.appendChild(inner);
+  let last = 0; try { last = parseInt(localStorage.getItem("aurix-last-level") || "0", 10) || 0; localStorage.setItem("aurix-last-level", String(x.level)); } catch (e) {}
+  if (last && x.level > last) { ring.classList.add("up"); toast("LEVEL UP - " + x.rank + " (level " + x.level + ")"); }
+  const info = el("div"); info.style.flex = "1"; info.style.minWidth = "180px";
+  info.appendChild(el("div", { class: "rank" }, x.rank));
+  info.appendChild(el("div", { class: "dim small" }, x.total + " XP" + (x.level_span ? "  ·  " + x.to_next + " to level " + (x.level + 1) : "  ·  max level") + "  ·  streak " + x.streak_days + " day" + (x.streak_days === 1 ? "" : "s")));
+  const bar = el("div", { class: "bar" }), fill = el("i"); fill.style.width = pct + "%"; bar.appendChild(fill); info.appendChild(bar);
+  const chips = el("div", { class: "chips" });
+  Object.entries(x.by_category || {}).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => chips.appendChild(el("span", { class: "tag" }, k + " " + v)));
+  info.appendChild(chips);
+  if (x.next_hint) info.appendChild(el("div", { class: "dim small", style: "margin-top:8px" }, x.next_hint));
+  info.appendChild(el("div", { class: "dim small", style: "margin-top:6px" }, "XP comes only from finished work in the tamper-evident audit log. Approving things earns nothing, and level never changes what AURIX may do."));
+  box.appendChild(ring); box.appendChild(info);
+  $("lvl-today").textContent = x.today ? "+" + x.today + " XP today" : "";
+}
+
+async function decide(id, verb) {
+  try {
+    const r = await fetch("/api/command/approvals/" + encodeURIComponent(id), { method: "POST", credentials: "same-origin", headers: { "X-AURIX-Confirm": verb } });
+    const j = await r.json().catch(() => ({}));
+    toast(r.ok ? String(j.message || "done").replace(/<[^>]+>/g, "") : "Not allowed: " + (j.detail || r.status));
+  } catch (e) { toast("Failed: " + e); }
+  poll();
+}
+
+function drawApprovals(list) {
+  const box = $("approvals"); box.textContent = "";
+  $("need-n").textContent = list.length ? list.length + " waiting" : "";
+  if (!list.length) { empty(box, "Nothing is waiting on you."); return; }
+  list.forEach((a) => {
+    const row = el("div", { class: "row" });
+    row.appendChild(el("b", {}, a.tool)); row.appendChild(el("span", { class: "tag", id: "age-" + a.id }, a.id + " · " + a.age_s + "s"));
+    row.appendChild(el("div", { class: "small" }, a.preview));
+    if (a.risk) row.appendChild(el("div", { class: "dim small" }, a.risk));
+    const btns = el("div", { style: "margin-top:6px;display:flex;gap:8px" });
+    const yes = el("button", { class: "approve", type: "button" }, "Approve"); yes.addEventListener("click", () => decide(a.id, "APPROVE"));
+    const no = el("button", { class: "deny", type: "button" }, "Deny"); no.addEventListener("click", () => decide(a.id, "DENY"));
+    btns.appendChild(yes); btns.appendChild(no); row.appendChild(btns); box.appendChild(row);
+  });
+}
+
+function drawMissions(list, standing) {
+  const box = $("missions"); box.textContent = "";
+  if (!list.length) empty(box, "No missions yet.");
+  list.forEach((m) => {
+    const row = el("div", { class: "row" });
+    row.appendChild(el("b", {}, m.id)); row.appendChild(el("span", { class: "tag " + m.status }, m.status));
+    if (m.sandboxed) row.appendChild(el("span", { class: "tag" }, "sandboxed"));
+    row.appendChild(el("div", { class: "small" }, m.objective));
+    if (m.status === "active") {
+      row.appendChild(el("div", { class: "dim small" }, "step " + (m.step + 1) + "/" + m.steps + ": " + m.current + " · " + m.tool_calls + " tool calls"));
+      const bar = el("div", { class: "bar" }), fill = el("i"); fill.style.width = Math.min(100, Math.round(100 * m.step / Math.max(1, m.steps))) + "%"; bar.appendChild(fill); row.appendChild(bar);
+    }
+    box.appendChild(row);
+  });
+  const sb = $("standing"); sb.textContent = "";
+  if (!standing.length) empty(sb, "None. Try: standing: <goal> every day at 03:00");
+  standing.forEach((s) => { const row = el("div", { class: "row" });
+    row.appendChild(el("b", {}, s.id)); row.appendChild(el("span", { class: "tag " + s.status }, s.status));
+    row.appendChild(el("div", { class: "small" }, s.title + " - " + s.schedule + " · " + s.runs + " runs" + (s.failing ? " · " + s.failing + " failing" : ""))); sb.appendChild(row); });
+}
+
+function drawHealth(h) {
+  const box = $("organs"); box.textContent = "";
+  h.organs.forEach((o) => { const d = el("div", { class: "dot " + o.status }); d.appendChild(el("i")); d.appendChild(el("span", {}, o.title)); box.appendChild(d); });
+  const c = $("overall"); c.textContent = "health " + h.overall; c.className = "chip " + (h.overall === "ok" ? "ok" : h.overall === "warn" ? "warn" : "bad");
+  const a = $("audit"); a.textContent = h.audit_ok ? "audit chain OK" : "AUDIT TAMPERING"; a.className = "chip " + (h.audit_ok ? "ok" : "bad");
+}
+
+function stat(parent, label, value) { const s = el("div", { class: "stat" }); s.appendChild(el("b", {}, value === undefined ? "-" : String(value))); s.appendChild(el("span", {}, label)); parent.appendChild(s); }
+
+function drawMemory(m) {
+  const box = $("memory"); box.textContent = "";
+  stat(box, "wiki pages", m.wiki_pages); stat(box, "long-term notes", m.longterm_notes); stat(box, "RAG chunks", m.rag_chunks);
+  if (m.graph) { stat(box, "graph pages", m.graph.pages); stat(box, "graph links", m.graph.links); stat(box, "graph chunks", m.graph.chunks); }
+  else box.appendChild(el("div", { class: "dim small", style: "grid-column:1/-1" }, "Knowledge graph offline (Neo4j unreachable or not configured)."));
+  const g = $("gaps"); g.textContent = "";
+  const gaps = m.gaps || [];
+  if (!gaps.length) empty(g, m.graph ? "No gaps: every link resolves." : "-");
+  gaps.forEach((x) => { const row = el("div", { class: "row small" }); row.appendChild(el("b", {}, x.title)); row.appendChild(el("span", { class: "tag" }, x.refs + " link" + (x.refs === 1 ? "" : "s"))); g.appendChild(row); });
+}
+
+async function skillDecide(name, verb) {
+  const word = { APPROVE: "Approve", DENY: "Deny", RETIRE: "Retire" }[verb];
+  const extra = verb === "APPROVE" ? "\n\nIt will be allowed to run inside the isolated sandbox (no network, no secrets). Its code is pinned; any later change retires it." : "";
+  if (!confirm(word + " skill '" + name + "'?" + extra)) return;
+  try {
+    const r = await fetch("/api/command/skills/" + encodeURIComponent(name) + "/" + verb.toLowerCase(), { method: "POST", credentials: "same-origin", headers: { "X-AURIX-Confirm": verb } });
+    const j = await r.json().catch(() => ({}));
+    toast(r.ok ? String(j.message || "done").replace(/<[^>]+>/g, "") : "Not allowed: " + (j.detail || r.status));
+  } catch (e) { toast("Failed: " + e); }
+  poll();
+}
+
+async function viewSkill(name, holder, btn) {
+  if (holder.firstChild) { holder.textContent = ""; btn.textContent = "View code"; return; }
+  btn.textContent = "Loading...";
+  try {
+    const r = await fetch("/api/command/skills/" + encodeURIComponent(name), { credentials: "same-origin", cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const d = await r.json();
+    holder.appendChild(el("div", { class: "dim small" }, "code pinned " + d.sha256 + (d.integrity_ok ? " · matches what was tested" : " · WARNING: does not match what was tested")));
+    holder.appendChild(el("div", { class: "code" }, d.code));
+    holder.appendChild(el("div", { class: "dim small", style: "margin-top:6px" }, "tests"));
+    holder.appendChild(el("div", { class: "code" }, d.tests));
+    btn.textContent = "Hide code";
+  } catch (e) { btn.textContent = "View code"; toast("Could not load the skill: " + e); }
+}
+
+function drawSkills(s) {
+  $("skills-n").textContent = s.total ? (s.pending ? s.pending + " waiting for you · " : "") + s.active + " active / " + s.total : "";
+  const box = $("skills"); box.textContent = "";
+  if (!s.items.length) { empty(box, "No forged skills yet."); return; }
+  s.items.forEach((k) => {
+    const row = el("div", { class: "row" });
+    row.appendChild(el("b", {}, k.name)); row.appendChild(el("span", { class: "tag " + k.status }, k.status));
+    row.appendChild(el("span", { class: "tag" }, k.uses + " use" + (k.uses === 1 ? "" : "s")));
+    if (k.tests_ran) row.appendChild(el("span", { class: "tag" }, k.tests_ran + " tests passed"));
+    if (k.description) row.appendChild(el("div", { class: "dim small" }, k.description));
+    const holder = el("div"), btns = el("div", { class: "btns" });
+    const view = el("button", { type: "button" }, "View code"); view.addEventListener("click", () => viewSkill(k.name, holder, view)); btns.appendChild(view);
+    if (k.status === "pending") {
+      const yes = el("button", { class: "approve", type: "button" }, "Approve"); yes.addEventListener("click", () => skillDecide(k.name, "APPROVE"));
+      const no = el("button", { class: "deny", type: "button" }, "Deny"); no.addEventListener("click", () => skillDecide(k.name, "DENY"));
+      btns.appendChild(yes); btns.appendChild(no);
+    } else if (k.status === "active") {
+      const off = el("button", { class: "deny", type: "button" }, "Retire"); off.addEventListener("click", () => skillDecide(k.name, "RETIRE")); btns.appendChild(off);
+    }
+    row.appendChild(btns); row.appendChild(holder); box.appendChild(row);
+  });
+  const n = $("skill-nudge"); n.textContent = "";
+  if (s.pending) n.appendChild(el("span", { class: "tag pending" }, s.pending + " skill" + (s.pending === 1 ? "" : "s") + " waiting for your approval - see Skills"));
+}
+
+function drawRunning(r) {
+  const box = $("running"); box.textContent = "";
+  const m = r.mission;
+  if (m) {
+    const head = el("div"); head.appendChild(el("span", { class: "pulse" })); head.appendChild(el("b", {}, m.id + " running")); head.appendChild(el("div", { class: "small" }, m.objective));
+    head.appendChild(el("div", { class: "dim small" }, "step " + (m.step + 1) + "/" + m.steps + ": " + m.current + " · " + m.tool_calls + " tool calls"));
+    const bar = el("div", { class: "bar" }), fill = el("i"); fill.style.width = Math.min(100, Math.round(100 * m.step / Math.max(1, m.steps))) + "%"; bar.appendChild(fill); head.appendChild(bar);
+    box.appendChild(head);
+  } else box.appendChild(el("div", { class: "dim small" }, "No mission is running. Start one with mission: <goal> in Telegram."));
+  const line = (label, value) => { const d = el("div", { class: "small", style: "margin-top:8px" }); d.appendChild(el("span", { class: "dim" }, label + "  ")); d.appendChild(document.createTextNode(value)); box.appendChild(d); };
+  line("Models in memory", r.models.length ? r.models.map((x) => x.model + " on " + x.endpoint + " (" + x.vram_gb + " GB VRAM)").join(", ") : "none loaded (idle)");
+  line("Standing missions active", String(r.standing_active));
+  line("Chats in flight", String(r.in_flight));
+}
+
+function drawTasks(t) {
+  const total = (t.scheduled || []).length + (t.todo_total || 0) + (t.project_total || 0);
+  $("tasks-n").textContent = total ? (t.todo_total || 0) + " to-dos · " + (t.project_total || 0) + " projects · " + (t.scheduled || []).length + " scheduled" : "";
+  const fill = (id, items, none, draw) => { const box = $(id); box.textContent = ""; if (!items || !items.length) { empty(box, none); return; } items.forEach((x) => box.appendChild(draw(x))); };
+  fill("sched", t.scheduled, "None.", (x) => { const row = el("div", { class: "row small" }); row.appendChild(el("b", {}, x.name)); row.appendChild(el("span", { class: "tag " + (x.status === "active" ? "active" : "") }, x.status));
+    row.appendChild(el("div", { class: "dim" }, (x.schedule || "") + (x.next_run ? " · next " + x.next_run : "") + " · " + x.runs + " runs")); return row; });
+  fill("todos", t.todos, "Nothing open.", (x) => { const row = el("div", { class: "row small" }); row.appendChild(el("b", {}, x.id)); row.appendChild(document.createTextNode("  " + x.text));
+    if (x.due) row.appendChild(el("span", { class: "tag" }, "due " + x.due)); return row; });
+  fill("projects", t.projects, "None.", (x) => { const row = el("div", { class: "row small" }); row.appendChild(el("b", {}, x.name)); row.appendChild(el("span", { class: "tag " + (x.status === "active" ? "active" : "") }, x.status));
+    if (x.note) row.appendChild(el("div", { class: "dim" }, x.note)); return row; });
+}
+
+function drawServer(s) {
+  const box = $("server"); box.textContent = "";
+  const keys = ["cpu_pct", "mem_pct", "disk_pct"];
+  if (!keys.some((k) => typeof s[k] === "number")) { empty(box, "No server data."); $("server-n").textContent = ""; return; }
+  const level = (k, v) => v >= (s.bad || {})[k] ? "bad" : v >= (s.warn || {})[k] ? "warn" : "";
+  const meter = (label, k, detail) => {
+    if (typeof s[k] !== "number") return;
+    const lv = level(k, s[k]), m = el("div", { class: "meter" }), top = el("div", { class: "top" });
+    top.appendChild(el("b", {}, label)); top.appendChild(el("span", { class: lv === "bad" ? "" : "dim", style: lv === "bad" ? "color:var(--bad)" : lv === "warn" ? "color:var(--warn)" : "" }, s[k].toFixed(0) + "%" + (detail ? " · " + detail : "")));
+    const bar = el("div", { class: "bar " + lv }), fill = el("i"); fill.style.width = Math.min(100, s[k]) + "%"; bar.appendChild(fill);
+    m.appendChild(top); m.appendChild(bar); box.appendChild(m);
+  };
+  meter("Disk", "disk_pct", typeof s.disk_free_gb === "number" ? s.disk_free_gb.toFixed(1) + " GB free of " + (s.disk_total_gb || "?") + " GB" : "");
+  meter("Memory", "mem_pct", typeof s.mem_gb === "number" ? s.mem_gb + " GB total" : "");
+  meter("CPU", "cpu_pct", typeof s.load1 === "number" ? "load " + s.load1 : "");
+  if (s.backup) {                                                // nightly backup to the NAS (only shown once backups are set up)
+    const b = s.backup, late = typeof b.age_h === "number" && b.age_h >= (b.stale_h || 36), bad = !b.ok || late;
+    const row = el("div", { class: "meter" }), top = el("div", { class: "top" });
+    top.appendChild(el("b", {}, "Backup"));
+    top.appendChild(el("span", { class: bad ? "" : "dim", style: bad ? "color:var(--bad)" : "" },
+      !b.ok ? "FAILED: " + (b.message || "unknown") : typeof b.age_h === "number" ? "last good " + (b.age_h < 1 ? "<1" : b.age_h.toFixed(0)) + " h ago" : "no good backup yet"));
+    row.appendChild(top); box.appendChild(row);
+  }
+  const rank = { "": 0, warn: 1, bad: 2 };                       // NOT an alphabetical sort: "warn" would outrank "bad"
+  const worst = keys.map((k) => typeof s[k] === "number" ? level(k, s[k]) : "").reduce((a, b) => rank[b] > rank[a] ? b : a, "");
+  $("server-n").textContent = (typeof s.uptime_h === "number" ? "up " + (s.uptime_h >= 48 ? (s.uptime_h / 24).toFixed(1) + " days" : s.uptime_h.toFixed(0) + " h") : "") + (worst === "bad" ? " · needs attention" : worst === "warn" ? " · getting tight" : "");
+}
+
+function drawHomelab(list) {
+  const box = $("homelab"); box.textContent = "";
+  const down = list.filter((x) => !x.ok).length;
+  $("homelab-n").textContent = list.length ? (down ? "· " + down + " not answering" : "· all answering") : "";
+  if (!list.length) { empty(box, "None configured (AURIX_HOMELAB_LINKS)."); return; }
+  list.forEach((x) => {
+    // href comes from configuration but is still treated as untrusted: only http(s) may become a link
+    if (!/^https?:\/\//i.test(String(x.url || ""))) return;
+    const a = el("a", { class: "btn", href: x.url, target: "_blank", rel: "noopener noreferrer", title: x.detail || "" });
+    const dot = el("span", { class: "dot " + (x.ok ? "ok" : "bad"), style: "display:inline-flex;padding:0;border:0;margin-right:6px;vertical-align:middle" }); dot.appendChild(el("i"));
+    a.appendChild(dot); a.appendChild(document.createTextNode(x.name));
+    box.appendChild(a);
+  });
+}
+
+function drawServices(list) {
+  const down = list.filter((x) => !x.ok).length;
+  $("services-n").textContent = list.length ? (down ? down + " not answering · " : "all up · ") + list.length + " checked" : "";
+  const box = $("services"); box.textContent = "";
+  if (!list.length) { empty(box, "No service data."); return; }
+  list.forEach((x) => { const row = el("div", { class: "svc " + (x.ok ? "ok" : "bad") }); row.appendChild(el("i")); row.appendChild(el("b", {}, x.name)); row.appendChild(el("span", { class: "dim small" }, x.detail)); box.appendChild(row); });
+}
+
+function drawTicker(events) {
+  const t = $("ticker"); t.textContent = "";
+  events.forEach((e) => { const d = el("div"); d.appendChild(el("span", { class: "dim" }, "#" + e.seq + " " + e.ts + "  ")); d.appendChild(document.createTextNode(e.event + "  " + e.subject + "  " + e.detail)); t.appendChild(d); });
+}
+
+// A section is rebuilt only when its data changed. Rebuilding everything every poll would replace the Approve/Deny
+// buttons under the cursor (a click landing mid-rebuild is lost) and reset the ticker's scroll position.
+const sigs = {};
+function changed(key, value) { const s = JSON.stringify(value); if (sigs[key] === s) return false; sigs[key] = s; return true; }
+
+function drawAddons(list) {
+  const box = $("addons"); box.replaceChildren();
+  const need = list.filter((a) => a.status === "warn" || a.status === "bad").length;
+  $("addons-n").textContent = list.length + " add-ons" + (need ? " · " + need + " need a look" : " · all good");
+  list.forEach((a) => {
+    const t = el("div", { class: "tile " + a.status });
+    const top = el("div", { class: "top" });
+    top.appendChild(el("span", { class: "ic", "aria-hidden": "true" }, a.icon)); top.appendChild(el("b", {}, a.title));
+    top.appendChild(el("i", { class: "st", title: a.status, "aria-label": a.status })); t.appendChild(top);
+    t.appendChild(el("div", { class: "sum" }, a.summary));
+    if (a.detail) t.appendChild(el("div", { class: "det" }, a.detail));
+    if (a.hint) {
+      const say = el("div", { class: "say" });
+      const b = el("button", { type: "button", title: "Copy this, then send it to AURIX in Telegram" }, a.hint);
+      b.addEventListener("click", async () => { try { await navigator.clipboard.writeText(a.hint); toast("Copied “" + a.hint + "” - send it to AURIX in Telegram"); } catch (e) { toast("Say: " + a.hint); } });
+      say.appendChild(el("span", { class: "dim small" }, "say")); say.appendChild(b); t.appendChild(say);
+    }
+    if (a.how) t.appendChild(el("div", { class: "how" }, a.how));
+    if ((a.actions || []).length) {
+      const acts = el("div", { class: "acts" });
+      a.actions.forEach((x) => { const b = el("button", { type: "button", class: "primary" }, x.label); b.addEventListener("click", () => act(x.action, x.arg || "", b)); acts.appendChild(b); });
+      t.appendChild(acts);
+    }
+    box.appendChild(t);
+  });
+}
+
+function drawMonitors(list) {
+  const box = $("monitors"); box.replaceChildren();
+  const bad = list.filter((m) => m.status === "bad").length, warn = list.filter((m) => m.status === "warn").length;
+  $("mon-n").textContent = list.length + " monitors · " + (bad ? bad + " red " : "") + (warn ? warn + " amber " : "") + (!bad && !warn ? "all green" : "");
+  list.forEach((m) => {
+    const d = el("div", { class: "dot " + (m.status === "ok" || m.status === "warn" || m.status === "bad" ? m.status : ""), title: m.detail || m.title });
+    d.appendChild(el("i", {})); d.appendChild(document.createTextNode(m.title));
+    if (m.detail) d.appendChild(el("span", {}, "· " + m.detail));
+    box.appendChild(d);
+  });
+}
+
+async function runAll() {
+  const btn = $("runall-btn"), card = $("card-runall"), body = $("runall-body");
+  btn.disabled = true; const label = btn.textContent; btn.textContent = "Checking…";
+  card.classList.add("show"); body.replaceChildren(el("div", { class: "dim" }, "Checking every monitor and add-on…"));
+  try {
+    const r = await fetch("/api/command/run-all", { method: "POST", credentials: "same-origin", headers: { "X-AURIX-Confirm": "RUN" } });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.detail || ("HTTP " + r.status));
+    body.replaceChildren(el("div", { class: "runsum " + (j.ok ? "ok" : "bad") }, (j.ok ? "✅ " : "⚠️ ") + j.summary));
+    j.steps.forEach((s2) => {
+      const row = el("div", { class: "step" });
+      row.appendChild(el("span", { class: s2.ok ? "ok" : (s2.ok === false ? "bad" : "dim") }, s2.ok ? "✅" : (s2.ok === false ? "⚠️" : "➖")));
+      row.appendChild(el("b", {}, s2.name)); row.appendChild(el("span", { class: "dim" }, String(s2.detail)));
+      body.appendChild(row);
+    });
+    body.appendChild(el("div", { class: "dim small", style: "margin-top:8px" }, "Nothing was changed. The game PC answers with fresh facts within a few minutes."));
+  } catch (e) { body.replaceChildren(el("div", { class: "bad" }, "Check failed: " + (e.message || e))); }
+  btn.disabled = false; btn.textContent = label; poll();
+}
+$("runall-btn").addEventListener("click", runAll);
+$("runall-x").addEventListener("click", () => $("card-runall").classList.remove("show"));
+
+
+async function act(action, arg, btn) {
+  if (btn) { btn.classList.add("working"); btn.disabled = true; }
+  try {
+    const r = await fetch("/api/command/action", { method: "POST", credentials: "same-origin",
+      headers: { "X-AURIX-Confirm": "DO", "Content-Type": "application/json" }, body: JSON.stringify({ action: action, arg: arg || "" }) });
+    const j = await r.json().catch(() => ({}));
+    toast(r.ok ? String(j.message || "Done").replace(/<[^>]+>/g, "") : "Not allowed: " + (j.detail || r.status));
+  } catch (e) { toast("Failed: " + e); }
+  if (btn) { btn.classList.remove("working"); btn.disabled = false; }
+  poll();
+}
+
+function drawDecisions(list) {
+  const card = $("card-decide"), box = $("decide"); box.replaceChildren();
+  card.classList.toggle("show", list.length > 0);
+  $("decide-n").textContent = list.length ? list.length + " waiting · one tap each" : "";
+  list.forEach((d) => {
+    const c = el("div", { class: "dcard" });
+    c.appendChild(el("div", { class: "ttl" }, (d.icon || "") + " " + d.title));
+    (d.lines || []).forEach((l, i) => { if (l) c.appendChild(el("div", { class: "ln" + (i < (d.lines.length - 1) ? " dim" : "") }, l)); });
+    const btns = el("div", { class: "btns" });
+    (d.buttons || []).forEach((b) => { const x = el("button", { type: "button", class: b.style || "" }, b.label); x.addEventListener("click", () => act(b.action, b.arg || "", x)); btns.appendChild(x); });
+    c.appendChild(btns); box.appendChild(c);
+  });
+}
+
+async function sendRepo() {
+  const inp = $("repo-url"), v = inp.value.trim();
+  if (!/github\.com\/[A-Za-z0-9-]+\/[A-Za-z0-9_.-]+/i.test(v)) { toast("Paste a link like https://github.com/owner/repo"); return; }
+  await act("repo_add", v, $("repo-go"));
+  inp.value = "";
+}
+$("repo-go").addEventListener("click", sendRepo);
+$("repo-url").addEventListener("keydown", (ev) => { if (ev.key === "Enter") sendRepo(); });
+
+function drawRepos(list) {
+  const box = $("repos"); box.replaceChildren();
+  if (!list.length) return;
+  const names = { queued: "fetching…", review: "waiting for your yes / no", approved: "storing…", absorbed: "stored in the library", declined: "skipped", failed: "failed" };
+  list.forEach((r) => {
+    const row = el("div", { class: "repo" }), b = el("b", {});
+    b.appendChild(el("span", { class: "lv " + (r.level || "") })); b.appendChild(document.createTextNode(r.name)); row.appendChild(b);
+    row.appendChild(el("span", { class: "tag " + (r.status === "review" ? "pending" : r.status) }, names[r.status] || r.status));
+    if (r.what) row.appendChild(el("div", { class: "dim small" }, r.what));
+    (r.reasons || []).forEach((x) => row.appendChild(el("div", { class: "dim small" }, "• " + x)));
+    box.appendChild(row);
+  });
+}
+
+$("mem-go").addEventListener("click", async () => { const i = $("mem-text"), v = i.value.trim(); if (v.length < 4) { toast("Write what to remember first"); return; } await act("mem_add", v, $("mem-go")); i.value = ""; });
+$("mem-text").addEventListener("keydown", (ev) => { if (ev.key === "Enter") $("mem-go").click(); });
+$("mem-undo").addEventListener("click", () => act("mem_unforget", "", $("mem-undo")));
+
+function drawMind(m) {
+  const box = $("mind"); box.replaceChildren();
+  m = m || {};
+  $("mind-n").textContent = (m.total || 0) + " remembered · " + (m.pinned || 0) + " pinned" + ((m.pending || []).length ? " · " + m.pending.length + " waiting for your yes/no above" : "");
+  (m.rows || []).forEach((r) => {
+    const row = el("div", { class: "mem" }), t = el("div", { class: "t" });
+    t.appendChild(document.createTextNode((r.pinned ? "📌 " : "") + r.text));
+    t.appendChild(el("div", { class: "m" }, r.category + " · from " + r.source + " · " + r.age_days + " d old · used " + r.uses + "x"));
+    row.appendChild(t);
+    const b = el("div", { class: "b" });
+    const pin = el("button", { type: "button" }, r.pinned ? "Unpin" : "Pin"); pin.addEventListener("click", () => act(r.pinned ? "mem_unpin" : "mem_pin", r.id, pin));
+    const fg = el("button", { type: "button", class: "deny" }, "Forget"); fg.addEventListener("click", () => act("mem_forget", r.id, fg));
+    b.appendChild(pin); b.appendChild(fg); row.appendChild(b); box.appendChild(row);
+  });
+  if (!(m.rows || []).length) empty(box, "Nothing yet. Type something above, or just talk: when you say something about yourself it will offer to remember it.");
+}
+
+function drawMoney(m) {
+  m = m || {};
+  const lab = m.lab, body = $("lab-rows"); body.replaceChildren();
+  $("money-n").textContent = lab ? lab.tried + " strategies on paper · live " + lab.live_days + " trading days" : "strategy lab not run yet";
+  function cell(txt, cls) { const td = el("td", { class: cls || "" }, txt); return td; }
+  const sign = (v) => v == null ? "–" : (v >= 0 ? "+" : "") + v + "%";
+  ((lab && lab.rows) || []).forEach((r) => {
+    const tr = el("tr"), nm = el("td"); nm.appendChild(el("b", {}, r.name)); nm.appendChild(el("div", { class: "dim small" }, r.idea)); tr.appendChild(nm);
+    tr.appendChild(cell(r.cagr + "%", "n")); tr.appendChild(cell(String(r.sharpe), "n")); tr.appendChild(cell(r.max_dd + "%", "n down"));
+    tr.appendChild(cell(r.oos_cagr + "%", "n")); tr.appendChild(cell(r.live == null ? "–" : sign(r.live), "n " + (r.live > 0 ? "up" : r.live < 0 ? "down" : "")));
+    tr.appendChild(cell(r.verdict, "small")); body.appendChild(tr);
+  });
+  $("lab-note").textContent = lab ? "History " + lab.span[0] + " to " + lab.span[1] + " with 0.05% costs and no look-ahead. Trying many ideas flatters the best one; the Live column (since " + lab.inception + ") is the honest test." : "It runs on the server after each market close.";
+  const box = $("ideas"); box.replaceChildren();
+  (m.items || []).forEach((it) => {
+    const d = el("div", { class: "idea" }), h = el("div", { class: "h" });
+    h.appendChild(el("b", {}, it.name)); h.appendChild(el("span", { class: "tag" }, it.range)); h.appendChild(el("span", { class: "tag" }, it.hours + " h/wk")); h.appendChild(el("span", { class: "tag" }, "risk " + it.risk));
+    h.appendChild(el("span", { class: "tag " + (it.status === "active" ? "active" : it.status === "rejected" ? "denied" : "") }, it.status)); d.appendChild(h);
+    d.appendChild(el("div", { class: "m" }, it.summary));
+    const more = el("details"); more.appendChild(el("summary", {}, "Gate and first step"));
+    more.appendChild(el("div", { class: "small" }, "Gate: " + it.gate)); more.appendChild(el("div", { class: "small" }, "First step: " + it.first_step)); d.appendChild(more);
+    const b = el("div", { class: "btns" });
+    [["Start", "active"], ["Pause", "paused"], ["Reject", "rejected"]].forEach(([label, st]) => {
+      if (it.status === st) return;
+      const x = el("button", { type: "button" }, label); x.addEventListener("click", () => act("money_set", it.id + ":" + st, x)); b.appendChild(x);
+    });
+    d.appendChild(b); box.appendChild(d);
+  });
+}
+
+function drawGamepilot(g) {
+  g = g || {};
+  $("gp-n").textContent = (g.pc_online ? "PC agent online" + (g.foreground ? " · " + g.foreground : "") : "PC agent not connected") + " · " + (g.paired || 0) + " screen(s) paired · " + (g.armed ? "CONTROL ON " + Math.ceil((g.armed_left || 0) / 60) + " min" : "watch only");
+  $("gp-url").textContent = location.origin + "/gamepilot";
+}
+$("gp-arm").addEventListener("click", () => act("gp_arm", "15", $("gp-arm")));
+$("gp-disarm").addEventListener("click", () => act("gp_disarm", "", $("gp-disarm")));
+$("gp-unpair").addEventListener("click", () => { if (confirm("Unpair every screen? Each TV has to pair again.")) act("gp_unpair", "", $("gp-unpair")); });
+$("gp-pair").addEventListener("click", async () => { const i = $("gp-code"), v = i.value.trim(); if (!/^\d{6}$/.test(v)) { toast("Type the 6 digits shown on the TV"); return; } await act("gp_pair", v, $("gp-pair")); i.value = ""; });
+
+function drawSubscriptions(s) {
+  s = s || {}; const box = $("subscriptions"); box.replaceChildren();
+  const items = s.items || [];
+  $("sub-n").textContent = items.length ? items.length + " tracked - ~$" + (s.total_monthly || 0).toFixed(2) + "/mo" + (s.duplicates ? " - " + s.duplicates + " possible duplicate(s)" : "") : "nothing tracked yet";
+  items.forEach((r) => { const row = el("div", { class: "grow" }); row.appendChild(el("i"));
+    const mid = el("div", { style: "flex:1;min-width:0" }); mid.appendChild(el("b", { style: "display:block;white-space:normal" }, r.name));
+    mid.appendChild(el("div", { class: "small" }, "$" + r.amount.toFixed(2) + "/" + r.unit + (r.day ? " - renews ~day " + r.day : ""))); row.appendChild(mid); box.appendChild(row); });
+  if (!items.length) box.appendChild(el("div", { class: "dim small" }, "Nothing tracked yet."));
+}
+
+function drawContent(c) {
+  c = c || {}; const box = $("content"); box.replaceChildren();
+  const items = c.pieces || [];
+  $("ct-n").textContent = items.length ? items.length + " draft(s)" : "no drafts yet";
+  const lamp = { kept: "ok", discarded: "", review: "" };
+  items.forEach((p) => { const row = el("div", { class: "grow " + (lamp[p.status] || "") }); row.appendChild(el("i"));
+    const mid = el("div", { style: "flex:1;min-width:0" }); mid.appendChild(el("b", { style: "display:block;white-space:normal" }, p.title));
+    mid.appendChild(el("div", { class: "small" }, p.words + " words" + (p.verify_flags ? " - " + p.verify_flags + " to verify" : "") + " - " + p.status)); row.appendChild(mid); box.appendChild(row); });
+  if (!items.length) box.appendChild(el("div", { class: "dim small" }, "Nothing drafted yet."));
+}
+
+function drawLibrary(l) {
+  l = l || {}; const box = $("library"); box.replaceChildren();
+  const items = l.items || [];
+  $("lib-n").textContent = items.length ? items.length + " item(s)" + ((l.pending || 0) ? " - " + l.pending + " waiting" : "") : "nothing yet";
+  const lamp = { kept: "ok", discarded: "", review: "" };
+  const icon = { tech: "\u{1F4BB}", story: "\u{1F4D6}", video: "\u{1F3A5}", other: "\u{1F4C4}" };
+  items.forEach((r) => { const row = el("div", { class: "grow " + (lamp[r.status] || "") }); row.appendChild(el("i"));
+    const mid = el("div", { style: "flex:1;min-width:0" }); mid.appendChild(el("b", { style: "display:block;white-space:normal" }, (icon[r.category] || "") + " " + r.title));
+    mid.appendChild(el("div", { class: "small" }, r.category + " - " + r.status)); row.appendChild(mid); box.appendChild(row); });
+  if (!items.length) box.appendChild(el("div", { class: "dim small" }, "Nothing sent yet."));
+}
+
+function drawFreelance(f) {
+  f = f || {}; const box = $("freelance"); box.replaceChildren();
+  const jobs = f.jobs || [];
+  $("fl-n").textContent = jobs.length ? jobs.length + " draft(s)" : "no drafts yet";
+  const lamp = { kept: "ok", discarded: "", review: "" };
+  jobs.forEach((j) => { const row = el("div", { class: "grow " + (lamp[j.status] || "") }); row.appendChild(el("i"));
+    const mid = el("div", { style: "flex:1;min-width:0" }); mid.appendChild(el("b", { style: "display:block;white-space:normal" }, j.title));
+    mid.appendChild(el("div", { class: "small" }, j.filename + " - " + j.status)); row.appendChild(mid); box.appendChild(row); });
+  if (!jobs.length) box.appendChild(el("div", { class: "dim small" }, "Nothing drafted yet."));
+}
+
+function drawEarnings(g) {
+  g = g || {}; const box = $("earnings"); box.replaceChildren();
+  $("earn-n").textContent = "confirmed $" + (g.confirmed_total || 0).toFixed(2) + " · estimated $" + (g.estimated_total || 0).toFixed(2);
+  (g.recent || []).forEach((x) => { const row = el("div", { class: "grow " + (x.confirmed ? "ok" : "") }); row.appendChild(el("i"));
+    const mid = el("div", { style: "flex:1;min-width:0" }); mid.appendChild(el("b", { style: "display:block;white-space:normal" }, (x.confirmed ? "$" : "~$") + x.amount.toFixed(2) + " " + x.source));
+    if (x.note) mid.appendChild(el("div", { class: "small" }, x.note)); row.appendChild(mid); box.appendChild(row); });
+  if (!(g.recent || []).length) box.appendChild(el("div", { class: "dim small" }, "Nothing logged yet."));
+}
+
+function drawTranscripts(t) {
+  t = t || {}; const box = $("transcripts"); box.replaceChildren();
+  const jobs = t.jobs || [];
+  $("tr-n").textContent = jobs.length ? jobs.length + " job(s) - model " + (t.model || "") : "no jobs yet";
+  const lamp = { done: "ok", failed: "warn", running: "" };
+  jobs.forEach((j) => { const row = el("div", { class: "grow " + (lamp[j.status] || "") }); row.appendChild(el("i"));
+    const mid = el("div", { style: "flex:1;min-width:0" }); mid.appendChild(el("b", { style: "display:block;white-space:normal" }, j.filename || j.id));
+    mid.appendChild(el("div", { class: "small" }, j.status + (j.words ? " - " + j.words + " words" : ""))); row.appendChild(mid); box.appendChild(row); });
+  if (!jobs.length) box.appendChild(el("div", { class: "dim small" }, "Send AURIX audio on Telegram to see it here."));
+}
+
+function drawNight(n) {
+  n = n || {}; const box = $("nightshift"); box.replaceChildren();
+  $("ns-n").textContent = n.enabled === false ? "switched off" : ((n.unopened ? n.unopened + " unopened · " : "") + "runs at " + (n.at || "02:00"));
+  (n.gifts || []).forEach((g) => { const row = el("div", { class: "grow ok" }); row.appendChild(el("i")); const mid = el("div", { style: "flex:1;min-width:0" });
+    mid.appendChild(el("b", { style: "display:block;white-space:normal" }, g.icon + " " + g.title)); mid.appendChild(el("div", { class: "small", style: "white-space:pre-wrap" }, g.body)); row.appendChild(mid); box.appendChild(row); });
+  if (!(n.gifts || []).length) box.appendChild(el("div", { class: "dim small" }, "No shift has run yet. Tap Run a shift now, or wait for tonight."));
+}
+$("ns-now").addEventListener("click", () => act("night_now", "", $("ns-now")));
+
+function drawShards(list) {
+  const box = $("shards"); box.replaceChildren();
+  const bad = list.filter((x) => x.state === "stale" || x.state === "blocked").length, paused = list.filter((x) => x.state === "paused").length;
+  $("shards-n").textContent = list.length + " helpers" + (bad ? " · " + bad + " need a look" : "") + (paused ? " · " + paused + " paused" : "");
+  const lamp = { ok: "ok", stale: "warn", blocked: "warn", paused: "", off: "", idle: "" };
+  list.forEach((r) => {
+    const row = el("div", { class: "grow " + (lamp[r.state] || "") }); row.appendChild(el("i"));
+    const mid = el("div", { style: "flex:1;min-width:0" }); const b = el("b", { style: "display:block;white-space:normal" }, r.icon + " " + r.name);
+    mid.appendChild(b); mid.appendChild(el("div", { class: "small" }, r.detail));
+    mid.appendChild(el("div", { class: "dim small" }, "Does: " + r.what + " · Runs: " + r.schedule + " · Spends: " + r.spend + " · Gate: " + r.gate)); row.appendChild(mid);
+    if (r.pausable) { const p = r.state === "paused"; const btn = el("button", { type: "button", class: p ? "primary" : "" }, p ? "Resume" : "Pause"); btn.addEventListener("click", () => act(p ? "shard_resume" : "shard_pause", r.id, btn)); row.appendChild(btn); }
+    box.appendChild(row);
+  });
+}
+$("sh-pause-all").addEventListener("click", () => { if (confirm("Pause every helper that works on its own?")) act("shard_pause", "all", $("sh-pause-all")); });
+$("sh-resume-all").addEventListener("click", () => act("shard_resume", "all", $("sh-resume-all")));
+
+let upgOn = false;
+$("upg-toggle").addEventListener("click", () => act(upgOn ? "upg_off" : "upg_on", upgOn ? "" : "3", $("upg-toggle")));
+$("upg-now").addEventListener("click", () => act("upg_now", "", $("upg-now")));
+$("upg-add").addEventListener("click", async () => { const i = $("upg-idea"), v = i.value.trim(); if (v.length < 8) { toast("Describe the upgrade in a sentence"); return; } await act("upg_add", v, $("upg-add")); i.value = ""; });
+$("upg-idea").addEventListener("keydown", (ev) => { if (ev.key === "Enter") $("upg-add").click(); });
+
+function drawUpgrades(u) {
+  const box = $("upgrades"); box.replaceChildren();
+  u = u || {}; upgOn = !!u.enabled;
+  $("upg-toggle").textContent = upgOn ? "Turn off" : "Turn on (3 a day)";
+  $("upg-n").textContent = upgOn ? "ON · " + (u.used || 0) + "/" + (u.daily || 0) + " drafts today" : "OFF";
+  $("upg-info").textContent = (u.key ? "" : "⚠️ no API key on the server · ") + (u.model || "") + " · " + (u.backlog || 0) + " ideas of yours queued";
+  const names = { review: "waiting for your yes / no", approved: "applying…", applied: "live", declined: "rejected", failed: "not applied (old code kept)", undone: "rolled back" };
+  (u.items || []).forEach((it) => {
+    const row = el("div", { class: "upg" }), b = el("b", {}, it.title);
+    row.appendChild(b); row.appendChild(el("span", { class: "tag " + (it.status === "review" ? "pending" : it.status) }, names[it.status] || it.status));
+    if (it.risk) row.appendChild(el("span", { class: "tag" }, "risk " + it.risk));
+    if (it.why) row.appendChild(el("div", { class: "small" }, it.why));
+    if (it.tests) row.appendChild(el("div", { class: "dim small" }, "Tested in the sandbox: " + it.tests + " tests pass with it."));
+    (it.files || []).forEach((f) => { const d = el("details"); d.appendChild(el("summary", {}, f.path + " · " + f.lines + " lines")); d.appendChild(el("pre", {}, f.diff)); row.appendChild(d); });
+    const btns = el("div", { class: "btns" });
+    if (it.status === "review") {
+      const y = el("button", { type: "button", class: "approve" }, "Approve & deploy"); y.addEventListener("click", () => act("upg_yes", it.id, y));
+      const n = el("button", { type: "button", class: "deny" }, "Reject"); n.addEventListener("click", () => act("upg_no", it.id, n)); btns.appendChild(y); btns.appendChild(n);
+    } else if (it.status === "applied") {
+      const un = el("button", { type: "button" }, "Undo (roll back)"); un.addEventListener("click", () => { if (confirm("Roll back this upgrade? The server restores the old files and redeploys.")) act("upg_undo", it.id, un); }); btns.appendChild(un);
+    }
+    row.appendChild(btns); box.appendChild(row);
+  });
+  if (!(u.items || []).length) empty(box, "No upgrades yet. Turn it on, or queue an idea above.");
+}
+
+function drawAlive(list, bg) {
+  const box = $("alive"); box.replaceChildren();
+  const run = list.filter((x) => x.state === "running").length;
+  $("alive-n").textContent = run + " of " + list.length + " running · the rest are waiting their turn";
+  const names = { running: "running", idle: "waiting its turn", asleep: "asleep (by design)", bad: "needs a look", off: "off" };
+  list.forEach((x) => {
+    const row = el("div", { class: "alive" });
+    row.appendChild(el("span", { class: "ic", "aria-hidden": "true" }, x.icon));
+    const mid = el("div", { class: "mid" }), nm = el("div", { class: "nm" });
+    nm.appendChild(el("span", {}, x.title));
+    const st = el("span", { class: "st2 " + x.state }, names[x.state] || x.state);
+    if (x.state === "running") st.prepend(el("span", { class: "pulse" }));
+    nm.appendChild(st); mid.appendChild(nm);
+    mid.appendChild(el("div", { class: "th" }, "“" + x.thought + "”"));
+    if (x.when) mid.appendChild(el("div", { class: "wh" }, x.when));
+    mid.appendChild(el("div", { class: "what" }, x.what));
+    row.appendChild(mid); box.appendChild(row);
+  });
+  Object.keys(bg || {}).forEach((k) => box.appendChild(el("div", { class: "dim small", style: "margin-top:8px" }, "⏳ " + k + ": " + bg[k])));
+}
+
+function ago(ts) {
+  const s = Math.max(0, Math.round(Date.now() / 1000 - ts));
+  return s < 90 ? "now" : s < 5400 ? Math.round(s / 60) + "m" : s < 129600 ? Math.round(s / 3600) + "h" : Math.round(s / 86400) + "d";
+}
+
+function drawFeed(list) {
+  const box = $("feed"); box.replaceChildren();
+  if (!list.length) { empty(box, "Nothing yet. This fills as it works."); return; }
+  list.forEach((f) => {
+    const r = el("div", { class: "f" });
+    r.appendChild(el("span", { class: "t" }, ago(f.ts))); r.appendChild(el("span", {}, f.icon || "•"));
+    const x = el("span", { class: "x" }, f.text); x.appendChild(el("span", { class: "tag" }, f.source)); r.appendChild(x); box.appendChild(r);
+  });
+}
+
+function sparkline(evals) {
+  const tiers = {}; evals.forEach((h) => Object.keys(h.tiers).forEach((k) => { (tiers[k] = tiers[k] || []).push(h.tiers[k]); }));
+  const box = $("spark"); box.replaceChildren();
+  const keys = Object.keys(tiers).filter((k) => tiers[k].length >= 2);
+  $("spark-label").textContent = keys.length ? "Self-check score over time (each dot is one run of its own exam)" : "Its self-check exam has not run twice yet - the score line appears after the second run.";
+  if (!keys.length) return;
+  const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", "0 0 300 60"); svg.setAttribute("class", "spark"); svg.setAttribute("preserveAspectRatio", "none");
+  keys.forEach((k, ki) => {
+    const pts = tiers[k].map((v, i) => [tiers[k].length === 1 ? 0 : 6 + i * 288 / (tiers[k].length - 1), 54 - 48 * (v[1] ? v[0] / v[1] : 0)]);
+    const p = document.createElementNS(NS, "polyline"); p.setAttribute("points", pts.map((q) => q.join(",")).join(" ")); p.setAttribute("fill", "none");
+    p.setAttribute("stroke", ki ? "var(--warn)" : "var(--ok)"); p.setAttribute("stroke-width", "2"); p.setAttribute("vector-effect", "non-scaling-stroke"); svg.appendChild(p);
+  });
+  box.appendChild(svg);
+  box.appendChild(el("div", { class: "dim small" }, keys.map((k, i) => (i ? "amber" : "green") + " = " + k).join(" · ")));
+}
+
+let tlAll = false;
+function drawGrowth(g, tl) {
+  g = g || {};
+  $("growth-n").textContent = g.days_alive != null ? (g.days_alive < 1 ? "first day" : Math.floor(g.days_alive) + " days") + " of history · since " + (g.since || "") : "";
+  const box = $("thennow"); box.replaceChildren();
+  function tn(label, now, note) { const d = el("div", { class: "tn" }); d.appendChild(el("b", {}, String(now))); d.appendChild(el("span", {}, label)); if (note) d.appendChild(el("i", {}, note)); box.appendChild(d); }
+  tn("things it understands", g.commands, "started as a chat window");
+  tn("levels earned", g.level != null ? "Lv " + g.level : "-", g.xp != null ? g.xp + " XP" : "");
+  tn("missions finished", g.missions_done, ""); tn("skills it learned", g.skills_active, "forged and approved by you");
+  tn("lessons guiding it", g.lessons_active, "from a stronger teacher");
+  tn("game fixes applied", g.fixes_applied, g.games_watched + " games watched");
+  tn("tests guarding it", g.foundation_tests || "-", "each one a promise");
+  const en = g.evals_now || {}, ef = g.evals_first || {};
+  Object.keys(en).forEach((k) => tn(k + " self-check", en[k][0] + "/" + en[k][1], ef[k] ? "first ever run: " + ef[k][0] + "/" + ef[k][1] : ""));
+  sparkline(g.evals || []);
+  const t = $("timeline"); t.replaceChildren();
+  const items = tlAll ? tl : tl.slice(0, 14); let day = "";
+  items.forEach((it) => {
+    if (it.date !== day) { day = it.date; t.appendChild(el("div", { class: "day" }, day)); }
+    const e = el("div", { class: "ev" }), h = el("div", { class: "h" }, (it.icon || "•") + " " + it.title);
+    if (it.live) h.appendChild(el("span", { class: "lv" }, "live" + (it.time ? " " + it.time : "")));
+    e.appendChild(h); if (it.detail) e.appendChild(el("div", { class: "d" }, it.detail)); t.appendChild(e);
+  });
+  $("tl-more").style.display = tl.length > 14 ? "inline-block" : "none";
+  $("tl-more").textContent = tlAll ? "Show less" : "Show the whole timeline (" + tl.length + ")";
+}
+$("tl-more").addEventListener("click", () => { tlAll = !tlAll; if (state) drawGrowth(state.growth, state.timeline || []); });
+
+function drawTrust(t) {
+  const box = $("trust"); box.replaceChildren();
+  if (!t || !t.rails) { empty(box, "Unavailable"); return; }
+  $("trust-n").textContent = t.integrity_ok ? "log verified intact" : "LOG TAMPERING";
+  t.rails.forEach((r) => box.appendChild(el("div", { class: "rail" }, "🛡️ " + r)));
+  const w = t.week || {}, g = el("div", { class: "weekgrid" });
+  [["did on its own", w.did_on_its_own], ["you approved", w.asked_and_you_approved], ["you denied", w.you_denied], ["stopped by its guards", w.refused_by_protection],
+   ["missions done", w.missions_completed], ["missions failed", w.missions_failed], ["fixes you undid", w.fixes_undone], ["STOP pressed", w.stops_pressed]].forEach(([l, v]) => stat(g, l, v));
+  box.appendChild(el("div", { class: "dim small", style: "margin-top:10px" }, "Last 7 days, straight from the audit log")); box.appendChild(g);
+}
+
+function drawLearning(l) {
+  const box = $("learning"); box.replaceChildren();
+  l = l || {};
+  $("learn-n").textContent = (l.experiences || 0) + " experiences · " + (l.learned_checks || 0) + " permanent checks";
+  box.appendChild(el("div", { class: "small" }, "Every failure, refusal, correction and result is written down. A real failure becomes a permanent self-check that runs every night, so the same mistake cannot come back unnoticed. Nothing here changes its behavior without your OK."));
+  const bk = l.by_kind || {}, g = el("div", { class: "weekgrid" });
+  Object.keys(bk).forEach((k) => stat(g, k, bk[k])); if (Object.keys(bk).length) box.appendChild(g);
+  (l.recent || []).slice(0, 5).forEach((x) => box.appendChild(el("div", { class: "row small" }, (x.summary || x.text || JSON.stringify(x)))));
+  if (!(l.recent || []).length) empty(box, "Nothing learned yet - it learns from the first thing that goes wrong.");
+}
+
+
+const APPS = [
+  ["💬", "Chat", "talk to AURIX", "/", 0], ["📝", "Notes", "your notes", "/notes", 0], ["📅", "Calendar", "events", "/calendar", 0], ["✉️", "Email", "inbox", "/email", 0],
+  ["🧠", "Memory", "what it remembers", "/memory", 0], ["✅", "Tasks", "scheduled + to-dos", "/tasks", 0], ["📚", "Library", "documents", "/library", 0],
+  ["🖼️", "Gallery", "images", "/gallery", 0], ["🍳", "Cookbook", "models + engines", "/cookbook", 0], ["🩺", "Systems", "organs + STOP", "/systems", 0],
+];
+function drawApps(links, homelab) {
+  const box = $("apps"); box.replaceChildren();
+  function add(ic, title, sub, href, ext) {
+    const okHref = ext ? /^https?:\/\//i.test(String(href || "")) : /^\/[a-z]*$/.test(String(href || ""));   // config-supplied links: only http(s) may become a link
+    const a = el("a", { class: "app" + (okHref ? "" : " off"), href: okHref ? href : "#" });
+    if (ext) { a.setAttribute("target", "_blank"); a.setAttribute("rel", "noopener"); }
+    a.appendChild(el("span", { class: "ic", "aria-hidden": "true" }, ic));
+    const d = el("div"); d.appendChild(el("b", {}, title)); d.appendChild(el("span", {}, sub)); a.appendChild(d); box.appendChild(a);
+  }
+  APPS.forEach((x) => add(x[0], x[1], x[2], x[3], false));
+  add("🌍", "God's Eye", "world view", (links || {}).godseye, true);
+  add("📈", "Uptime Kuma", "service history", (links || {}).kuma, true);
+  (homelab || []).forEach((h) => { if (h.url) add(h.ok ? "🟢" : "🔴", h.name, h.ok ? "answering" : "not answering", h.url, true); });
+}
+
+function drawGames(g) {
+  const box = $("games"); box.replaceChildren();
+  const rows = (g && g.rows) || [];
+  $("games-n").textContent = rows.length ? rows.length + " games" + (g.age_h != null ? " · report " + (g.age_h < 1 ? "just now" : g.age_h + " h old") : "") : "";
+  if (!rows.length) { empty(box, (g && g.note) || "No report from your PC yet."); return; }
+  rows.forEach((r) => {
+    const d = el("div", { class: "grow " + r.state }); d.appendChild(el("i")); d.appendChild(el("b", {}, r.name));
+    const bits = [];
+    if (r.plugins != null) bits.push(r.plugins + " plugins" + (r.broken ? " · " + r.broken + " broken" : " · healthy"));
+    if (r.crashes) bits.push(r.crashes + " crash" + (r.crashes === 1 ? "" : "es") + " (14 d)");
+    if (r.fix_waiting) bits.push("fix waiting");
+    if (r.size_gb != null) bits.push(r.size_gb + " GB");
+    d.appendChild(el("span", { class: "m" }, bits.join(" · "))); box.appendChild(d);
+  });
+  (g.libraries || []).forEach((l) => box.appendChild(el("div", { class: "dim small", style: "margin-top:6px" }, "💽 " + l.path + " · " + l.free_gb + " GB free of " + l.total_gb)));
+}
+
+function pct(x, d) { return x == null ? "n/a" : (x >= 0 && d ? "+" : "") + Number(x).toFixed(d === undefined ? 1 : d) + "%"; }
+function drawTrading(t) {
+  const box = $("trading"); box.replaceChildren();
+  if (!t || !t.have) { $("trade-n").textContent = ""; empty(box, "No report yet. First scan is the next market open (Mon-Fri 08:00 Denver)."); return; }
+  $("trade-n").textContent = t.dead ? "DEAD" : (t.killed ? "kill switch tripped" : "alive");
+  const life = el("div", { class: "life" }), top = el("div", { class: "top" });
+  top.appendChild(el("b", {}, "lifeforce " + pct(t.lifeforce_pct)));
+  top.appendChild(el("span", { class: "dim" }, "return " + pct(t.return_pct, 2) + " · SPY " + pct(t.spy_return_pct, 2) + " · vs SPY " + pct(t.excess_pct, 2)));
+  life.appendChild(top);
+  const bar = el("div", { class: "bar " + (t.dead ? "bad" : (t.drawdown_pct > 20 ? "warn" : "")) }), fill = el("i"); fill.style.width = Math.max(0, Math.min(100, (t.lifeforce_pct || 0) / 1.2)) + "%"; bar.appendChild(fill);
+  life.appendChild(bar);
+  life.appendChild(el("div", { class: "dim small", style: "margin-top:6px" }, "Dies at −" + (t.dies_at_pct || 35) + "% from its peak · " + (t.drawdown_pct == null ? "" : "now " + pct(-t.drawdown_pct, 1) + " from peak · ") + (t.trades || 0) + " trades closed" + (t.last_scan ? " · last scan " + t.last_scan : "")));
+  box.appendChild(life);
+  const pos = el("div", { class: "pos" });
+  (t.positions || []).forEach((p) => { const g = el("span", { class: "tag " + (p.pnl_pct > 0 ? "up" : (p.pnl_pct < 0 ? "down" : "")) }, p.symbol + (p.core ? " (core)" : "") + (p.pnl_pct != null ? " " + pct(p.pnl_pct, 1) : "")); pos.appendChild(g); });
+  if (!(t.positions || []).length) empty(box, "Holding nothing yet."); else box.appendChild(pos);
+  box.appendChild(el("div", { class: "dim small", style: "margin-top:8px" }, "A simulation: no orders are ever placed and real money stays off."));
+}
+
+function drawChecks(c) {
+  const box = $("checks"); box.replaceChildren();
+  if (!c || !c.have) { $("checks-n").textContent = ""; empty(box, "It has not taken its exam yet. Use the buttons on the Self-check tile below."); return; }
+  $("checks-n").textContent = "last run " + c.ts;
+  Object.keys(c.tiers).forEach((k) => {
+    const t = c.tiers[k], row = el("div", { class: "tier" }), top = el("div", { class: "top" });
+    top.appendChild(el("b", {}, k === "plan" ? "Planning (does it write sane plans?)" : k === "code" ? "Coding (does its code pass hidden tests?)" : k));
+    top.appendChild(el("b", { class: t.failed.length ? "bad" : "ok" }, t.passed + "/" + t.total)); row.appendChild(top);
+    const bar = el("div", { class: "bar" + (t.failed.length ? " warn" : "") }), fill = el("i"); fill.style.width = (t.total ? Math.round(100 * t.passed / t.total) : 0) + "%"; bar.appendChild(fill); row.appendChild(bar);
+    if (t.failed.length) row.appendChild(el("div", { class: "dim small", style: "margin-top:4px" }, "Missed: " + t.failed.join(", ")));
+    box.appendChild(row);
+  });
+}
+
+function drawLessons(list) {
+  const box = $("lessons"); box.replaceChildren();
+  $("lessons-n").textContent = list.length ? list.length + " on file" : "";
+  if (!list.length) { empty(box, "None yet. Turn the teacher on (Teacher tile) and use Learn from failures."); return; }
+  list.forEach((l) => {
+    const r = el("div", { class: "row" }); r.appendChild(el("b", {}, l.title)); r.appendChild(el("span", { class: "tag " + l.status }, l.status));
+    if (l.diagnosis) r.appendChild(el("div", { class: "dim small" }, l.diagnosis)); box.appendChild(r);
+  });
+}
+
+function render() {
+  $("clock").textContent = state.local_time;
+  if (changed("xp", state.xp)) drawLevel(state.xp);
+  if (changed("approvals", state.approvals.map((a) => [a.id, a.tool, a.preview, a.risk]))) drawApprovals(state.approvals);
+  else state.approvals.forEach((a) => { const t = document.getElementById("age-" + a.id); if (t) t.textContent = a.id + " · " + a.age_s + "s"; });
+  if (changed("missions", [state.missions, state.standing])) drawMissions(state.missions, state.standing);
+  if (changed("health", state.health)) drawHealth(state.health);
+  if (changed("decisions", state.decisions)) drawDecisions(state.decisions || []);
+  if (changed("repos", state.repos)) drawRepos(state.repos || []);
+  if (changed("mind", state.mind)) drawMind(state.mind);
+  if (changed("upgrades", state.upgrades)) drawUpgrades(state.upgrades);
+  if (changed("money", state.money)) drawMoney(state.money);
+  if (changed("gamepilot", state.gamepilot)) drawGamepilot(state.gamepilot);
+  if (changed("shards", state.shards)) drawShards(state.shards || []);
+  if (changed("nightshift", state.nightshift)) drawNight(state.nightshift || {});
+  if (changed("transcription", state.transcription)) drawTranscripts(state.transcription || {});
+  if (changed("earnings", state.earnings)) drawEarnings(state.earnings || {});
+  if (changed("freelance", state.freelance)) drawFreelance(state.freelance || {});
+  if (changed("content", state.content)) drawContent(state.content || {});
+  if (changed("subscriptions", state.subscriptions)) drawSubscriptions(state.subscriptions || {});
+  if (changed("alive", [state.alive, state.background])) drawAlive(state.alive || [], state.background || {});
+  if (changed("feed", state.feed)) drawFeed(state.feed || []);
+  if (changed("growth", [state.growth, state.timeline])) drawGrowth(state.growth, state.timeline || []);
+  if (changed("trust", state.trust)) drawTrust(state.trust);
+  if (changed("learning", state.learning)) drawLearning(state.learning);
+  if (changed("library", state.library)) drawLibrary(state.library);
+  if (changed("apps", [state.links, state.homelab])) drawApps(state.links, state.homelab);
+  if (changed("games", state.games)) drawGames(state.games);
+  if (changed("trading", state.trading)) drawTrading(state.trading);
+  if (changed("checks", state.checks)) drawChecks(state.checks);
+  if (changed("lessons", state.lessons)) drawLessons(state.lessons || []);
+  if (changed("addons", state.addons)) drawAddons(state.addons || []);
+  if (changed("monitors", state.monitors)) drawMonitors(state.monitors || []);
+  if (changed("memory", state.memory)) drawMemory(state.memory || {});
+  if (changed("skills", state.skills)) drawSkills(state.skills);
+  if (changed("running", state.running)) drawRunning(state.running || { mission: null, models: [], in_flight: 0, standing_active: 0 });
+  if (changed("tasks", state.tasks)) drawTasks(state.tasks || {});
+  if (changed("services", state.services)) drawServices(state.services || []);
+  if (changed("homelab", state.homelab)) drawHomelab(state.homelab || []);
+  if (changed("server", state.server)) drawServer(state.server || {});
+  if (changed("events", state.events)) drawTicker(state.events);
+  $("l-godseye").setAttribute("href", state.links.godseye || "#");
+  $("l-kuma").setAttribute("href", state.links.kuma || "#");
+}
+
+async function poll() {
+  try {
+    const r = await fetch("/api/command", { credentials: "same-origin", cache: "no-store" });
+    if (r.status === 401 || r.status === 403) throw new Error("Not authorised - log in to AURIX as an admin first.");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    state = await r.json(); $("err").style.display = "none";
+    const l = $("live"); l.textContent = "live"; l.className = "chip ok"; render();
+  } catch (e) {
+    $("err").textContent = String(e.message || e); $("err").style.display = "block";
+    const l = $("live"); l.textContent = "offline"; l.className = "chip bad";
+  }
+}
+
+$("stop").addEventListener("click", async () => {
+  if (!confirm("STOP everything?\n\nHalts the active mission, denies all pending approvals, pauses standing missions and kills sandbox processes.")) return;
+  try {
+    const r = await fetch("/api/systems/stop", { method: "POST", credentials: "same-origin", headers: { "X-AURIX-Confirm": "STOP" } });
+    const j = await r.json(); toast(r.ok ? String(j.message).replace(/<[^>]+>/g, "") : "STOP failed: " + (j.detail || r.status));
+  } catch (e) { toast("STOP failed: " + e); }
+  poll();
+});
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+poll(); setInterval(() => { if (!document.hidden) poll(); }, 4000);
+</script>
+</body>
+</html>

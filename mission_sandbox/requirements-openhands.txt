@@ -1,0 +1,6 @@
+# OPTIONAL layer: the OpenHands coding-agent SDK. Installed by the Dockerfile with `|| echo` so a
+# failure here (version conflict, wheel missing) can NEVER break the main sandbox build; the
+# mission runner then falls back to the built-in agent. Check what you got:
+#   docker compose exec sandbox python /opt/tools/openhands_run.py --selftest
+openhands-sdk
+openhands-tools

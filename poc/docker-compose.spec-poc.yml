@@ -1,0 +1,83 @@
+# Isolated proof-of-concepts for the Activation Handoff §10 tasks #4-#7 (2026-09-19, approved by the owner):
+#   #4 OPA policy stub wired into a real action path   #5 immudb tamper-evident write path
+#   #6 NATS pub/sub proof of concept                   #7 LiteLLM in front of Ollama
+#
+# ISOLATION: its own compose project ("aurix-poc") and its own network; NOTHING is published on the host or the LAN (tests run in
+# a throwaway client container on the same network); memory-capped; no access to the running AURIX stack's network or data
+# (the audit log is mounted read-only into the test container only). Remove everything with:  bash poc/run_spec_poc.sh down
+#
+# Run through poc/run_spec_poc.sh: it creates the secrets file (~/.aurix-poc.env, mode 600, outside the synced repo) and exports
+# the two variables below. Never put those values in this file.
+name: aurix-poc
+
+services:
+  nats:                                   # spec #6: event bus (+ JetStream persistence)
+    image: nats:2-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4    # nats-server 2.15.0, tested 2026-09-19
+    command: ["-js", "-sd", "/data"]
+    volumes: [nats-data:/data]
+    networks: [poc]
+    mem_limit: 128m
+    security_opt: ["no-new-privileges:true"]
+
+  opa:                                    # spec #4: policy engine; the policy is mounted read-only
+    image: openpolicyagent/opa:latest@sha256:1b9ca9be95e6867ac658bfd3aa36804064c06017c7977759de68e9dd00de37fb    # OPA 1.20.2, tested 2026-09-19
+    command: ["run", "--server", "--addr=0.0.0.0:8181", "--log-level=error", "/policies"]
+    volumes: ["./policies:/policies:ro"]
+    networks: [poc]
+    mem_limit: 128m
+    security_opt: ["no-new-privileges:true"]
+
+  immudb:                                 # spec #5: tamper-evident store used as the external witness of the audit chain head
+    image: codenotary/immudb:latest@sha256:f2efcf6a3de73b31691e0afb8dfec972642aaf0699b93387d1ec6074aedb2953    # immudb 1.11.0, tested 2026-09-19
+    environment:
+      IMMUDB_ADMIN_PASSWORD: ${IMMUDB_ADMIN_PASSWORD:?start it through poc/run_spec_poc.sh}
+    volumes: [immudb-data:/var/lib/immudb]
+    networks: [poc]
+    mem_limit: 256m
+    security_opt: ["no-new-privileges:true"]
+
+  litellm:                                # spec #7: model routing in front of Ollama (GPU box first, CPU box as fallback)
+    image: ghcr.io/berriai/litellm:main-stable@sha256:d295634e09c648dcdb72c4cc2dd226f5fb87823a73e88cbbed6f205e4deb044b    # LiteLLM 1.101.0, tested 2026-09-19
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?start it through poc/run_spec_poc.sh}
+      LITELLM_TELEMETRY: "False"
+    volumes: ["./litellm_config.yaml:/app/config.yaml:ro"]
+    extra_hosts: ["host.docker.internal:host-gateway"]          # the CPU box's own Ollama
+    networks: [poc]
+    mem_limit: 1g
+    security_opt: ["no-new-privileges:true"]
+
+  client:                                 # throwaway test runner (docker compose run --rm client ...), same network, no ports
+    image: python:3.12-slim
+    profiles: ["test"]
+    working_dir: /poc
+    environment:
+      PYTHONPATH: /app
+      PYTHONDONTWRITEBYTECODE: "1"
+      AURIX_PROJECT_ROOT: /tmp/aurix                            # tests write THEIR OWN audit log, never the real one
+      NATS_HOST: nats
+      OPA_URL: http://opa:8181
+      IMMUDB_HOST: immudb
+      IMMUDB_ADMIN_PASSWORD: ${IMMUDB_ADMIN_PASSWORD:?}
+      LITELLM_URL: http://litellm:4000
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?}
+    volumes:
+      - "./:/poc:ro"
+      - "../src:/app/src:ro"
+      - "../scripts:/app/scripts:ro"
+      - "${AURIX_AUDIT_FILE:-../data/audit.jsonl}:/audit/audit.jsonl:ro"
+      - "${AURIX_AUDIT_ACK_FILE:-../data/audit_ack.json}:/audit/audit_ack.json:ro"     # the owner-acknowledged fork; verify() needs it beside the log
+    networks: [poc]
+    mem_limit: 256m
+
+networks:
+  poc:
+    name: aurix_poc_net
+    ipam:
+      config:
+        - subnet: 172.30.77.0/24        # PINNED: the CPU box's firewall (ufw) is per-subnet, so one rule for this range stays valid across restarts
+
+volumes:
+  nats-data:
+  immudb-data:

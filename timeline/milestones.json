@@ -1,0 +1,183 @@
+{
+  "about": "Curated milestones of AURIX's growth. Newest last. `tests` is the Foundation test count at that point where known. Live events (missions, skills, lessons, fixes, eval scores) are merged in from the audit log at runtime.",
+  "now": {
+    "foundation_tests": 932
+  },
+  "milestones": [
+    {
+      "date": "2026-09-17",
+      "icon": "🧬",
+      "title": "Foundation 1.0 is born",
+      "detail": "Identity and constitution, a hash-chained audit log nobody can quietly rewrite, a risk-scored approval gate, missions with contracts, a heartbeat. The rule from day one: the model proposes, code decides."
+    },
+    {
+      "date": "2026-09-18",
+      "icon": "🧪",
+      "title": "A safe place to run code",
+      "detail": "An isolated sandbox (no secrets, no network), OpenHands as the coding agent inside it, and the first real tools: CT scan to printable STL, print-cost quotes, transcription."
+    },
+    {
+      "date": "2026-09-19",
+      "icon": "🌙",
+      "title": "The overnight build",
+      "detail": "Standing (scheduled) missions, the Command Center dashboard, the skill forge (AURIX writes and tests its own small tools, you approve), a watchdog that messages you, and a nightly NAS backup. The audit log became safe for many writers after a test I ran forked it - and I told you at once."
+    },
+    {
+      "date": "2026-09-19",
+      "icon": "🩺",
+      "title": "Server healed",
+      "detail": "Disk went from 96% to 52%, the reboot emergency-mode cause was found and fixed, God's Eye was recovered, and four spec proofs-of-concept (OPA, immudb, NATS, LiteLLM) passed in isolation."
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "🗂️",
+      "title": "One folder",
+      "detail": "Everything consolidated into a single folder with a compatibility link, old brain archived to the NAS, secrets kept off the sync. Your three projects were stored, and a bug that silently clipped their text was fixed.",
+      "tests": 443
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "📈",
+      "title": "Paper trading comes back to life",
+      "detail": "Rebuilt as an honest simulation: real ledger, trading costs, a SPY benchmark, always fully invested, dies at -35% from its peak. Real money stays off."
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "🔧",
+      "title": "The wall",
+      "detail": "Your mission was blocked because the small model 'needed' trading credentials for a prime-number script. Root cause fixed in code: a model can no longer create a requirement out of a guess. The eval runner then caught two more holes.",
+      "tests": 509
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "⚡",
+      "title": "Fast lane, self-checks, and a teacher",
+      "detail": "Safe read-only and sandbox-only missions start without a tap. A scoreboard of 19 checks runs itself nightly. A frontier model can now write the guidance the local model was missing - tested first, used only after you approve.",
+      "tests": 546
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "🎮",
+      "title": "The game doctor",
+      "detail": "A small agent on your PC reports on your Steam games and mods; AURIX sends clear yes/no fixes, signed and reversible. It nearly proposed switching off 136 healthy plugins - I caught that against your real load order before installing.",
+      "tests": 609
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "🕹️",
+      "title": "One push, a dashboard, and buttons",
+      "detail": "One button re-checks everything. Every add-on and monitor on one page. Tap-instead-of-type buttons in Telegram and on the web, an always-running panel with live thoughts, this growth timeline, and a trust report built from its own audit log."
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "🔁",
+      "title": "Every fail, test and message teaches it",
+      "detail": "Failures, refusals, corrections and results now go into an experience ledger. A real failure becomes a permanent self-check that runs every night, so the same mistake cannot return unnoticed. New releases and improvements now tell you by themselves, with an OK button."
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "🛟",
+      "title": "Direct fixes and a way back",
+      "detail": "Errors are now handled by AURIX itself instead of being handed off: a crash the log pins on one mod DLL becomes a yes/no fix (undoable), and deploys keep the previous build and roll themselves back if the new one does not come up. The dashboard also opens every screen and shows your games, paper trading, self-check and lessons."
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "📥",
+      "title": "Send it a repo link",
+      "detail": "Paste a GitHub link in Telegram or on the dashboard. It copies the repo read-only, reads it as text (nothing is run or installed), and sends a report with a verdict. Yes stores that exact commit inert in a library; no deletes it."
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "🧠",
+      "title": "Foundation 2: a memory you can trust",
+      "detail": "One memory instead of scattered notes: say remember/forget in Telegram, see and edit it on the dashboard, and AURIX offers (with a tap) to remember things you say about yourself. Old or prompt-like entries are proposed for forgetting. Chats now get only notes relevant to what you asked, not the newest five every time."
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "🛠️",
+      "title": "The upgrade lane",
+      "detail": "While you are away, AURIX turns your API tokens into upgrades: it drafts one small change at a time (your ideas first, then a rotating review of its own modules), tests it in the isolated sandbox against everything that already passes, and asks you. Approve deploys it with a self-rolling-back health check; Undo restores the old code."
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "💰",
+      "title": "Money hub and strategy lab",
+      "detail": "An honest ranked list of 15 ways to make or save money (each says what AURIX does and what only you can do), and a paper lab that backtests 11 textbook strategies with costs and tracks them live next to SPY. On 10 years of data nothing convincingly beat just holding SPY, which is exactly why it is tested before any real money is even considered."
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "📺",
+      "title": "GamePilot for the Fire TV",
+      "detail": "Plug in a Fire TV Stick, open one web address, and see your gaming PC's game full screen. Watch-only until you arm control; only games and Steam are ever shown or typed into; the PC agent calls out (nothing connects in), signs everything, and releases every key if anything goes quiet. Built and tested; the PC agent is not started until you start it."
+    },
+    {
+      "date": "2026-09-20",
+      "icon": "🤖",
+      "title": "Every helper, one pause switch",
+      "detail": "All 11 things AURIX does on its own are listed with what they can spend and what only you can approve, each with a health light and a pause switch that also stops its cron job on the server. The morning digest now warns when one has gone stale."
+    },
+    {
+      "date": "2026-09-22",
+      "icon": "🎁",
+      "title": "The overnight shift",
+      "detail": "Every night, free and local: a health check, a money idea researched down to its first step, a nudge on a project that has gone quiet, strategy lab news. Opened once with the morning digest or on demand ('unwrap'), and shown on the dashboard as 'While you were away'.",
+      "tests": 812
+    },
+    {
+      "date": "2026-09-22",
+      "icon": "🪙",
+      "title": "Self-hosted, f2p by design",
+      "detail": "No API key, an empty credit balance, a refused key, or a dead network no longer blocks the teacher or the upgrade lane - both now fall back to AURIX's own free local model automatically. Weaker drafts, same testing and approval either way; AURIX never has to stop working for lack of paid credits.",
+      "tests": 825
+    },
+    {
+      "date": "2026-09-22",
+      "icon": "🎙️",
+      "title": "Transcription: real, finished work",
+      "detail": "Send AURIX a voice note or audio file on Telegram; it transcribes it locally with Whisper (free, no account, no API key) and sends the text back, deleting the audio afterward. Delivering the transcript and getting paid stays yours - AURIX only does the transcribing.",
+      "tests": 844
+    },
+    {
+      "date": "2026-09-22",
+      "icon": "💵",
+      "title": "One earnings ledger",
+      "detail": "A single running total for everything the money workstreams produce: estimated entries logged automatically from finished work (like a transcription job), confirmed entries when the owner reports a real payment landed. AURIX never holds or moves the money - this just makes 'approve, then see it come in' something real to look at.",
+      "tests": 852
+    },
+    {
+      "date": "2026-09-22",
+      "icon": "🧰",
+      "title": "Freelance drafts",
+      "detail": "Paste a client's job brief and AURIX drafts a real, working script for it - frontier model if funded, the free local one otherwise. You review, keep or discard, and deliver it yourself; no dollar figure is guessed, since job scope varies too much to fake a number honestly.",
+      "tests": 870
+    },
+    {
+      "date": "2026-09-22",
+      "icon": "🖥️",
+      "title": "AURIX checks its own hardware",
+      "detail": "The gpu_rental money idea used to ask the owner to type their GPU model - twice, and it never stuck. The PC agent now reads it itself (read-only, via Windows) and gives an honest, tier-based take instead of a generic range: a modern card gets an optimistic note, an older one without tensor cores gets told plainly that real income is likely near zero.",
+      "tests": 873
+    },
+    {
+      "date": "2026-09-22",
+      "icon": "📝",
+      "title": "Content drafts",
+      "detail": "Give AURIX a topic for the niche channel/site idea and it drafts a real piece - title, outline, full body - frontier model if funded, the free local one otherwise. Unlike code, prose can be confidently wrong about facts, so anything the model isn't sure of comes back marked [VERIFY] instead of an invented specific. The owner reviews, keeps or discards; recording, editing, publishing and disclosure rules stay theirs.",
+      "tests": 890
+    },
+    {
+      "date": "2026-09-22",
+      "icon": "💳",
+      "title": "Subscription audit",
+      "detail": "List what you pay for, one line each, and AURIX builds a running checklist: a monthly-equivalent total, duplicates flagged, a to-do near each renewal date. Deliberately code-only, no model - a real dollar figure is never guessed at, a line it cannot read is reported plainly instead. Reviewing statements and cancelling stay yours.",
+      "tests": 908
+    },
+    {
+      "date": "2026-09-23",
+      "icon": "📚",
+      "title": "Reading library",
+      "detail": "Send AURIX a link or paste text and it fetches (read-only, SSRF-guarded to public hosts only) or takes the text as-is, summarizes it with the single best takeaway, and asks before keeping anything. Video links are tracked by title/URL only - no transcription yet. Your very first ask from this session, picked back up once the money workstreams were solid.",
+      "tests": 932
+    }
+  ]
+}
