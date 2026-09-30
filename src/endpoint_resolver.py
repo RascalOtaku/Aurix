@@ -98,18 +98,26 @@ def resolve_url(url: str) -> str:
 def normalize_base(url: str) -> str:
     """Strip known API path suffixes from a base URL."""
     url = (url or "").strip().rstrip("/")
-    for suffix in ["/models", "/chat/completions", "/completions", "/v1/messages"]:
+    for suffix in [
+        "/models",
+        "/chat/completions",
+        "/completions",
+        "/v1/messages",
+        "/v1/chat/completions",
+        "/v1/models",
+        "/api/chat",
+        "/api/tags",
+        "/api/generate",
+    ]:
         if url.endswith(suffix):
             url = url[: -len(suffix)].rstrip("/")
-    for suffix in ["/chat", "/tags", "/generate"]:
-        if url.endswith("/api" + suffix):
-            url = url[: -len(suffix)].rstrip("/")
+            break
     return url
 
 
 def _anthropic_api_root(base: str) -> str:
     """Return Anthropic's API root, preserving /v1 for OpenAI-compatible APIs elsewhere."""
-    base = (base or "").strip().rstrip("/")
+    base = normalize_base(base)
     host = urlparse(base).hostname or ""
     if host.endswith("anthropic.com") and base.endswith("/v1"):
         return base[:-3].rstrip("/")
@@ -118,7 +126,7 @@ def _anthropic_api_root(base: str) -> str:
 
 def _ollama_api_root(base: str) -> str:
     """Return the native Ollama API root, adding /api for ollama.com hosts."""
-    base = (base or "").strip().rstrip("/")
+    base = normalize_base(base)
     parsed = urlparse(base)
     host = parsed.hostname or ""
     path = (parsed.path or "").rstrip("/")
@@ -132,7 +140,7 @@ def _ollama_api_root(base: str) -> str:
 
 def build_chat_url(base: str) -> str:
     """Return the correct chat endpoint URL for a given base."""
-    base = resolve_url(base)
+    base = normalize_base(resolve_url(base)).rstrip("/")
     provider = _detect_provider(base)
     host = urlparse(base).hostname or ""
     if provider == "anthropic" or host.endswith("anthropic.com"):
@@ -144,7 +152,7 @@ def build_chat_url(base: str) -> str:
 
 def build_models_url(base: str) -> str:
     """Return the provider-specific model-list endpoint URL for a base."""
-    base = resolve_url(base)
+    base = normalize_base(resolve_url(base)).rstrip("/")
     provider = _detect_provider(base)
     host = urlparse(base).hostname or ""
     if provider == "anthropic" or host.endswith("anthropic.com"):
@@ -156,6 +164,7 @@ def build_models_url(base: str) -> str:
 
 def build_headers(api_key: Optional[str], base: str) -> Dict[str, str]:
     """Build auth headers for an endpoint."""
+    base = normalize_base(base)
     provider = _detect_provider(base)
     headers: Dict[str, str] = {}
     if provider == "anthropic":
