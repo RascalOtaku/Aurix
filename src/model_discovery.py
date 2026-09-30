@@ -70,9 +70,14 @@ def discover_tailscale_hosts() -> List[str]:
 
 
 class ModelDiscovery:
-    def __init__(self, default_host: str, openai_api_key: Optional[str] = None):
+    def __init__(self, default_host: str, openai_api_key: Optional[str] = None,
+                 openrouter_api_key: Optional[str] = None):
         self.default_host = default_host
         self.openai_api_key = openai_api_key
+        # OpenRouter is OpenAI-compatible, but its model catalogue is exposed
+        # from a cloud-specific endpoint and must not be included in the local
+        # host/port scan.
+        self.openrouter_api_key = openrouter_api_key or os.getenv("OPENROUTER_API_KEY", "").strip() or None
         self.openai_compat_path = "/v1/chat/completions"
 
     def _get_hosts(self) -> List[str]:
@@ -164,12 +169,41 @@ class ModelDiscovery:
 
         # Sort by host then port for consistent ordering
         items.sort(key=lambda x: (x["host"], x["port"]))
-
         logger.info(f"Discovered {len(items)} model endpoints across {len(hosts)} hosts")
         return {"hosts": hosts, "items": items}
 
+    def _discover_openrouter(self) -> Optional[Dict[str, Any]]:
+        """Fetch OpenRouter's live model catalogue when configured.
+
+        OpenRouter intentionally remains opt-in: without OPENROUTER_API_KEY we
+        do not make anonymous requests or expose a provider that cannot run.
+        The returned URL is the OpenAI-compatible chat-completions endpoint.
+        """
+        if not self.openrouter_api_key:
+            return None
+        try:
+            response = httpx.get(
+                "https://openrouter.ai/api/v1/models",
+                headers={"Authorization": f"Bearer {self.openrouter_api_key}"},
+                timeout=8,
+            )
+            response.raise_for_status()
+            data = response.json() or {}
+            ids = [m.get("id") for m in data.get("data", []) if m.get("id")]
+            if not ids:
+                return None
+            return {
+                "provider": "openrouter",
+                "url": "https://openrouter.ai/api/v1/chat/completions",
+                "models": ids,
+                "models_display": [i.split("/")[-1] for i in ids],
+            }
+        except Exception as e:
+            logger.warning("OpenRouter model discovery failed: %s", e)
+            return None
+
     def get_providers(self) -> Dict[str, Any]:
-        """Get all available providers"""
+        """Get all available providers."""
         discovery = self.discover_models()
         items = discovery["items"]
         providers = [{"provider": "vllm", "hosts": discovery["hosts"], "items": items}]
@@ -186,5 +220,9 @@ class ModelDiscovery:
                     "models": openai_models
                 }]
             })
+
+        openrouter = self._discover_openrouter()
+        if openrouter:
+            providers.append({"provider": "openrouter", "items": [openrouter]})
 
         return {"providers": providers}
