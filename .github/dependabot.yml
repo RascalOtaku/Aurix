@@ -5,6 +5,11 @@ updates:
     directory: /
     schedule: {interval: weekly}
     open-pull-requests-limit: 5
+    ignore:
+      # MCP SDK 2.x drops the decorator API every server in mcp_servers/ uses (they crash on start).
+      # Port them, then remove this rule; tests/test_mcp_e2e.py proves a server still starts.
+      - dependency-name: mcp
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /
     schedule: {interval: weekly}

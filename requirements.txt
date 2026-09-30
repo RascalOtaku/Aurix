@@ -3,8 +3,8 @@ uvicorn
 python-multipart
 python-dotenv
 httpx
-pydantic>=2.0
-pydantic-settings>=2.0
+pydantic>=2.13.5
+pydantic-settings>=2.15.0
 SQLAlchemy
 pypdf
 beautifulsoup4
@@ -35,9 +35,9 @@ cryptography
 bcrypt
 # Pinned below 2.x: mcp 2.0 removed the @server.list_tools()/call_tool() decorators that the built-in
 # Memory and RAG MCP servers (mcp_servers/*.py) use, so an unpinned rebuild silently broke both.
-mcp>=1.23,<2
+mcp>=1.23,<2   # 2.x removed Server.list_tools(); every server in mcp_servers/ needs porting first (tests/test_mcp_e2e.py)
 # Knowledge graph client (src/graph_memory.py). 5.x matches the neo4j:5 server image.
-neo4j>=5.20,<6
+neo4j>=6.3.1,<7
 pyotp
 qrcode[pil]
 croniter

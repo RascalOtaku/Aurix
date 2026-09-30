@@ -1,6 +1,6 @@
 # AURIX mission sandbox: tools baked in at build time (this image has internet only at BUILD
 # time; at run time it sits on an internal network with no internet, no LAN, no secrets).
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         bash coreutils ffmpeg jq git curl ca-certificates tini \
