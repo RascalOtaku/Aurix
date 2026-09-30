@@ -304,5 +304,52 @@ class GitSyncUpstreamCloneTests(unittest.TestCase):
             self.assertNotIn("personal_docs", published)
 
 
+@unittest.skipUnless(shutil.which("git") and shutil.which("bash"), "needs git and bash")
+class GitSyncToBranchTests(unittest.TestCase):
+    """--to-branch: push this machine's state to its own branch, merge nothing; after it is merged into main
+    elsewhere, the next plain sync is a fast-forward with no conflicts."""
+
+    def git(self, cwd, *args):
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd, check=True,
+                              capture_output=True, text=True).stdout
+
+    def test_hand_off_then_fast_forward(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+                       GIT_COMMITTER_EMAIL="t@t")
+            github = d / "RascalOtaku" / "Aurix.git"; github.parent.mkdir()
+            subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(github)], check=True)
+            seed = d / "seed"
+            subprocess.run(["git", "clone", "-q", str(github), str(seed)], check=True, capture_output=True)
+            (seed / "scripts" / "git-hooks").mkdir(parents=True)
+            shutil.copy(ROOT / "scripts" / "aurix_git_sync.sh", seed / "scripts")
+            shutil.copy(ROOT / "scripts" / "git-hooks" / "secret_guard.sh", seed / "scripts" / "git-hooks")
+            (seed / "app.py").write_text("a\nb\nc\n")
+            self.git(seed, "add", "-A"); self.git(seed, "commit", "-qm", "init"); self.git(seed, "push", "-q", "origin", "main")
+            pc = d / "pc"
+            subprocess.run(["git", "clone", "-q", str(github), str(pc)], check=True, capture_output=True)
+            (seed / "app.py").write_text("a\nb\nc-main\n")
+            self.git(seed, "commit", "-qam", "main moves on"); self.git(seed, "push", "-q", "origin", "main")
+            (pc / "app.py").write_text("a-pc\nb\nc\n")
+
+            run = lambda *a: subprocess.run(["bash", "scripts/aurix_git_sync.sh", *a], cwd=pc, env=env,
+                                            capture_output=True, text=True, timeout=60)
+            self.assertEqual(run("sync", "--to-branch=main").returncode, 64)           # never onto main itself
+            r = run("sync", "--to-branch=server-state")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(self.git(github, "show", "server-state:app.py"), "a-pc\nb\nc\n")
+            self.assertEqual(self.git(github, "show", "main:app.py"), "a\nb\nc-main\n")   # main untouched
+            self.assertEqual((pc / "app.py").read_text(), "a-pc\nb\nc\n")             # nothing merged locally
+
+            self.git(seed, "fetch", "-q", "origin")                                     # merged "elsewhere"
+            self.git(seed, "merge", "-q", "--no-edit", "origin/server-state")
+            self.git(seed, "push", "-q", "origin", "main")
+            r = run("sync")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual((pc / "app.py").read_text(), "a-pc\nb\nc-main\n")
+            self.assertNotIn("CONFLICT", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -5,6 +5,8 @@
 #   bash scripts/aurix_git_sync.sh sync          commit local edits -> merge GitHub's -> push the result
 #   bash scripts/aurix_git_sync.sh sync --dry-run   everything up to (not including) the commit, merge and push
 #   bash scripts/aurix_git_sync.sh sync --add-new   also publish NEW files (only after reviewing the list it shows)
+#   bash scripts/aurix_git_sync.sh sync --to-branch=NAME   commit and push this machine's state to its own branch,
+#                                                   merge nothing (for a big merge done and tested elsewhere)
 #
 # Your PC and home server already mirror each other with Syncthing, so run this on ONE of them (the server:
 # it is always on). Running it on both would have two git histories racing over the same synced files.
@@ -45,14 +47,16 @@ REMOTE_URL="${AURIX_SYNC_REMOTE:-https://github.com/RascalOtaku/Aurix.git}"
 BRANCH="${AURIX_SYNC_BRANCH:-main}"
 EXTRA="${AURIX_SYNC_MERGE:-}"
 MODE="${1:-status}"
-DRY=0; ADD_NEW=0
+DRY=0; ADD_NEW=0; TO_BRANCH=""
 for a in "${@:2}"; do
     case "$a" in
         --dry-run) DRY=1 ;;
         --add-new) ADD_NEW=1 ;;
-        *) echo "unknown option: $a (use --dry-run and/or --add-new)"; exit 64 ;;
+        --to-branch=*) TO_BRANCH="${a#--to-branch=}" ;;
+        *) echo "unknown option: $a (use --dry-run, --add-new, --to-branch=NAME)"; exit 64 ;;
     esac
 done
+case "$TO_BRANCH" in ""|*[!A-Za-z0-9._/-]*|"$BRANCH") [ -z "$TO_BRANCH" ] || { echo "bad --to-branch name: $TO_BRANCH"; exit 64; } ;; esac
 mkdir -p logs 2>/dev/null
 [ -w logs ] || { echo "STOP: cannot write to $(pwd)/logs (owned by $(stat -c %U logs 2>/dev/null || echo '?')). Fix: sudo chown -R $(id -un): $(pwd)/logs"; exit 1; }
 LOG="logs/git_sync.log"
@@ -183,6 +187,13 @@ fi
 if [ -n "$staged_files" ]; then
     git commit -q -m "Sync from $(hostname) $(date '+%Y-%m-%d %H:%M')" || die "commit failed"
     say "Committed $(printf '%s\n' "$staged_files" | grep -c .) local file(s)."
+fi
+
+if [ -n "$TO_BRANCH" ]; then
+    # Hand the local state over for merging elsewhere: push it to its own branch, merge nothing here.
+    git push -q "$REMOTE" "HEAD:refs/heads/$TO_BRANCH" || die "push to branch $TO_BRANCH failed"
+    say "Pushed this machine's state to GitHub branch '$TO_BRANCH' ($(git rev-parse --short HEAD)); nothing merged here. Once it is merged into $BRANCH, run: sync"
+    exit 0
 fi
 
 for ref in "$REMOTE/$BRANCH" $(for b in $EXTRA; do echo "$REMOTE/$b"; done); do
