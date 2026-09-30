@@ -9,6 +9,8 @@ from fastapi import HTTPException
 from typing import Optional, Dict, List
 from urllib.parse import urlparse
 
+from src import key_rotation
+
 logger = logging.getLogger(__name__)
 
 class LLMConfig:
@@ -224,6 +226,8 @@ def _detect_provider(url: str) -> str:
         return "anthropic"
     if "openrouter.ai" in u:
         return "openrouter"
+    if "opencode.ai/zen" in u:
+        return "opencode"
     if "groq.com" in u:
         return "groq"
     return "openai"
@@ -236,7 +240,7 @@ def _provider_headers(provider: str, headers: Optional[Dict] = None) -> Dict[str
     if provider == "openrouter":
         h.setdefault("HTTP-Referer", "https://github.com/pewdiepie-archdaemon/odysseus")
         h.setdefault("X-OpenRouter-Title", "Odysseus")
-    return h
+    return key_rotation.apply(provider, h)
 
 
 def _provider_label(url: str) -> str:
@@ -247,6 +251,7 @@ def _provider_label(url: str) -> str:
     if "api.x.ai" in u or "x.ai/" in u: return "xAI"
     if "openai.com" in u: return "OpenAI"
     if "openrouter.ai" in u: return "OpenRouter"
+    if "opencode.ai" in u: return "OpenCode Zen"
     if "groq.com" in u: return "Groq"
     if "mistral.ai" in u: return "Mistral"
     if "deepseek.com" in u: return "DeepSeek"
@@ -525,7 +530,6 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
              max_tokens: int = LLMConfig.DEFAULT_MAX_TOKENS, headers: Optional[Dict] = None, 
              timeout: int = LLMConfig.DEFAULT_TIMEOUT, prompt_type: Optional[str] = None) -> str:
     """Synchronous LLM call with optional prompt type enhancement."""
-    h = _provider_headers(_detect_provider(url))
     # Tolerate headers that arrive as a JSON string (some sessions stored them
     # double-encoded) — otherwise h.update() throws "dictionary update sequence
     # element #0 has length 1; 2 is required".
@@ -534,8 +538,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
             headers = json.loads(headers)
         except Exception:
             headers = None
-    if isinstance(headers, dict):
-        h.update(headers)
+    h = _provider_headers(_detect_provider(url), headers if isinstance(headers, dict) else None)
 
     messages_copy = _sanitize_llm_messages(messages)
 
@@ -582,6 +585,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     except Exception as e:
         raise HTTPException(502, f"POST {target_url} failed: {e}")
     if not r.is_success:
+        key_rotation.report(provider, h, r.status_code)
         raise HTTPException(502, f"Upstream {target_url} -> {r.status_code}: {r.text}")
     data = r.json()
     try:
@@ -707,6 +711,7 @@ async def llm_call_async(
             r = await client.post(target_url, headers=h, json=payload, timeout=call_timeout)
             duration = time.time() - start
             if not r.is_success:
+                key_rotation.report(provider, h, r.status_code)
                 friendly = _format_upstream_error(r.status_code, r.text, target_url)
                 logger.warning(
                     f"LLM async call to {target_url} failed in {duration:.2f}s "
@@ -814,6 +819,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                 _clear_host_dead(target_url)
                 if r.status_code != 200:
                     raw = (await r.aread()).decode(errors="replace")
+                    key_rotation.report(provider, h, r.status_code)
                     friendly = _format_upstream_error(r.status_code, raw, target_url)
                     yield f'event: error\ndata: {json.dumps({"status": r.status_code, "text": friendly, "raw": raw[:500]})}\n\n'
                     return
@@ -875,6 +881,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                 _clear_host_dead(target_url)
                 if r.status_code != 200:
                     raw = (await r.aread()).decode(errors="replace")
+                    key_rotation.report(provider, h, r.status_code)
                     friendly = _format_upstream_error(r.status_code, raw, target_url)
                     yield f'event: error\ndata: {json.dumps({"status": r.status_code, "text": friendly, "raw": raw[:500]})}\n\n'
                     return

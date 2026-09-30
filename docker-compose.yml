@@ -217,6 +217,54 @@ services:
     cpus: 1.5
     restart: unless-stopped
 
+  # --- Opt-in extras (profile "extras"): not started by a plain `docker compose up`. ---------------------------
+  # Start them with `docker compose --profile extras up -d` (or add `extras` to COMPOSE_PROFILES in .env).
+  # Same isolation as God's Eye: own network, no AURIX secrets, no capabilities, published on ${EXTRAS_BIND}
+  # (default localhost; set the host's Tailscale IP to reach them from your PC, never 0.0.0.0).
+
+  # FileBrowser Quantum (github.com/gtsteffaniak/filebrowser, Apache-2.0): browse/search/preview the AURIX
+  # brain (wiki, memory, sandbox outputs) from a browser. READ-ONLY by default: set FILEBROWSER_MOUNT_MODE=rw
+  # to allow edits. With no FILEBROWSER_ADMIN_PASSWORD it generates a random one and prints it once in
+  # `docker compose logs filebrowser` (it never falls back to "admin").
+  filebrowser:
+    image: gtstef/filebrowser:${FILEBROWSER_TAG:-stable}
+    profiles: ["extras"]
+    ports:
+      - "${EXTRAS_BIND:-127.0.0.1}:${FILEBROWSER_PORT:-8088}:80"
+    environment:
+      - FILEBROWSER_ADMIN_PASSWORD=${FILEBROWSER_ADMIN_PASSWORD:-}
+    volumes:
+      - ${FILEBROWSER_ROOT:-./data/aurix-brain}:/srv:${FILEBROWSER_MOUNT_MODE:-ro}
+      - filebrowser-data:/home/filebrowser/data
+    networks:
+      - extras_net
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    restart: unless-stopped
+
+  # ReClip (github.com/averygan/reclip, MIT): paste a link, get the video/audio (yt-dlp + ffmpeg). Built from
+  # a pinned commit with an option-injection fix (reclip/Dockerfile). It has no login: keep it on localhost
+  # or Tailscale. Downloads land in ./data/reclip. Only download media you have the right to.
+  reclip:
+    build: ./reclip
+    profiles: ["extras"]
+    ports:
+      - "${EXTRAS_BIND:-127.0.0.1}:${RECLIP_PORT:-8899}:8899"
+    volumes:
+      - ./data/reclip:/app/downloads
+    networks:
+      - extras_net
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    cpus: 1.5
+    restart: unless-stopped
+
   # Knowledge graph (src/graph_memory.py): wiki pages + [[wikilinks]] + chunk vectors + the owner's profile.
   # Bolt is reachable only on the compose network (no published ports); the password comes from .env
   # (NEO4J_PASSWORD, never in code). Heap is capped because the host is a small box shared with everything else.
@@ -242,6 +290,7 @@ services:
 
 networks:
   gods_eye_net: {}
+  extras_net: {}
   sandbox_net:
     internal: true
 
@@ -251,3 +300,4 @@ volumes:
   ntfy-cache:
   neo4j-data:
   neo4j-logs:
+  filebrowser-data:

@@ -69,6 +69,16 @@ def discover_tailscale_hosts() -> List[str]:
     return hosts
 
 
+OPENCODE_ZEN_URL = "https://opencode.ai/zen/v1"
+
+
+def _pool_key(provider: str) -> Optional[str]:
+    """First live key from the provider's env key pool (src/key_rotation.py), else None."""
+    from src import key_rotation
+    p = key_rotation.pool(provider)
+    return p.current() if p else None
+
+
 class ModelDiscovery:
     def __init__(self, default_host: str, openai_api_key: Optional[str] = None,
                  openrouter_api_key: Optional[str] = None):
@@ -77,7 +87,7 @@ class ModelDiscovery:
         # OpenRouter is OpenAI-compatible, but its model catalogue is exposed
         # from a cloud-specific endpoint and must not be included in the local
         # host/port scan.
-        self.openrouter_api_key = openrouter_api_key or os.getenv("OPENROUTER_API_KEY", "").strip() or None
+        self.openrouter_api_key = openrouter_api_key or _pool_key("openrouter")
         self.openai_compat_path = "/v1/chat/completions"
 
     def _get_hosts(self) -> List[str]:
@@ -202,6 +212,34 @@ class ModelDiscovery:
             logger.warning("OpenRouter model discovery failed: %s", e)
             return None
 
+    def _discover_opencode_zen(self) -> Optional[Dict[str, Any]]:
+        """OpenCode Zen's catalogue (OpenAI-compatible; includes a rotating free tier).
+
+        Opt-in like OpenRouter: only with OPENCODE_ZEN_API_KEY(S) set. Free models are listed first so the
+        picker (and model_router's `free` strategy) sees them without scrolling.
+        """
+        key = _pool_key("opencode")
+        if not key:
+            return None
+        try:
+            response = httpx.get(f"{OPENCODE_ZEN_URL}/models",
+                                 headers={"Authorization": f"Bearer {key}"}, timeout=8)
+            response.raise_for_status()
+            ids = [m.get("id") for m in (response.json() or {}).get("data", []) if m.get("id")]
+            if not ids:
+                return None
+            from src.model_router import is_free_model
+            ids.sort(key=lambda i: not is_free_model(i))
+            return {
+                "provider": "opencode",
+                "url": f"{OPENCODE_ZEN_URL}/chat/completions",
+                "models": ids,
+                "models_display": ids,
+            }
+        except Exception as e:
+            logger.warning("OpenCode Zen model discovery failed: %s", e)
+            return None
+
     def get_providers(self) -> Dict[str, Any]:
         """Get all available providers."""
         discovery = self.discover_models()
@@ -224,5 +262,9 @@ class ModelDiscovery:
         openrouter = self._discover_openrouter()
         if openrouter:
             providers.append({"provider": "openrouter", "items": [openrouter]})
+
+        zen = self._discover_opencode_zen()
+        if zen:
+            providers.append({"provider": "opencode", "items": [zen]})
 
         return {"providers": providers}

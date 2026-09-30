@@ -37,6 +37,16 @@ The full license texts are kept in [`licenses/`](licenses/).
   `services/search/`). Full text in
   [`licenses/DeepResearch-Apache-2.0.txt`](licenses/DeepResearch-Apache-2.0.txt).
 
+- **Ideas and prompt rules from projects the owner starred** (MIT unless noted; no code copied — see
+  [`docs/STARRED_INTEGRATIONS.md`](docs/STARRED_INTEGRATIONS.md)):
+  [codex-model-router](https://github.com/DrOetker747/codex-model-router) (multi-key rotation on
+  401/402/429, `src/key_rotation.py`),
+  [freebuff](https://github.com/CodebuffAI/freebuff) and
+  [coding-agent-free](https://github.com/maz557/coding-agent-free) (free-model routing, `src/model_router.py`),
+  [archify](https://github.com/tt-a1i/archify) and
+  [i-have-adhd](https://github.com/ayghri/i-have-adhd) (skill summaries in `src/foundation/skills.py`, which
+  load the upstream `SKILL.md` instead when a checkout is present).
+
 ---
 
 ## Bundled via Docker Compose
@@ -50,6 +60,9 @@ just composed.
 | [SearXNG](https://github.com/searxng/searxng) | `searxng/searxng:latest` | Default metasearch backend | AGPL-3.0 |
 | [ChromaDB](https://github.com/chroma-core/chroma) | `chromadb/chroma:latest` | Vector store for memory / RAG | Apache-2.0 |
 | [ntfy](https://github.com/binwiederhier/ntfy) | `binwiederhier/ntfy` | Push notifications (self-hosted reminders) | Apache-2.0 / GPL-2.0 |
+| [God's Eye View](https://github.com/bilawalsidhu/gods-eye-view) | built from pinned commit (`gods_eye/`) | 3D-globe OSINT viewer | MIT (bundled data: see Dockerfile) |
+| [FileBrowser Quantum](https://github.com/gtsteffaniak/filebrowser) | `gtstef/filebrowser` (profile `extras`) | Browse the AURIX brain | Apache-2.0 |
+| [ReClip](https://github.com/averygan/reclip) | built from pinned commit (`reclip/`, profile `extras`) | Video/audio downloader | MIT |
 
 ## Bundled front-end libraries
 
@@ -127,6 +140,11 @@ with this project; their licenses do not bind this codebase, but they deserve
 credit:
 
 - [Ollama](https://github.com/ollama/ollama) — local model serving (MIT)
+- [mcp-for-blender](https://github.com/ahujasid/mcp-for-blender) — opt-in MCP preset `blender` (MIT)
+- [context-mode](https://github.com/mksglu/context-mode) — opt-in MCP preset `context-mode` (Elastic License 2.0; run by `npx`, not redistributed)
+- [HyperFrames](https://github.com/heygen-com/hyperframes) — optional HTML-to-video capability (Apache-2.0)
+- [Open Code Review](https://github.com/alibaba/open-code-review) — optional `ocr` review capability (Apache-2.0)
+- [OpenCode Zen](https://opencode.ai/zen) — optional hosted model provider
 - [Radicale](https://github.com/Kozea/Radicale) — CardDAV/CalDAV server (GPL-3.0)
 - [Dovecot](https://www.dovecot.org/) — IMAP server
 - [isync / mbsync](https://isync.sourceforge.io/) — IMAP mailbox sync (GPL-2.0)

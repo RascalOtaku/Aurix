@@ -102,6 +102,16 @@ REGISTRY: Dict[str, Capability] = {c.id: c for c in [
                InstallPlan("dockerfile", "docker compose build sandbox  (optional layer: "
                                          "mission_sandbox/requirements-openhands.txt)"),
                ("openhands-sdk", "coding-agent")),
+    # optional helpers the planner may add (not required by any pack, so a missing one never blocks a mission)
+    Capability("hyperframes", "HyperFrames: write HTML, render MP4 video (github.com/heygen-com/hyperframes)",
+               "binary", "hyperframes",
+               InstallPlan("manual", "npm install -g hyperframes", "Needs Node.js and Chrome/Chromium for rendering"),
+               ("html-video", "video-render")),
+    Capability("open-code-review", "Open Code Review: line-level LLM code review of a git diff "
+                                   "(github.com/alibaba/open-code-review)", "binary", "ocr",
+               InstallPlan("manual", "npm install -g @alibaba-group/open-code-review",
+                           "Point it at a local model: OCR_LLM_BASE_URL / OCR_LLM_MODEL / OCR_LLM_API_KEY"),
+               ("ocr", "code-review")),
     # owner authorizations: only the owner can grant these (data/authorizations.json)
     Capability("patient-data-consent", "Owner confirms the scan is theirs / consented, and stays local",
                "authorization", "patient-data-consent"),
@@ -347,7 +357,8 @@ PACKS: List[DomainPack] = [
          "depends on platform thresholds."),
         (PackStep("Niche and trend research", "Competitors, gaps, what performs.", ("web_search",)),
          PackStep("Content calendar and scripts", "A week at a time.", ("write_file",)),
-         PackStep("Asset generation", "Images, video, voice.", ("ffmpeg",)),
+         PackStep("Asset generation", "Images, video, voice. For motion graphics, write an HTML composition and "
+                  "render it with HyperFrames (`npx hyperframes render`) when it is installed.", ("ffmpeg",)),
          PackStep("Owner review queue", "Every item waits for approval.", ()),
          PackStep("Publish approved items", "Via approved accounts only.", ("social-accounts",)),
          PackStep("Analytics and iterate", "What worked; adjust the calendar.", ("web_search",))),
@@ -397,12 +408,25 @@ PACKS: List[DomainPack] = [
          PackStep("Verify", "Run the acceptance checks/tests in the sandbox and fix failures. Never weaken a test "
                   "to make it pass.", ("bash",), "acceptance checks pass"),
          PackStep("Review and summarise", "Show the diff, explain what changed and why, list risks and follow-ups. "
-                  "Nothing is pushed or deployed.", ("write_file",))),
+                  "If Open Code Review is installed, run `ocr review --format json` on the workspace and address "
+                  "its findings first. Nothing is pushed or deployed.", ("write_file",))),
         ("acceptance checks pass in the sandbox", "diff and summary produced"),
         ("Never push, publish, deploy or open pull requests without the owner's approval.",
          "Never edit the AURIX approval gate, audit, contracts, credentials or identity."),
         (r"\bgit\s+push\b", r"\b(?:npm|twine|cargo)\s+publish\b", r"\bdocker\s+push\b"),
         240, skills=("ponytail",)),
+    DomainPack(
+        "diagrams", "Architecture / workflow / sequence / data-flow / lifecycle diagrams",
+        (r"\b(?:architecture|system|workflow|sequence|data[- ]?flow|lifecycle|state)\s+diagrams?\b",
+         r"\bdiagram (?:of|for) (?:the |our |my )?(?:system|architecture|pipeline|flow)\b", r"\barchify\b"),
+        ("read_file", "write_file"),
+        ("Diagrams describe the owner's own systems; do not reproduce third-party proprietary diagrams.",),
+        (PackStep("Model it", "Read the code or notes and write the typed model first: nodes, edges, labels, "
+                  "and which diagram type fits.", ("read_file", "write_file"), "model written"),
+         PackStep("Render and verify", "Emit one self-contained HTML/SVG file and check every node and edge in "
+                  "the model appears, with no overlapping labels.", ("write_file",), "diagram verified")),
+        ("self-contained diagram file written", "every modelled node and edge is present"),
+        standing_ok=True, skills=("archify",)),
     DomainPack(
         "self_improve", "AURIX self-improvement",
         (r"self[- ]?improv", r"improve (yourself|aurix)", r"fix (yourself|itself)", r"upgrade (aurix|yourself)"),

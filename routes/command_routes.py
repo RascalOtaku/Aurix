@@ -37,6 +37,15 @@ def _kuma_url(request: Request) -> str:
     return _sibling_url(request, os.environ.get("KUMA_PORT", "3001"))
 
 
+def _extras_links(request: Request) -> dict:
+    """FileBrowser / ReClip links, only when the compose "extras" profile is on (they are opt-in containers)."""
+    profiles = {p.strip() for p in os.environ.get("COMPOSE_PROFILES", "").split(",")}
+    if "extras" not in profiles:
+        return {}
+    return {"files": _sibling_url(request, os.environ.get("FILEBROWSER_PORT", "8088")),
+            "reclip": _sibling_url(request, os.environ.get("RECLIP_PORT", "8899"))}
+
+
 def _require_human_admin(request: Request) -> None:
     auth_mgr = getattr(request.app.state, "auth_manager", None)
     user = getattr(request.state, "current_user", None)
@@ -65,7 +74,8 @@ def setup_command_routes() -> APIRouter:
 
     @router.get("/api/command", dependencies=[Depends(require_admin)])
     async def api(request: Request):
-        return await asyncio.to_thread(command_center.snapshot, None, None, None, _godseye_url(request), _kuma_url(request))
+        return await asyncio.to_thread(command_center.snapshot, None, None, None, _godseye_url(request), _kuma_url(request),
+                                       _extras_links(request))
 
     @router.post("/api/command/action")
     async def action(request: Request):
@@ -96,7 +106,8 @@ def setup_command_routes() -> APIRouter:
     @router.get("/api/command/links", dependencies=[Depends(require_admin)])
     async def links(request: Request):
         """Where the sibling views live (the rail buttons use this; God's Eye is a separate container on GODSEYE_PORT)."""
-        return {"godseye": _godseye_url(request), "command": "/command", "systems": "/systems", "kuma": _kuma_url(request)}
+        return {"godseye": _godseye_url(request), "command": "/command", "systems": "/systems", "kuma": _kuma_url(request),
+                **_extras_links(request)}
 
     @router.get("/api/command/skills/{name}", dependencies=[Depends(require_admin)])
     async def skill(name: str):

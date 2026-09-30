@@ -153,6 +153,41 @@ async def register_builtin_servers(mcp_manager):
 
     asyncio.create_task(_start_npx_servers())
 
+    # Servers declared in the environment (MCP_SERVERS / MCP_SERVER_URL) and opt-in presets
+    # (AURIX_MCP_PRESETS, src/mcp_presets.py). Same rules as the NPX built-ins: an npx package that
+    # isn't cached is skipped with a hint instead of downloading inside the stdio client.
+    async def _start_env_servers():
+        await asyncio.sleep(4)
+        from src.mcp_auto_discover import discover_mcp_servers_from_env
+        for srv in discover_mcp_servers_from_env():
+            command, args = srv.get("command") or "", list(srv.get("args") or [])
+            if srv["transport"] == "stdio":
+                if not command:
+                    logger.warning(f"MCP server {srv['name']}: stdio transport without a command; skipped")
+                    continue
+                if os.path.basename(command) == "npx":
+                    command = npx_path
+                    pkg_spec = _npx_package_from_args(args)
+                    if pkg_spec and not await _is_npx_package_cached(npx_path, pkg_spec):
+                        logger.warning(f"{srv['name']} skipped: npm package {pkg_spec!r} is not cached. "
+                                       f"Run `npx -y {pkg_spec} --version` once, then restart.")
+                        continue
+                elif not shutil.which(command):
+                    logger.warning(f"{srv['name']} skipped: {command!r} is not on PATH")
+                    continue
+            try:
+                ok = await mcp_manager.connect_server(
+                    server_id=srv["id"], name=srv["name"], transport=srv["transport"],
+                    command=command, args=args, env=srv.get("env") or {}, url=srv.get("url") or None,
+                )
+                logger.info(f"Env MCP server {srv['name']}: {'registered' if ok else 'failed to connect'}")
+            except asyncio.CancelledError:
+                raise
+            except BaseException as e:
+                logger.warning(f"Env MCP server {srv['name']} error: {type(e).__name__}: {e}")
+
+    asyncio.create_task(_start_env_servers())
+
 
 def _npx_package_from_args(args):
     """Pick the package spec out of an npx args list shaped like

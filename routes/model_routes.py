@@ -135,6 +135,7 @@ _URL_TO_CURATED = {
     "generativelanguage.googleapis.com": "google",
     "api.x.ai": "xai",
     "openrouter.ai": "openrouter",
+    "opencode.ai/zen": "openrouter",   # OpenCode Zen: no curated list, show everything
     "ollama.com": "ollama",
 }
 

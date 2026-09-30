@@ -36,6 +36,23 @@ MODEL_ROUTER_PROFILES = {
 }
 
 
+# Zero-cost routes, per the free coding agents this borrows from (freebuff, coding-agent-free,
+# codex-model-router): OpenRouter's `:free` variants and its `openrouter/free` auto-router, and OpenCode
+# Zen's free tier (ids carrying `-free`, plus `big-pickle`). Matching is by marker, not a fixed list,
+# because the free line-ups change weekly.
+FREE_MODEL_MARKERS = (":free", "-free", "openrouter/free", "big-pickle")
+
+# Within the free pool, models known to handle tool calls and code well come first for coding work.
+FREE_CODING_HINTS = ("coder", "code", "qwen3", "deepseek", "gpt-oss", "kimi", "glm", "nemotron", "devstral")
+
+STRATEGIES = ("balanced", "free")
+
+
+def is_free_model(model: Any) -> bool:
+    name = str(model or "").strip().lower()
+    return any(marker in name for marker in FREE_MODEL_MARKERS)
+
+
 def _normalise_model_name(model: Any) -> str:
     return (str(model or "")).strip()
 
@@ -76,6 +93,12 @@ def choose_model_for_task(prompt: str, available_models: Optional[Iterable[Any]]
         return ""
 
     kind = infer_task_kind(prompt)
+    if strategy == "free":
+        free = [m for m in models if is_free_model(m)]
+        if free:
+            return _pick_free(free, kind)
+        # No free model on offer: fall through to the normal profile rather than failing the task.
+
     profile = MODEL_ROUTER_PROFILES.get(kind, MODEL_ROUTER_PROFILES["default"])
     preferred = list(profile.get("preferred", []))
     fallback = list(profile.get("fallback", []))
@@ -91,6 +114,28 @@ def choose_model_for_task(prompt: str, available_models: Optional[Iterable[Any]]
         if not any(token in model.lower() for token in ["embedding", "tts", "whisper", "dall-e", "moderation"]):
             return model
     return models[0]
+
+
+def _pick_free(free: List[str], kind: str) -> str:
+    if kind == "coding":
+        for hint in FREE_CODING_HINTS:
+            for model in free:
+                if hint in model.lower():
+                    return model
+    # The OpenRouter auto-router spreads load across whatever free models are up right now.
+    for model in free:
+        if model.lower() == "openrouter/free":
+            return model
+    return free[0]
+
+
+def free_fallback_chain(available_models: Optional[Iterable[Any]] = None, prompt: str = "") -> List[str]:
+    """Every free model, best first for the task: the order to walk when one returns 429."""
+    models = [m for m in _coerce_models(available_models) if is_free_model(m)]
+    if not models:
+        return []
+    first = _pick_free(models, infer_task_kind(prompt))
+    return [first] + [m for m in models if m != first]
 
 
 def route_model_for_role(role: str, available_models: Optional[Iterable[Any]] = None) -> str:

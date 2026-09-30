@@ -945,6 +945,8 @@ function drawApps(links, homelab) {
   APPS.forEach((x) => add(x[0], x[1], x[2], x[3], false));
   add("🌍", "God's Eye", "world view", (links || {}).godseye, true);
   add("📈", "Uptime Kuma", "service history", (links || {}).kuma, true);
+  if ((links || {}).files) add("🗂️", "Files", "browse the brain", links.files, true);        // compose profile "extras"
+  if ((links || {}).reclip) add("🎞️", "ReClip", "save a video", links.reclip, true);
   (homelab || []).forEach((h) => { if (h.url) add(h.ok ? "🟢" : "🔴", h.name, h.ok ? "answering" : "not answering", h.url, true); });
 }
 

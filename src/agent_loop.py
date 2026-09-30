@@ -7,6 +7,7 @@ The LLM decides when to use tools by writing fenced code blocks.
 """
 
 import asyncio
+import os
 import collections
 import json
 import re
@@ -600,6 +601,18 @@ def _build_system_prompt(
         ) + agent_prompt
     except Exception:
         pass
+
+    # Owner-chosen output style rules, e.g. AURIX_OUTPUT_STYLE=adhd (answer-first; src/foundation/skills.py).
+    _style = os.environ.get("AURIX_OUTPUT_STYLE", "").strip()
+    if _style:
+        try:
+            from src.foundation import skills as _skills
+            _names = [n.strip().lower() for n in _style.split(",") if n.strip().lower() in _skills.SKILLS]
+            _block = _skills.render(_names)
+            if _block:
+                agent_prompt = agent_prompt + "\n\n## Output style\n" + _block.replace("### Coding rules: ", "### ")
+        except Exception:
+            pass
 
     # Document context is kept as a SEPARATE message (not merged into the tool
     # prompt) so the context trimmer doesn't destroy it when truncating the

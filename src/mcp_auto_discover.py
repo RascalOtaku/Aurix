@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Dict, List, Optional
 
 
@@ -21,7 +22,7 @@ def _coerce_server(value: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return None
     url = _clean(value.get("url") or value.get("server_url"))
     name = _clean(value.get("name") or value.get("server_name"))
-    transport = _clean(value.get("transport") or value.get("type") or "stdio")
+    transport = _clean(value.get("transport") or value.get("type") or ("sse" if url else "stdio"))
     if not url and not name and not transport:
         return None
     payload = {
@@ -44,6 +45,10 @@ def discover_mcp_servers_from_env() -> List[Dict[str, Any]]:
       - MCP_SERVERS='[{"name": "...", "url": "https://..."}]'
       - MCP_SERVER_URL=https://example.com/sse
       - MCP_SERVER_NAME=my-server
+      - AURIX_MCP_PRESETS=blender,context-mode   (see src/mcp_presets.py)
+
+    Every entry carries a stable `id` (builtin_env_<slug> / builtin_preset_<name>) so the MCP manager
+    treats it as auto-registered: it is reconnected on restart and never written to the database.
     """
     servers: List[Dict[str, Any]] = []
     raw = os.getenv("MCP_SERVERS", "").strip()
@@ -72,16 +77,31 @@ def discover_mcp_servers_from_env() -> List[Dict[str, Any]]:
                 "oauth_config": None,
             })
 
-    # Deduplicate by name+url
+    for server in servers:
+        server.setdefault("id", "builtin_env_" + _slug(server.get("name", "")))
+
+    try:
+        from src.mcp_presets import preset_servers
+        servers.extend(preset_servers())
+    except Exception:
+        pass
+
+    # Deduplicate by name+url, then by id
     seen = set()
+    seen_ids = set()
     deduped: List[Dict[str, Any]] = []
     for server in servers:
         key = (server.get("name", ""), server.get("url", ""))
-        if key in seen:
+        if key in seen or server["id"] in seen_ids:
             continue
         seen.add(key)
+        seen_ids.add(server["id"])
         deduped.append(server)
     return deduped
+
+
+def _slug(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_")[:48] or "mcp"
 
 
 def discover_mcp_servers_from_db(db_module: Any = None) -> List[Dict[str, Any]]:
