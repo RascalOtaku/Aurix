@@ -140,7 +140,16 @@ fi
 
 # Every commit on this machine goes through the secret guard, not just the ones this script makes.
 [ -d scripts/git-hooks ] && [ "$(git config core.hooksPath)" != "scripts/git-hooks" ] && git config core.hooksPath scripts/git-hooks
-[ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ] && die "a previous merge is unfinished: resolve the conflicted files, 'git add' them, then run sync again"
+if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
+    unresolved="$(git diff --name-only --diff-filter=U)"
+    [ -n "$unresolved" ] && die "still conflicted: $(echo $unresolved). Edit them (remove the <<<<<<< ======= >>>>>>> markers), 'git add' them, then run sync again"
+    if [ "$MODE" != "sync" ] || [ "$DRY" = 1 ]; then
+        say "A merge you resolved is ready to finish; 'sync' will commit it (after the secret guard) and continue."
+        exit 0
+    fi
+    git commit -q --no-edit || die "could not finish the merge (the secret guard may have blocked it - see above)"
+    say "Finished the merge you resolved."
+fi
 
 tracked_changes="$(git status --porcelain --untracked-files=no)"
 new_files="$(git ls-files --others --exclude-standard)"

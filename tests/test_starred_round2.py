@@ -88,6 +88,19 @@ class AgentShieldTests(unittest.TestCase):
         leaky = {"name": "y", "command": "npx", "args": ["-y", "pkg@1.2.3"], "env": {"GITHUB_TOKEN": "x"}}
         self.assertEqual([f["rule"] for f in agent_shield.scan_mcp_server(leaky)], ["secrets-in-env"])
 
+    def test_shell_wrappers_are_caught_in_any_spelling(self):
+        for cmd, args in (("cmd.exe", ["/C", "dir"]), ("powershell.exe", ["-Command", "x"]),
+                          ("pwsh", ["-EncodedCommand", "x"]), ("bash", ["-lc", "x"])):
+            with self.subTest(cmd=cmd):
+                self.assertTrue(agent_shield.blocking(agent_shield.scan_mcp_server({"name": "x", "command": cmd, "args": args})))
+        self.assertFalse(agent_shield.blocking(agent_shield.scan_mcp_server({"name": "x", "command": "bash", "args": ["-e", "run.sh"]})))
+
+    def test_home_wipes_are_destructive(self):
+        for text in ("rm -rf ~/", "rm -rf $HOME/", "rm -rf ${HOME}"):
+            with self.subTest(text=text):
+                self.assertIn("destructive-rm", self.high(text))
+        self.assertNotIn("destructive-rm", self.high("rm -rf ~/projects/tmp"))
+
     def test_tampered_checkout_falls_back_to_the_vetted_summary(self):
         from src.foundation import skills
         with tempfile.TemporaryDirectory() as d:
@@ -125,6 +138,18 @@ class PageIndexTests(unittest.TestCase):
         nodes = page_index.parse("# Alpha\n## Deploy\nUse compose.\n", "wiki/a.md")
         self.assertEqual([(n.title, n.gist) for n in nodes],
                          [("Alpha", "Use compose."), ("Alpha", ""), ("Deploy", "Use compose.")])
+
+    def test_relative_and_symlinked_roots_can_be_read(self):
+        link = Path(self.tmp.name) / "linked-wiki"
+        link.symlink_to(self.wiki)
+        for root in (link, Path(os.path.relpath(self.wiki))):
+            with self.subTest(root=str(root)):
+                self.assertIn("Runs on the home server", page_index.read(f"{root.name}/projects/aurix.md#2", dirs=[root]))
+
+    def test_depth_zero_lists_files_only(self):
+        text = page_index.outline(depth=0, dirs=[self.wiki])
+        self.assertIn("[wiki/projects/aurix.md#0]", text)
+        self.assertNotIn("#1]", text)
 
     def test_read_refuses_path_traversal(self):
         self.assertTrue(page_index.read("wiki/../../etc/passwd#0", dirs=[self.wiki]).startswith("Unknown node"))
@@ -354,6 +379,48 @@ class GitSyncToBranchTests(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertEqual((pc / "app.py").read_text(), "a-pc\nb\nc-main\n")
             self.assertNotIn("CONFLICT", r.stdout)
+
+
+@unittest.skipUnless(shutil.which("git") and shutil.which("bash"), "needs git and bash")
+class GitSyncConflictResumeTests(unittest.TestCase):
+    """Follow the script's own conflict instructions (edit, git add, sync again) and it must finish and push."""
+
+    def git(self, cwd, *args):
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd, check=True,
+                              capture_output=True, text=True).stdout
+
+    def test_resolving_a_conflict_then_syncing_completes(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+                       GIT_COMMITTER_EMAIL="t@t")
+            github = d / "RascalOtaku" / "Aurix.git"; github.parent.mkdir()
+            subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(github)], check=True)
+            seed = d / "seed"
+            subprocess.run(["git", "clone", "-q", str(github), str(seed)], check=True, capture_output=True)
+            (seed / "scripts" / "git-hooks").mkdir(parents=True)
+            shutil.copy(ROOT / "scripts" / "aurix_git_sync.sh", seed / "scripts")
+            shutil.copy(ROOT / "scripts" / "git-hooks" / "secret_guard.sh", seed / "scripts" / "git-hooks")
+            shutil.copy(ROOT / "scripts" / "git-hooks" / "pre-commit", seed / "scripts" / "git-hooks")
+            (seed / "app.py").write_text("x = 1\n")
+            self.git(seed, "add", "-A"); self.git(seed, "commit", "-qm", "init"); self.git(seed, "push", "-q", "origin", "main")
+            pc = d / "pc"
+            subprocess.run(["git", "clone", "-q", str(github), str(pc)], check=True, capture_output=True)
+            (seed / "app.py").write_text("x = 2  # github\n")
+            self.git(seed, "commit", "-qam", "github edit"); self.git(seed, "push", "-q", "origin", "main")
+            (pc / "app.py").write_text("x = 3  # server\n")
+
+            run = lambda *a: subprocess.run(["bash", "scripts/aurix_git_sync.sh", *a], cwd=pc, env=env,
+                                            capture_output=True, text=True, timeout=60)
+            r = run("sync")
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertIn("CONFLICT", r.stdout)
+            (pc / "app.py").write_text("x = 3  # server, reviewed against github\n")   # resolve as instructed
+            self.git(pc, "add", "app.py")
+            r = run("sync")
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("Finished the merge you resolved", r.stdout)
+            self.assertEqual(self.git(github, "show", "main:app.py"), "x = 3  # server, reviewed against github\n")
 
 
 if __name__ == "__main__":

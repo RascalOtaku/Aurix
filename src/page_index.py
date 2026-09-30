@@ -97,7 +97,7 @@ def _files(root: Path) -> Iterable[Path]:
 _cache: Dict[str, Tuple[float, List[Node]]] = {}
 
 
-def _nodes_for(root: Path, path: Path) -> List[Node]:
+def _nodes_for(root: Path, path: Path, prefix: Optional[str] = None) -> List[Node]:
     key = str(path)
     try:
         st = path.stat()
@@ -106,7 +106,7 @@ def _nodes_for(root: Path, path: Path) -> List[Node]:
         hit = _cache.get(key)
         if hit and hit[0] == st.st_mtime:
             return hit[1]
-        rel = f"{root.name}/{path.relative_to(root).as_posix()}"
+        rel = f"{prefix or root.name}/{path.relative_to(root).as_posix()}"
         nodes = parse(path.read_text(encoding="utf-8", errors="replace"), rel)
         _cache[key] = (st.st_mtime, nodes)
         return nodes
@@ -125,7 +125,7 @@ def outline(query: str = "", path: str = "", depth: int = 2, limit: int = 120,
             dirs: Optional[List[Path]] = None) -> str:
     """Compact ToC. With a query, files whose titles/headings/gists share words with it come first."""
     words = set(_WORD.findall((query or "").lower()))
-    depth = max(0, min(int(depth or 2), 6))
+    depth = max(0, min(2 if depth is None or depth == "" else int(depth), 6))
     files: List[Tuple[int, List[Node]]] = []
     for root in (dirs if dirs is not None else roots()):
         for f in _files(root):
@@ -162,10 +162,11 @@ def read(node_id: str, max_chars: int = 6000, dirs: Optional[List[Path]] = None)
     for root in (dirs if dirs is not None else roots()):
         if root.name != rootname:
             continue
-        f = (root / inner).resolve()
-        if root.resolve() not in f.parents or not f.is_file():
+        real = root.resolve()                          # relative or symlinked roots: compare resolved to resolved
+        f = (real / inner).resolve()
+        if real not in f.parents or not f.is_file():
             continue
-        nodes = _nodes_for(root, f)
+        nodes = _nodes_for(real, f, prefix=root.name)
         try:
             n = nodes[int(idx or 0)]
         except (ValueError, IndexError):

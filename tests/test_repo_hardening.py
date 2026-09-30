@@ -59,6 +59,25 @@ class SecretGuardTests(unittest.TestCase):
         self.assertEqual(self.guard().returncode, 1)
         self.assertEqual(self.guard("--tree").returncode, 1)
 
+    def test_every_token_kind_is_redacted_in_the_report(self):
+        telegram = "1234567890:AA" + "b" * 33
+        self.stage("bot.py", f"TOKEN = '{telegram}'\n")
+        for mode in ((), ("--tree",)):
+            r = self.guard(*mode)
+            self.assertEqual(r.returncode, 1)
+            self.assertNotIn(telegram, r.stdout)
+            self.assertNotIn("b" * 33, r.stdout)
+
+    def test_private_matches_name_the_file_without_printing_the_value(self):
+        (self.repo / ".git" / "info").mkdir(exist_ok=True)
+        (self.repo / ".git" / "info" / "aurix-private-patterns").write_text("my-secret-host\n")
+        self.stage("deploy/notes.md", "ssh me@my-secret-host\n")
+        for mode in ((), ("--tree",)):
+            r = self.guard(*mode)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("deploy/notes.md", r.stdout)
+            self.assertNotIn("my-secret-host", r.stdout.split("private patterns")[1] if "private patterns" in r.stdout else r.stdout)
+
     def test_fixture_files_may_hold_fake_tokens(self):
         self.stage("tests/test_foundation_teacher.py", "S = '" + "AKIA" + "ABCDEFGHIJKLMNOP" + "'\n")
         self.assertEqual(self.guard().returncode, 0)

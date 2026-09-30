@@ -44,7 +44,7 @@ TEXT_RULES = [
                 r"(approval[- ]gate|approval checks?|audit[- ](chain|log|trail))\b", _I),
      "targets Aurix's approval gate / audit / contracts"),
     ("destructive-rm", "high",
-     re.compile(r"\brm\s+-[a-z]*r[a-z]*f?[a-z]*\s+(--no-preserve-root\s+)?(/|~|\$HOME|/\*)(\s|$)", _I),
+     re.compile(r"\brm\s+-[a-z]*r[a-z]*f?[a-z]*\s+(--no-preserve-root\s+)?(/\*?|~/?|\$HOME/?|\$\{HOME\}/?)(\s|$|[;&|])", _I),
      "recursive delete of / or home"),
     ("hidden-unicode", "high",
      re.compile("[​-‏‪-‮⁠-⁤⁦-⁩﻿]|[\U000e0000-\U000e007f]"),
@@ -61,7 +61,14 @@ TEXT_RULES = [
 ]
 
 _SECRET_ENV = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL)", _I)
-_SHELL = {"sh", "bash", "zsh", "dash", "cmd", "cmd.exe", "powershell", "pwsh"}
+_SHELL = {"sh", "bash", "zsh", "dash", "ksh", "fish", "cmd", "powershell", "pwsh"}
+# Flags that make a shell run an inline command string, per shell family (`bash -e script.sh` stays allowed).
+_INLINE_FLAGS = {
+    "posix": re.compile(r"^-[a-z]{0,3}c$", _I),                                    # -c, -lc, -ec, -xc
+    "cmd": re.compile(r"^/[ck]$", _I),                                              # /c, /C, /k
+    "powershell": re.compile(r"^-(c|command|e|ec|enc|encodedcommand)$", _I),
+}
+_SHELL_FAMILY = {"cmd": "cmd", "powershell": "powershell", "pwsh": "powershell"}
 
 
 def scan_text(text: str, source: str = "") -> List[Dict[str, str]]:
@@ -83,8 +90,9 @@ def scan_mcp_server(server: Dict[str, Any]) -> List[Dict[str, str]]:
     command = str(server.get("command") or "")
     args = [str(a) for a in (server.get("args") or [])]
     base = command.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    base = base[:-4] if base.endswith(".exe") else base
     joined = " ".join([command] + args)
-    if base in _SHELL and any(a in ("-c", "/c", "-Command", "-EncodedCommand") for a in args):
+    if base in _SHELL and any(_INLINE_FLAGS[_SHELL_FAMILY.get(base, "posix")].match(a) for a in args):
         add("shell-wrapper", "high", "runs an inline shell command instead of an MCP server binary")
     for f in scan_text(joined, name):
         if f["severity"] == "high":

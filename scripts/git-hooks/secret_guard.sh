@@ -28,19 +28,30 @@ else
                 | grep -E '^\+[^+]' | grep -nE -- "$1"; }
 fi
 
+files_matching() {   # files whose content (--tree) or added lines (--staged) match $1
+    if [ "$MODE" = "--tree" ]; then
+        git ls-files -z | xargs -0 -r grep -IlE -- "$1" 2>/dev/null
+    else
+        git diff --cached --name-only --diff-filter=ACMR | while IFS= read -r f; do
+            git diff --cached -U0 -- "$f" | grep -E '^\+[^+]' | grep -qE -- "$1" && printf '%s\n' "$f"
+        done
+    fi
+}
+
 fail=0
 bad_files="$(printf '%s\n' "$files" | grep -E "$FILE_RX" | grep -vE "$ALLOW_FILE_RX" || true)"
 if [ -n "$bad_files" ]; then
     echo "secret-guard: secret-looking files - add them to .gitignore instead:"; printf '  %s\n' $bad_files; fail=1
 fi
-hits="$(content "$TOKEN_RX" | cut -c1-120 | sed -E 's/(-----BEGIN|ghp_|gho_|github_pat_|sk-|xox|AKIA|AIza)[A-Za-z0-9_:-]*/\1…REDACTED/g')"
+# Redact the WHOLE match before truncating, so no token (GitHub, OpenAI, Telegram, ...) reaches the output or CI logs.
+hits="$(content "$TOKEN_RX" | sed -E "s/$TOKEN_RX/…REDACTED/g" | cut -c1-120)"
 if [ -n "$hits" ]; then
     echo "secret-guard: a private key or API token is in the changes - move it to .env:"; printf '%s\n' "$hits" | sed 's/^/  /'; fail=1
 fi
 if [ -s "$PRIVATE" ]; then
     rx="$(grep -vE '^\s*(#|$)' "$PRIVATE" | paste -sd'|' -)"
     if [ -n "$rx" ]; then
-        phits="$(content "$rx" | cut -d: -f1-2 | sort -u)"
+        phits="$(files_matching "$rx")"            # file names only: never print the private value itself
         if [ -n "$phits" ]; then
             echo "secret-guard: matches your private patterns ($PRIVATE) at:"; printf '%s\n' "$phits" | sed 's/^/  /'; fail=1
         fi
