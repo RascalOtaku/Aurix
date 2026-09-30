@@ -2861,6 +2861,7 @@ async function initIntegrations() {
     const p = presets[presetSel.value];
     if (!p) return;
     nameIn.value = p.name || '';
+    if (p.base_url && urlIn && !urlIn.value) urlIn.value = p.base_url;
     authTypeSel.value = p.auth_type || 'none';
     authHeaderIn.value = p.auth_header || '';
     descIn.value = p.description || '';
@@ -3245,6 +3246,7 @@ async function initUnifiedIntegrations() {
       }
       if (!p) return;
       name.value = p.name || '';
+      if (p.base_url && url && !url.value) url.value = p.base_url;   // keyless public APIs ship their URL
       auth.value = p.auth_type || 'none';
       header.value = p.auth_header || '';
     };

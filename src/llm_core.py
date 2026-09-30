@@ -9,7 +9,7 @@ from fastapi import HTTPException
 from typing import Optional, Dict, List
 from urllib.parse import urlparse
 
-from src import key_rotation
+from src import key_rotation, spend_ledger
 
 logger = logging.getLogger(__name__)
 
@@ -241,6 +241,19 @@ def _provider_headers(provider: str, headers: Optional[Dict] = None) -> Dict[str
         h.setdefault("HTTP-Referer", "https://github.com/pewdiepie-archdaemon/odysseus")
         h.setdefault("X-OpenRouter-Title", "Odysseus")
     return key_rotation.apply(provider, h)
+
+
+def _record_usage(url: str, model: str, provider: str, data: dict) -> None:
+    """Paid-token ledger (src/spend_ledger.py) from a non-streamed response's usage block."""
+    u = data.get("usage") if isinstance(data, dict) else None
+    if isinstance(u, dict):
+        n_in = u.get("prompt_tokens", u.get("input_tokens", 0))
+        n_out = u.get("completion_tokens", u.get("output_tokens", 0))
+    elif isinstance(data, dict):                      # Ollama native
+        n_in, n_out = data.get("prompt_eval_count", 0), data.get("eval_count", 0)
+    else:
+        return
+    spend_ledger.record(url, model, provider, n_in, n_out)
 
 
 def _provider_label(url: str) -> str:
@@ -579,6 +592,9 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         if max_tokens and max_tokens > 0:
             tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
             payload[tok_key] = max_tokens
+    _blocked = spend_ledger.blocked_reason(target_url, model)
+    if _blocked:
+        raise HTTPException(402, _blocked)
     try:
         note_model_activity(target_url, model)
         r = httpx.post(target_url, headers=h, json=payload, timeout=timeout)
@@ -588,6 +604,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
         key_rotation.report(provider, h, r.status_code)
         raise HTTPException(502, f"Upstream {target_url} -> {r.status_code}: {r.text}")
     data = r.json()
+    _record_usage(target_url, model, provider, data)
     try:
         if provider == "anthropic":
             response = _parse_anthropic_response(data)
@@ -699,6 +716,9 @@ async def llm_call_async(
 
     if _is_host_dead(target_url):
         raise HTTPException(503, f"Upstream {_host_key(target_url)} marked unreachable (cooldown active)")
+    _blocked = spend_ledger.blocked_reason(target_url, model)
+    if _blocked:
+        raise HTTPException(402, _blocked)
 
     call_timeout = httpx.Timeout(connect=3.0, read=float(timeout), write=10.0, pool=5.0)
     attempt = 0
@@ -721,6 +741,7 @@ async def llm_call_async(
             logger.info(f"LLM async call to {target_url} succeeded in {duration:.2f}s (attempt {attempt})")
             _clear_host_dead(target_url)
             data = r.json()
+            _record_usage(target_url, model, provider, data)
             try:
                 if provider == "anthropic":
                     response = _parse_anthropic_response(data)
@@ -808,6 +829,10 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
     if _is_host_dead(target_url):
         yield f'event: error\ndata: {json.dumps({"error": f"Upstream {_host_key(target_url)} unreachable (cooldown active)", "status": 503})}\n\n'
         return
+    _blocked = spend_ledger.blocked_reason(target_url, model)
+    if _blocked:
+        yield f'event: error\ndata: {json.dumps({"error": _blocked, "status": 402})}\n\n'
+        return
     note_model_activity(target_url, model)
 
     # ── Native Ollama streaming ──
@@ -849,6 +874,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                         if _ollama_tool_calls:
                             yield f'data: {json.dumps({"type": "tool_calls", "calls": _ollama_tool_calls})}\n\n'
                         if j.get("prompt_eval_count") is not None or j.get("eval_count") is not None:
+                            spend_ledger.record(target_url, model, provider, j.get("prompt_eval_count", 0), j.get("eval_count", 0))
                             yield f'data: {json.dumps({"type": "usage", "data": {"input_tokens": j.get("prompt_eval_count", 0), "output_tokens": j.get("eval_count", 0)}})}\n\n'
                         yield "data: [DONE]\n\n"
                         return
@@ -937,6 +963,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                                     })
                                 yield f'data: {json.dumps({"type": "tool_calls", "calls": calls})}\n\n'
                             if _anth_input_tokens or _anth_output_tokens:
+                                spend_ledger.record(target_url, model, provider, _anth_input_tokens, _anth_output_tokens)
                                 yield f'data: {json.dumps({"type": "usage", "data": {"input_tokens": _anth_input_tokens, "output_tokens": _anth_output_tokens}})}\n\n'
                             yield "data: [DONE]\n\n"
                             return
@@ -1008,6 +1035,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                                 _delta0 = _choices[0].get("delta") if _choices else None
                                 if "usage" in j and _delta0 in (None, {}, {"content": None}):
                                     u = j["usage"]
+                                    spend_ledger.record(target_url, model, provider, u.get("prompt_tokens", 0), u.get("completion_tokens", 0))
                                     yield f'data: {json.dumps({"type": "usage", "data": {"input_tokens": u.get("prompt_tokens", 0), "output_tokens": u.get("completion_tokens", 0)}})}\n\n'
                                 elif "choices" in j:
                                     delta = j["choices"][0].get("delta", {})

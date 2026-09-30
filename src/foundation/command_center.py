@@ -407,6 +407,7 @@ def snapshot(system_probes: Optional[Dict[str, Callable[[], Any]]] = None,
         "content": safe("content", content.panel, {}),
         "library": safe("library", learning.panel, {}),
         "subscriptions": safe("subscriptions", subscriptions.panel, {}),
+        "spend": safe("spend", _spend_panel, {}),
         "trading": safe("trading", panels.trading, {"have": False}),
         "lessons": safe("lessons", panels.lessons, []),
         "checks": safe("checks", panels.checks, {"have": False}),
@@ -415,6 +416,11 @@ def snapshot(system_probes: Optional[Dict[str, Callable[[], Any]]] = None,
         "running": safe("running", lambda: running_now(base, raw), {"mission": None, "models": [], "in_flight": 0, "standing_active": 0}),
         "links": {"godseye": godseye_url, "systems": "/systems", "chat": "/", "kuma": kuma_url, **(extra_links or {})},
     }
+
+
+def _spend_panel() -> Dict[str, Any]:
+    from src import spend_ledger
+    return spend_ledger.panel()
 
 
 _NO_SKILLS = {"total": 0, "active": 0, "pending": 0, "items": []}

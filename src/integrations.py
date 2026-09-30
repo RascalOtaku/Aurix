@@ -134,6 +134,14 @@ INTEGRATION_PRESETS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+from src.public_api_presets import PUBLIC_API_PRESETS  # noqa: E402  keyless public APIs (base_url pre-filled)
+
+for _key, _preset in PUBLIC_API_PRESETS.items():
+    INTEGRATION_PRESETS.setdefault(_key, _preset)
+
+# Public APIs ask clients to identify themselves (Nominatim, Wikipedia, arXiv); httpx's default UA gets throttled.
+USER_AGENT = "Aurix/1.0 (self-hosted personal assistant)"
+
 # ---------------------------------------------------------------------------
 # Storage
 # ---------------------------------------------------------------------------
@@ -179,7 +187,10 @@ def add_integration(data: Dict[str, Any]) -> Dict[str, Any]:
         integration.update(INTEGRATION_PRESETS[preset_key])
         integration["preset"] = preset_key
 
+    preset_url = integration.get("base_url", "")
     integration.update(data)
+    if not integration.get("base_url") and preset_url:
+        integration["base_url"] = preset_url     # the form left it blank: keep the preset's public URL
     integration.setdefault("id", uuid.uuid4().hex[:12])
     integration.setdefault("enabled", True)
     integration.setdefault("auth_type", "none")
@@ -291,7 +302,7 @@ async def execute_api_call(
     method = method.upper()
 
     # Build headers
-    headers: Dict[str, str] = {}
+    headers: Dict[str, str] = {"User-Agent": USER_AGENT}
     if extra_headers:
         headers.update(extra_headers)
 

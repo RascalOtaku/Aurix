@@ -1,7 +1,8 @@
 """
 rag_server.py
 
-MCP server exposing RAG document management (list, add_directory, remove_directory).
+MCP server exposing RAG document management (list, add_directory, remove_directory),
+plus vectorless wiki navigation (wiki_outline / wiki_read, src/page_index.py).
 """
 
 import asyncio
@@ -61,12 +62,45 @@ async def list_tools() -> list[Tool]:
                 },
                 "required": ["action"],
             },
-        )
+        ),
+        Tool(
+            name="wiki_outline",
+            description=(
+                "Table of contents of the AURIX wiki and long-term memory: files and their headings, each with a "
+                "node id. Use it instead of similarity search when you need exact facts, names, numbers or "
+                "decisions: read the outline, pick the sections that answer the question, then wiki_read them."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Words to rank matching pages first (optional)"},
+                    "path": {"type": "string", "description": "Only pages under this prefix, e.g. 'wiki/projects'"},
+                    "depth": {"type": "integer", "description": "Heading depth to show (0 = files only, default 2)"},
+                },
+            },
+        ),
+        Tool(
+            name="wiki_read",
+            description="Read one section of the wiki by node id from wiki_outline (e.g. 'wiki/projects/aurix.md#3').",
+            inputSchema={
+                "type": "object",
+                "properties": {"node": {"type": "string", "description": "Node id from wiki_outline"}},
+                "required": ["node"],
+            },
+        ),
     ]
 
 
 @server.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
+    if name in ("wiki_outline", "wiki_read"):
+        from src import page_index
+        if name == "wiki_outline":
+            text = await asyncio.to_thread(page_index.outline, arguments.get("query", ""),
+                                           arguments.get("path", ""), arguments.get("depth", 2))
+        else:
+            text = await asyncio.to_thread(page_index.read, arguments.get("node", ""))
+        return [TextContent(type="text", text=text)]
     if name != "manage_rag":
         return [TextContent(type="text", text=f"Unknown tool: {name}")]
 

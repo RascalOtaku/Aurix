@@ -43,6 +43,11 @@ The full license texts are kept in [`licenses/`](licenses/).
   401/402/429, `src/key_rotation.py`),
   [freebuff](https://github.com/CodebuffAI/freebuff) and
   [coding-agent-free](https://github.com/maz557/coding-agent-free) (free-model routing, `src/model_router.py`),
+  [Paperclip](https://github.com/paperclipai/paperclip) and
+  [Munder Difflin](https://github.com/chaitanyagiri/munder-difflin) (spend ledger + circuit breaker, steer-before-stop,
+  `src/spend_ledger.py`), [ECC](https://github.com/affaan-m/ECC) (AgentShield-style scan, `src/agent_shield.py`),
+  [PageIndex](https://github.com/VectifyAI/PageIndex) (vectorless tree retrieval, `src/page_index.py`),
+  [public-apis](https://github.com/public-apis/public-apis) (keyless API presets, `src/public_api_presets.py`),
   [archify](https://github.com/tt-a1i/archify) and
   [i-have-adhd](https://github.com/ayghri/i-have-adhd) (skill summaries in `src/foundation/skills.py`, which
   load the upstream `SKILL.md` instead when a checkout is present).

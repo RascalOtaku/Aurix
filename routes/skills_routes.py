@@ -644,8 +644,20 @@ def _audit_finalize_status(skills_manager, name: str, owner, verdict: str,
     return status
 
 
+def _shield_or_400(text: str, source: str) -> None:
+    """Static injection/exfiltration scan (src/agent_shield.py): high-severity findings refuse the save."""
+    from src import agent_shield
+    bad = agent_shield.blocking(agent_shield.scan_text(text, source))
+    if bad:
+        raise HTTPException(400, "Skill refused by the safety scan: " + agent_shield.summary(bad))
+
+
 def _apply_skill_md(skills_manager, name: str, md: str, owner) -> bool:
     """Parse + persist an edited SKILL.md. Returns True on success."""
+    from src import agent_shield
+    if agent_shield.blocking(agent_shield.scan_text(md, name)):
+        logger.warning(f"Audit: rewritten skill {name} failed the safety scan; not saved")
+        return False
     try:
         from services.memory.skill_format import Skill, slugify
         sk = Skill.from_markdown(md)
@@ -1197,6 +1209,7 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
     @router.post("/add")
     async def add_skill(request: Request, body: SkillAddRequest):
         user = _owner(request)
+        _shield_or_400("\n".join(str(v) for v in body.model_dump().values() if v), body.name or body.title or "")
         entry = skills_manager.add_skill(
             # New shape
             name=body.name,
@@ -1448,6 +1461,7 @@ def setup_skills_routes(skills_manager: SkillsManager) -> APIRouter:
         if not match:
             raise HTTPException(404, "Skill not found")
         _verify_owner(match, user)
+        _shield_or_400(new_content, skill_id)
         try:
             sk = Skill.from_markdown(new_content)
         except Exception as e:

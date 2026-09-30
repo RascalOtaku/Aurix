@@ -158,8 +158,15 @@ async def register_builtin_servers(mcp_manager):
     # isn't cached is skipped with a hint instead of downloading inside the stdio client.
     async def _start_env_servers():
         await asyncio.sleep(4)
+        from src import agent_shield
         from src.mcp_auto_discover import discover_mcp_servers_from_env
         for srv in discover_mcp_servers_from_env():
+            findings = agent_shield.scan_mcp_server(srv)
+            if agent_shield.blocking(findings):
+                logger.warning(f"MCP server {srv['name']} refused by the safety scan: {agent_shield.summary(findings)}")
+                continue
+            if findings:
+                logger.info(f"MCP server {srv['name']} safety notes: {agent_shield.summary(findings)}")
             command, args = srv.get("command") or "", list(srv.get("args") or [])
             if srv["transport"] == "stdio":
                 if not command:

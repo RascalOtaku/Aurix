@@ -154,6 +154,24 @@ python -m uvicorn app:app --host 0.0.0.0 --port 7000
 Open `http://localhost:7000`, log in with the generated admin password,
 and configure everything else inside **Settings**.
 
+## Keeping GitHub and your machine in sync
+
+`scripts/aurix_git_sync.sh` makes GitHub and your local Aurix match, both ways. Run it on the home server
+(Syncthing already mirrors it to the PC; run it on one machine only, and add `.git` to the Syncthing ignore
+list so the git internals are not mirrored).
+
+```bash
+bash scripts/aurix_git_sync.sh status          # what differs; changes nothing
+bash scripts/aurix_git_sync.sh sync --dry-run  # first run in a plain Syncthing folder: adopts it (adds .git only)
+bash scripts/aurix_git_sync.sh sync            # commit local edits, merge GitHub's, push
+```
+
+It never rebases or force-pushes, keeps `data/`, `logs/` and `.env` out (plus a scan that stops on keys and
+tokens), and on a conflict leaves both versions marked in the file and pushes nothing. To bring in a reviewed
+branch as well: `AURIX_SYNC_MERGE="claude/exciting-darwin-9gwtrc" bash scripts/aurix_git_sync.sh sync`.
+To run it every 15 minutes: `*/15 * * * * cd ~/ai-brain-sync/odysseus && bash scripts/aurix_git_sync.sh sync`
+(adjust the path to where your checkout lives).
+
 ## Security Notes
 Odysseus is a self-hosted workspace with powerful local tools: shell access, file uploads, model downloads, web research, email/calendar integrations, and API tokens. Treat it like an admin console.
 

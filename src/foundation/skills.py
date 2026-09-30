@@ -89,6 +89,9 @@ def load(name: str, roots: Optional[Iterable[Path]] = None) -> str:
             except OSError:
                 continue
             if text:
+                from src import agent_shield                    # a tampered checkout falls back to the vetted summary
+                if agent_shield.blocking(agent_shield.scan_text(text, str(rel))):
+                    continue
                 return text[:MAX_SKILL_CHARS]
     return spec["fallback"]
 

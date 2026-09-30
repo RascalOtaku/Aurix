@@ -1459,6 +1459,7 @@ async def stream_agent_loop(
     # signatures + consecutive no-text tool rounds to bail early.
     _recent_call_sigs = collections.deque(maxlen=6)
     _stuck_rounds = 0
+    _steered = False  # one "try something different" nudge before the hard stop
     _tool_type_counts: collections.Counter = collections.Counter()
     _THINK_RE = re.compile(r'<think>.*?</think>', re.DOTALL | re.IGNORECASE)
     _force_answer = False  # set by loop-breaker → next round runs with NO tools
@@ -1824,6 +1825,19 @@ async def stream_agent_loop(
         else:
             _stuck_rounds = 0
         _runaway = next((t for t, n in _tool_type_counts.items() if n >= 15), None)
+        # Steer before stopping (Munder Difflin's steer -> constrain -> stop ladder): the first time the
+        # model circles twice, nudge it toward a different approach; the hard stop below stays at 4.
+        if _stuck_rounds == 2 and not _runaway and not _steered:
+            _steered = True
+            logger.info(f"[agent] loop-breaker steer on round {round_num}")
+            messages.append({
+                "role": "system",
+                "content": (
+                    "You just repeated a tool call that already ran. Its result is above - reuse it. "
+                    "Either try a DIFFERENT approach (another tool, other arguments, a narrower query) "
+                    "or answer from what you have. Do not repeat the same call again."
+                ),
+            })
         if _stuck_rounds >= 4 or _runaway:
             reason = (f"calling {_runaway} over and over" if _runaway
                       else "repeating the same tool calls without new progress")
