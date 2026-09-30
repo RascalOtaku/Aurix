@@ -92,3 +92,9 @@ jobs:
             sleep 2
           done
           docker logs --tail 80 sbx; exit 1
+      - name: docker-compose.yml is valid (all profiles)
+        run: NEO4J_PASSWORD=ci-placeholder docker compose --profile extras config -q
+      - name: Build ReClip (pinned commit; the build fails if the option-injection patch no longer applies)
+        run: docker build -t aurix-reclip:ci reclip
+      - name: Build God's Eye View (pinned commit)
+        run: docker build -t aurix-godseye:ci gods_eye
