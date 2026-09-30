@@ -74,10 +74,10 @@ class CiHardeningTests(unittest.TestCase):
     def test_workflows_pin_actions_to_commit_shas_and_read_only_token(self):
         for wf in (ROOT / ".github" / "workflows").glob("*.yml"):
             text = wf.read_text()
-            for ref in re.findall(r"uses:\s*([^\s#]+)", text):
+            code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+            for ref in re.findall(r"uses:\s*([^\s#]+)", code):
                 self.assertRegex(ref, r"@[0-9a-f]{40}$", f"{wf.name}: {ref} is not pinned to a commit SHA")
             self.assertRegex(text, r"(?m)^permissions:\s*\n\s+contents:\s*read")
-            code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
             self.assertNotIn("pull_request_target", code)
 
 
