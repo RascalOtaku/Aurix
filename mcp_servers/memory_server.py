@@ -10,13 +10,14 @@ import sys
 import time
 from pathlib import Path
 
-from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-server = Server("memory")
+from mcp_servers._common import mcp_server  # noqa: E402  works on MCP SDK 1.x and 2.x
+
+server = mcp_server("memory")
 
 # Late-initialized managers (set during first tool call)
 _memory_manager = None

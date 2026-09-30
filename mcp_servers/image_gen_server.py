@@ -10,13 +10,14 @@ import sys
 import uuid
 from pathlib import Path
 
-from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-server = Server("image_gen")
+from mcp_servers._common import mcp_server  # noqa: E402  works on MCP SDK 1.x and 2.x
+
+server = mcp_server("image_gen")
 
 
 @server.list_tools()
