@@ -33,7 +33,7 @@ PROBES = {
     "open_library": "/search.json?q=dune&limit=1",
     "hacker_news": "/v0/topstories.json",
 }
-RATE_LIMITED_OK = {"semantic_scholar", "coingecko"}   # shared public quotas: a 429 means reachable, just busy
+RATE_LIMITED_OK = {"semantic_scholar", "coingecko", "openalex"}   # shared public quotas: a 429 means reachable, just busy
 
 
 def probe(key: str) -> tuple:

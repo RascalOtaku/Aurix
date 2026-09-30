@@ -94,7 +94,8 @@ PUBLIC_API_PRESETS: Dict[str, Dict[str, Any]] = {
         "base_url": "https://api.openalex.org",
         "auth_type": "none",
         "description": (
-            "250M+ papers, authors and institutions, no key. Add mailto=you@example.com to join the faster polite pool.\n"
+            "250M+ papers, authors and institutions, no key. Add mailto=you@example.com to join the faster polite pool; "
+            "on HTTP 429 (shared daily quota) wait and retry, or add a free OpenAlex API key as api_key=...\n"
             "  GET /works?search=vectorless retrieval&per-page=5&sort=cited_by_count:desc&select=id,title,"
             "publication_year,cited_by_count,doi,open_access\n"
             "  GET /works?filter=publication_year:2026,concepts.id:C154945302&per-page=10 — filtered listing\n"
