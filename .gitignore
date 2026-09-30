@@ -16,6 +16,8 @@ venv/
 
 # Data — all user data stays local
 data/
+# Personal documents (symlinked into the brain on the server): never part of the public repo
+personal_docs/
 !services/hwfit/data/
 !services/hwfit/data/hf_models.json
 logs/
