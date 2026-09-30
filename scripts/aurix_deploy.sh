@@ -84,7 +84,23 @@ case "${1:-deploy}" in
             say "No running build to save (first deploy?)"
         fi
         say "Building and starting the new code..."
-        dock compose up -d --build "$SERVICE" || { say "BUILD FAILED. The old build is still running (nothing was replaced)."; record "build_failed" "-"; exit 1; }
+        if ! dock compose up -d --build "$SERVICE"; then
+            # A restart that was interrupted earlier leaves a "<hash>_<project>-<service>-1" container behind, and
+            # every later `compose up` fails on it ("No such container"). Remove those leftovers and try once more.
+            stale="$(docker ps -a --format '{{.ID}} {{.Names}}' | awk -v s="$SERVICE" '$2 ~ "^[0-9a-f]+_.*" s "-[0-9]+$" {print $1}')"
+            if [ -n "$stale" ] && [ "${AURIX_DEPLOY_DRY:-0}" != "1" ]; then
+                say "Removing leftover container(s) from an interrupted restart: $(echo $stale)"
+                docker rm -f $stale >/dev/null 2>&1
+            fi
+            if ! dock compose up -d --build "$SERVICE"; then
+                if [ -n "$(docker compose ps -q --status running "$SERVICE" 2>/dev/null)" ]; then
+                    say "BUILD FAILED. The previous build is still running (nothing was replaced)."
+                else
+                    say "BUILD FAILED and $SERVICE is NOT running. Put the last good build back: bash scripts/aurix_deploy.sh rollback"
+                fi
+                record "build_failed" "-"; exit 1
+            fi
+        fi
         if [ "${AURIX_DEPLOY_DRY:-0}" = "1" ]; then exit 0; fi
         if wait_healthy; then
             say "DEPLOY OK: the new build is healthy. Go back any time with: bash scripts/aurix_deploy.sh rollback"

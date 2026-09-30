@@ -190,5 +190,29 @@ class GitSyncScriptTests(unittest.TestCase):
             self.assertNotIn("a" * 40, r.stdout)
 
 
+@unittest.skipUnless(shutil.which("git") and shutil.which("bash"), "needs git and bash")
+class GitSyncRunFromElsewhereTests(unittest.TestCase):
+    """The owner downloaded the script to /tmp and ran it from the Aurix folder: it must use that folder."""
+
+    def test_script_outside_the_repo_uses_the_current_folder(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            outside = d / "tmp"; outside.mkdir()
+            shutil.copy(ROOT / "scripts" / "aurix_git_sync.sh", outside)
+            app = d / "aurix"; app.mkdir()
+            (app / "app.py").write_text("")
+            r = subprocess.run(["bash", str(outside / "aurix_git_sync.sh"), "status"], cwd=app,
+                               capture_output=True, text=True, timeout=30)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn("Not a git checkout yet", r.stdout)
+            self.assertTrue((app / "logs").is_dir())                    # its logs went to the Aurix folder
+            self.assertFalse((d / "logs").exists())
+
+            r = subprocess.run(["bash", str(outside / "aurix_git_sync.sh"), "status"], cwd=outside,
+                               capture_output=True, text=True, timeout=30)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("run this from inside your Aurix folder", r.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

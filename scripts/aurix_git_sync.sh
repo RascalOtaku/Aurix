@@ -25,19 +25,26 @@
 #            AURIX_SYNC_MERGE="branch1 branch2" (also merge these GitHub branches in, e.g. a reviewed claude/* branch).
 set -uo pipefail
 
-cd "$(dirname "$0")/.."
+# Work on the Aurix checkout this script lives in; if it was run from elsewhere (e.g. downloaded to /tmp),
+# on the Aurix folder you are standing in.
+here="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)"
+if [ -n "$here" ] && [ -f "$here/app.py" ]; then cd "$here"
+elif [ -f ./app.py ]; then :
+else echo "STOP: run this from inside your Aurix folder (the one with app.py)"; exit 1
+fi
 REMOTE_URL="${AURIX_SYNC_REMOTE:-https://github.com/RascalOtaku/Aurix.git}"
 BRANCH="${AURIX_SYNC_BRANCH:-main}"
 EXTRA="${AURIX_SYNC_MERGE:-}"
 MODE="${1:-status}"
 DRY=0; [ "${2:-}" = "--dry-run" ] && DRY=1
-mkdir -p logs
+mkdir -p logs 2>/dev/null
+[ -w logs ] || { echo "STOP: cannot write to $(pwd)/logs (owned by $(stat -c %U logs 2>/dev/null || echo '?')). Fix: sudo chown -R $(id -un): $(pwd)/logs"; exit 1; }
 LOG="logs/git_sync.log"
 say() { echo "$*"; echo "$(date -Is) $*" >> "$LOG"; }
 die() { say "STOP: $*"; exit 1; }
 
 LOCK="logs/.git_sync.lock"
-exec 9>"$LOCK"
+exec 9>"$LOCK" || die "cannot create the lock file $LOCK"
 if command -v flock >/dev/null 2>&1; then flock -n 9 || die "another sync is running"; fi
 
 command -v git >/dev/null || die "git is not installed"
