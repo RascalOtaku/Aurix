@@ -168,6 +168,9 @@ class GitSyncScriptTests(unittest.TestCase):
             (pc / "app.py").write_text("a-pc\nb\nc\n")
             (pc / "data").mkdir(); (pc / "data" / "app.db").write_text("private")
             (seed / "app.py").write_text("a\nb\nc-gh\n"); (seed / "gh.py").write_text("new on github\n")
+            # GitHub gains the secret guard after this machine's copy was taken: the sync must fetch and use it.
+            (seed / "scripts" / "git-hooks").mkdir()
+            shutil.copy(ROOT / "scripts" / "git-hooks" / "secret_guard.sh", seed / "scripts" / "git-hooks")
             self.git(seed, "add", "-A"); self.git(seed, "commit", "-qm", "gh"); self.git(seed, "push", "-q", "origin", "main")
 
             r = self.run_sync(pc, "sync")
@@ -182,7 +185,9 @@ class GitSyncScriptTests(unittest.TestCase):
             (pc / "leak.py").write_text("KEY = 'sk-or-v1-" + "a" * 40 + "'\n")
             r = self.run_sync(pc, "sync")
             self.assertNotEqual(r.returncode, 0)
-            self.assertIn("API token", r.stdout)
+            self.assertIn("secret guard blocked", r.stdout)
+            self.assertIn("…REDACTED", r.stdout)                                  # reported, never echoed
+            self.assertNotIn("a" * 40, r.stdout)
 
 
 if __name__ == "__main__":

@@ -17,9 +17,34 @@ pattern.
 import os
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 
+import importlib
+import sys
+from types import ModuleType
 from unittest.mock import MagicMock
 
-from core import database as db
+import pytest
+
+
+def _is_stub(mod) -> bool:
+    return isinstance(mod, MagicMock) or (isinstance(mod, ModuleType) and not getattr(mod, "__file__", None))
+
+
+db = None  # the real core.database, bound per test by _real_db
+
+
+@pytest.fixture(autouse=True)
+def _real_db(monkeypatch):
+    """The real core.database. Other test modules park stubs for it (and sometimes for sqlalchemy) in
+    sys.modules at import time; hide those for the duration of each test, then put them back."""
+    for name in [n for n, m in list(sys.modules.items())
+                 if (n == "core.database" or n == "sqlalchemy" or n.startswith("sqlalchemy.")) and _is_stub(m)]:
+        monkeypatch.delitem(sys.modules, name)
+    real = sys.modules.get("core.database")
+    if real is None:
+        monkeypatch.setitem(sys.modules, "core.database", importlib.import_module("core.database"))
+        real = sys.modules["core.database"]
+    globals()["db"] = real
+    yield real
 
 
 def _mock_session(monkeypatch):

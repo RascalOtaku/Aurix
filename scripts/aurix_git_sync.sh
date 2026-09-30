@@ -13,8 +13,10 @@
 # differences become the first "sync" commit. Nothing is deleted or overwritten on either side.
 #
 # Safety rails:
-#   * .gitignore keeps data/, logs/, .env and other secrets out; on top of that the staged diff is scanned and
-#     the sync STOPS if it sees a private key, an API token, or a secret-looking file (.env, *.pem, id_*).
+#   * .gitignore keeps data/, logs/, .env and other secrets out; on top of that scripts/git-hooks/secret_guard.sh
+#     scans what would be committed and the sync STOPS on a private key, an API token, a secret-looking file, or
+#     a match for your own private patterns (.git/info/aurix-private-patterns: real IPs, hostnames, email).
+#     It also turns that guard on as a pre-commit hook for every commit made on this machine.
 #   * merges, never rebases or force-pushes; on a conflict it stops, leaves both versions marked in the files,
 #     and tells you which ones - nothing is pushed until you resolve them and run `sync` again.
 #   * one run at a time (lock file), and a log in logs/git_sync.log.
@@ -69,6 +71,8 @@ if [ ! -d .git ]; then
 fi
 
 git remote get-url origin >/dev/null 2>&1 || git remote add origin "$REMOTE_URL"
+# Every commit on this machine goes through the secret guard, not just the ones this script makes.
+[ -d scripts/git-hooks ] && [ "$(git config core.hooksPath)" != "scripts/git-hooks" ] && git config core.hooksPath scripts/git-hooks
 git fetch -q origin "$BRANCH" || die "cannot fetch $BRANCH (check network / credentials)"
 for b in $EXTRA; do git fetch -q origin "$b" || die "cannot fetch $b"; done
 
@@ -88,17 +92,18 @@ for b in $EXTRA; do echo "Also merging origin/$b: $(git rev-list --count "HEAD..
 
 [ "$MODE" = "sync" ] || exit 0
 
-# --- secret guard on everything that would be committed ----------------------------------------------------
+# --- secret guard on everything that would be committed (same rules as the pre-commit hook and CI) ----------
 git add -A
 staged_files="$(git diff --cached --name-only)"
-bad_files="$(printf '%s\n' "$staged_files" | grep -E '(^|/)(\.env($|\.)|id_(rsa|ed25519|ecdsa)($|\.)|[^/]*\.(pem|key|p12|pfx)$|credentials\.json$|api_keys\.json$|auth\.json$)' | grep -v '\.env\.example$' || true)"
-if [ -n "$bad_files" ]; then
-    git reset -q
-    die "secret-looking files would be committed (add them to .gitignore): $(echo $bad_files)"
+GUARD="scripts/git-hooks/secret_guard.sh"
+if [ ! -f "$GUARD" ]; then                  # first sync of an older copy: use GitHub's guard, never skip the check
+    GUARD="$(mktemp)"; trap 'rm -f "$GUARD"' EXIT
+    git show "origin/$BRANCH:scripts/git-hooks/secret_guard.sh" > "$GUARD" 2>/dev/null \
+        || { git reset -q; die "no secret guard available (scripts/git-hooks/secret_guard.sh); refusing to commit"; }
 fi
-if git diff --cached -U0 | grep -E '^\+' | grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----|ghp_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|sk-(ant-|or-|proj-)?[A-Za-z0-9_-]{32,}|xox[baprs]-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16}'; then
+if ! bash "$GUARD" --staged; then
     git reset -q
-    die "a private key or API token appears in the changes; remove it (or move it to .env) and run again"
+    die "the secret guard blocked this sync (see above); nothing was committed or pushed"
 fi
 
 if [ "$DRY" = 1 ]; then

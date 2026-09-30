@@ -1,14 +1,15 @@
-# aurix-ssh-setup.ps1 - one-time setup on the Windows PC: an SSH key, `ssh aurix` / `ssh 7070`, and a Ctrl+Alt+A
-# hotkey that opens an SSH session to the home server (7070Micro). -Port N also forwards localhost:N to the server.
+# aurix-ssh-setup.ps1 - one-time setup on the Windows PC: an SSH key, an `ssh aurix` alias (plus -Alias), and a
+# Ctrl+Alt+A hotkey that opens an SSH session to the home server. -Port N also forwards localhost:N to the server.
 #
-#   powershell -ExecutionPolicy Bypass -File aurix-ssh-setup.ps1
-#   powershell -ExecutionPolicy Bypass -File aurix-ssh-setup.ps1 -Server 100.112.82.10 -User rascal_otaku -Port 7000 -Hotkey "CTRL+ALT+A"
+#   powershell -ExecutionPolicy Bypass -File aurix-ssh-setup.ps1 -Server <tailscale-ip-or-name> -User <linux-user>
+#   powershell -ExecutionPolicy Bypass -File aurix-ssh-setup.ps1 -Server 100.x.y.z -User me -Alias myserver -Port 7000
 #
 # It never touches the server. It prints (and copies) your PUBLIC key; that line has to be added to
 # ~/.ssh/authorized_keys on the server once - see the note printed at the end.
 param(
-    [string]$Server = "100.112.82.10",
-    [string]$User   = "rascal_otaku",
+    [Parameter(Mandatory = $true)][string]$Server,   # no defaults: this repo is public, your address stays on your PC
+    [Parameter(Mandatory = $true)][string]$User,
+    [string]$Alias  = "",
     [int]   $Port   = 0,
     [string]$Hotkey = "CTRL+ALT+A"
 )
@@ -28,7 +29,7 @@ if (-not (Test-Path $config) -or -not (Select-String -Path $config -Pattern "^Ho
     $fwd = if ($Port -gt 0) { "`n    LocalForward $Port localhost:$Port" } else { "" }
     Add-Content -Path $config -Encoding ascii -Value @"
 
-Host aurix 7070
+Host aurix $Alias
     HostName $Server
     User $User
     IdentityFile ~/.ssh/id_ed25519

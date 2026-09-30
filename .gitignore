@@ -69,7 +69,9 @@ output.txt.txt
 
 # Reports and temp files
 reports/
-tasks/
+# tasks/ holds host-side jobs (strategy_lab.py, ...). Their code belongs in the repo; their output does not.
+tasks/*
+!tasks/*.py
 scripts/compound/*.json
 research_data/
 **/search_analytics.json
@@ -93,3 +95,25 @@ ponytail/
 *.env.*
 !.env.example
 *.sync-conflict-*
+
+# Credentials and keys, wherever they land (also enforced by scripts/git-hooks/secret_guard.sh and CI)
+.ssh/
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.kdbx
+.netrc
+.pypirc
+credentials*.json
+api_keys.json
+auth.json
+service-account*.json
+*.tfstate
+*.tfstate.*

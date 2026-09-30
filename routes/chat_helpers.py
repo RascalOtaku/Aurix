@@ -15,11 +15,24 @@ from src.context_compactor import maybe_compact, trim_for_context
 from src.auth_helpers import get_current_user
 from src.prompt_security import untrusted_context_message
 from routes.prefs_routes import _load_for_user as load_prefs_for_user
-from cortex.resource_governor import (
-    get_mode,
-    get_model_for_significance,
-    allows_gpu_inference,
-)
+try:
+    # The resource governor lives in the sibling cortex/ checkout (mounted at ../cortex), which is not part of this
+    # repository. Without it: no GPU gating and no significance ladder - the session keeps the model it chose.
+    from cortex.resource_governor import (
+        get_mode,
+        get_model_for_significance,
+        allows_gpu_inference,
+    )
+except ImportError:
+    def get_mode() -> str:
+        from src.foundation.sysview import probe_governor
+        return probe_governor().get("mode", "n/a")
+
+    def get_model_for_significance(significance: float):
+        return None
+
+    def allows_gpu_inference() -> bool:
+        return True
 
 from fastapi import HTTPException
 
@@ -456,7 +469,7 @@ def get_runtime_model(sess, message: str, agent_mode: bool = False) -> Optional[
         runtime_model,
     )
 
-    return runtime_model
+    return runtime_model or getattr(sess, "model", None)
 
 
 async def build_chat_context(

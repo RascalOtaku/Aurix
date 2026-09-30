@@ -1,0 +1,8 @@
+# Every change needs the owner's review (enforced once "Require review from Code Owners" is on for main).
+*                   @RascalOtaku
+# Security-critical paths, listed so they stand out in review.
+/.github/           @RascalOtaku
+/src/approval_gate.py @RascalOtaku
+/src/foundation/audit.py @RascalOtaku
+/src/agent_shield.py @RascalOtaku
+/scripts/git-hooks/ @RascalOtaku

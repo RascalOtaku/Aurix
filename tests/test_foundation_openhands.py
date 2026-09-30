@@ -18,6 +18,8 @@ NOTHING = dict(env={}, which=lambda b: None, find_spec=lambda m: None, authoriza
 
 
 class SkillsTests(unittest.TestCase):
+    @unittest.skipUnless(any((r / "ponytail/.agents/rules/ponytail.md").is_file() for r in skills._roots()),
+                         "the ponytail/ checkout is gitignored; only present on the owner's machine")
     def test_loads_the_real_ponytail_rules_from_the_checkout(self):
         text = skills.load("ponytail")
         self.assertIn("lazy senior developer", text.lower())

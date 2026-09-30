@@ -1,0 +1,11 @@
+# gitleaks config: the default rules, plus allowlisted FAKE credentials used by redaction tests.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fake credentials in redaction/secret-guard test fixtures"
+paths = [
+  '''^tests/test_foundation_teacher\.py$''',
+  '''^tests/test_starred_round2\.py$''',
+  '''^tests/test_starred_integrations\.py$''',
+]

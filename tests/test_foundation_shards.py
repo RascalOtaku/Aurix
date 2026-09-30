@@ -26,7 +26,10 @@ def load(name, rel):
 absorb = load("aurix_absorb_agent", "scripts/aurix_absorb_agent.py")
 applier = load("aurix_upgrade_agent", "scripts/aurix_upgrade_agent.py")
 sys.path.insert(0, str(HERE.parent / "tasks"))
-import strategy_lab  # noqa: E402
+try:
+    import strategy_lab  # noqa: E402  tasks/strategy_lab.py: host-side script, may not be checked out
+except ImportError:
+    strategy_lab = None
 
 
 class _Base(unittest.TestCase):
@@ -133,6 +136,7 @@ class PauseReachesEveryHelperTests(_Base):
             absorb.cycle()
         self.assertEqual(calls, ["a"])
 
+    @unittest.skipIf(strategy_lab is None, "tasks/strategy_lab.py is only on the host until it is committed")
     def test_the_strategy_lab_and_paper_trader_scripts_skip_when_paused(self):
         with mock.patch.object(strategy_lab, "fetch_history", side_effect=AssertionError("fetched")):
             self.pause("strategy_lab")

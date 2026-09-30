@@ -141,8 +141,8 @@ class RequestTests(_Base):
         notified = []
         with mock.patch.object(tr, "_download", return_value=None):
             tr.request("f1", "x.mp3", notify=notified.append, model_factory=boom)
-        for _ in range(50):
-            if tr.jobs() and tr.jobs()[0]["status"] != "running":
+        for _ in range(200):                     # the worker marks the job failed, audits, THEN notifies: wait for all three
+            if notified and tr.jobs() and tr.jobs()[0]["status"] != "running":
                 break
             time.sleep(0.05)
         job = tr.jobs()[0]

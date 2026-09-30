@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# Enabled by: git config core.hooksPath scripts/git-hooks   (scripts/aurix_git_sync.sh does this for you)
+exec bash "$(git rev-parse --show-toplevel)/scripts/git-hooks/secret_guard.sh" --staged
