@@ -35,7 +35,7 @@ cryptography
 bcrypt
 # Pinned below 2.x: mcp 2.0 removed the @server.list_tools()/call_tool() decorators that the built-in
 # Memory and RAG MCP servers (mcp_servers/*.py) use, so an unpinned rebuild silently broke both.
-mcp>=1.23,<2
+mcp>=2.2.0,<3
 # Knowledge graph client (src/graph_memory.py). 5.x matches the neo4j:5 server image.
 neo4j>=5.20,<6
 pyotp
