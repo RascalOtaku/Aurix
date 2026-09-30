@@ -1,0 +1,31 @@
+# Weekly: is every keyless public-API preset still answering? (scripts/check_public_apis.py)
+# Informational - it never blocks a merge; a failure means a preset's URL or endpoint needs updating.
+name: Public API presets
+
+on:
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - src/public_api_presets.py
+      - scripts/check_public_apis.py
+      - .github/workflows/public-apis.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14"
+      - name: Probe every keyless preset
+        run: python scripts/check_public_apis.py
