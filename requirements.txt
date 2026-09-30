@@ -37,7 +37,7 @@ bcrypt
 # Memory and RAG MCP servers (mcp_servers/*.py) use, so an unpinned rebuild silently broke both.
 mcp>=1.23,<2
 # Knowledge graph client (src/graph_memory.py). 5.x matches the neo4j:5 server image.
-neo4j>=5.20,<6
+neo4j>=6.3.1,<7
 pyotp
 qrcode[pil]
 croniter
