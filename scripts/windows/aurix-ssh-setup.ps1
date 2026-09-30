@@ -1,15 +1,15 @@
-# aurix-ssh-setup.ps1 - one-time setup on the Windows PC: an SSH key, and a Ctrl+Alt+A hotkey that opens an SSH
-# session to the home server with port 7070 forwarded (http://localhost:7070 on the PC -> port 7070 on the server).
+# aurix-ssh-setup.ps1 - one-time setup on the Windows PC: an SSH key, `ssh aurix` / `ssh 7070`, and a Ctrl+Alt+A
+# hotkey that opens an SSH session to the home server (7070Micro). -Port N also forwards localhost:N to the server.
 #
 #   powershell -ExecutionPolicy Bypass -File aurix-ssh-setup.ps1
-#   powershell -ExecutionPolicy Bypass -File aurix-ssh-setup.ps1 -Server 100.112.82.10 -User rascal_otaku -Port 7070 -Hotkey "CTRL+ALT+A"
+#   powershell -ExecutionPolicy Bypass -File aurix-ssh-setup.ps1 -Server 100.112.82.10 -User rascal_otaku -Port 7000 -Hotkey "CTRL+ALT+A"
 #
 # It never touches the server. It prints (and copies) your PUBLIC key; that line has to be added to
 # ~/.ssh/authorized_keys on the server once - see the note printed at the end.
 param(
     [string]$Server = "100.112.82.10",
     [string]$User   = "rascal_otaku",
-    [int]   $Port   = 7070,
+    [int]   $Port   = 0,
     [string]$Hotkey = "CTRL+ALT+A"
 )
 $ErrorActionPreference = "Stop"
@@ -24,15 +24,15 @@ if (-not (Test-Path $key)) {
 
 # ~/.ssh/config entry, so plain `ssh aurix` works too and always uses this key.
 $config = Join-Path $sshDir "config"
-if (-not (Test-Path $config) -or -not (Select-String -Path $config -Pattern "^Host aurix$" -Quiet)) {
+if (-not (Test-Path $config) -or -not (Select-String -Path $config -Pattern "^Host aurix" -Quiet)) {
+    $fwd = if ($Port -gt 0) { "`n    LocalForward $Port localhost:$Port" } else { "" }
     Add-Content -Path $config -Encoding ascii -Value @"
 
-Host aurix
+Host aurix 7070
     HostName $Server
     User $User
     IdentityFile ~/.ssh/id_ed25519
-    IdentitiesOnly yes
-    LocalForward $Port localhost:$Port
+    IdentitiesOnly yes$fwd
     ServerAliveInterval 30
 "@
     Write-Host "Added 'Host aurix' to $config"
@@ -45,7 +45,7 @@ $s = $sh.CreateShortcut($lnk)
 $s.TargetPath = "$env:WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe"
 $s.Arguments  = "-NoExit -Command `"ssh aurix`""
 $s.Hotkey     = $Hotkey
-$s.Description = "SSH to the Aurix server ($User@$Server), forwarding port $Port"
+$s.Description = "SSH to the Aurix server ($User@$Server)"
 $s.Save()
 Write-Host "Shortcut: $lnk  (hotkey $Hotkey)"
 
@@ -56,8 +56,8 @@ Write-Host "Your public key (copied to the clipboard):"
 Write-Host $pub
 Write-Host ""
 Write-Host "The server has to trust it ONCE. Pick whichever way in you still have:"
-Write-Host "  * Tailscale SSH (no keys needed): on the server run  sudo tailscale set --ssh"
-Write-Host "      then from here:  tailscale ssh $User@$Server"
-Write-Host "  * At the server's own keyboard, or any session that still works, run:"
+Write-Host "  * Tailscale SSH, if it is on for the server - one line from THIS PowerShell window:"
+Write-Host "      Get-Content `"$key.pub`" | tailscale ssh $User@$Server `"mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys`""
+Write-Host "  * Otherwise IN A SERVER SHELL (its keyboard, or a session that still works - not this PowerShell) run:"
 Write-Host "      mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '<paste key>' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
 Write-Host "Then test:  ssh aurix   (or press $Hotkey)"
