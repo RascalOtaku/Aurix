@@ -121,6 +121,11 @@ class PageIndexTests(unittest.TestCase):
         self.assertIn("Rollback", text)                    # sub-sections belong to their parent
         self.assertNotIn("Cap is 2M", text)
 
+    def test_a_section_summary_never_borrows_a_subsection_line(self):
+        nodes = page_index.parse("# Alpha\n## Deploy\nUse compose.\n", "wiki/a.md")
+        self.assertEqual([(n.title, n.gist) for n in nodes],
+                         [("Alpha", "Use compose."), ("Alpha", ""), ("Deploy", "Use compose.")])
+
     def test_read_refuses_path_traversal(self):
         self.assertTrue(page_index.read("wiki/../../etc/passwd#0", dirs=[self.wiki]).startswith("Unknown node"))
 

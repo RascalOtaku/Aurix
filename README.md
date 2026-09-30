@@ -156,6 +156,8 @@ and configure everything else inside **Settings**.
 
 ## Keeping GitHub and your machine in sync
 
+The full runbook (access, sync, deploy, rollback, what guards the public repo) is in [docs/OPERATIONS.md](docs/OPERATIONS.md).
+
 `scripts/aurix_git_sync.sh` makes GitHub and your local Aurix match, both ways. Run it on the home server
 (Syncthing already mirrors it to the PC; run it on one machine only, and add `.git` to the Syncthing ignore
 list so the git internals are not mirrored).

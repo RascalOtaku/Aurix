@@ -49,10 +49,16 @@ def roots() -> List[Path]:
     return [d for d in dirs if d.is_dir()]
 
 
-def _gist(lines: List[str], start: int, end: int) -> str:
+def _gist(lines: List[str], start: int, end: int, skip_headings: bool = False) -> str:
+    """First line of prose in a section's OWN text: stops at the next heading, so a parent never borrows a
+    child section's line (files skip their headings, since a file's text usually starts with its # title)."""
     for line in lines[start:end]:
         s = line.strip()
-        if s and not s.startswith("#") and not _FENCE.match(s) and not s.startswith("---"):
+        if _HEADING.match(s):
+            if skip_headings:
+                continue
+            return ""
+        if s and not _FENCE.match(s) and not s.startswith("---"):
             return (s[:117] + "...") if len(s) > 120 else s
     return ""
 
@@ -69,7 +75,7 @@ def parse(text: str, relpath: str) -> List[Node]:
         if m:
             heads.append((i, len(m.group(1)), m.group(2).strip()))
     title = next((t for _, lvl, t in heads if lvl == 1), Path(relpath).stem.replace("-", " ").replace("_", " "))
-    nodes = [Node(f"{relpath}#0", relpath, title, 0, 0, len(lines), _gist(lines, 0, len(lines)))]
+    nodes = [Node(f"{relpath}#0", relpath, title, 0, 0, len(lines), _gist(lines, 0, len(lines), skip_headings=True))]
     for n, (line_no, level, htitle) in enumerate(heads, start=1):
         end = next((l for l, lv, _ in heads[n:] if lv <= level), len(lines))
         nodes.append(Node(f"{relpath}#{n}", relpath, htitle, level, line_no, end, _gist(lines, line_no + 1, end)))
