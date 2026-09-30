@@ -57,3 +57,38 @@ jobs:
         run: |
           mkdir -p data logs
           python -m pytest tests -q -p no:cacheprovider
+
+  images:
+    name: Docker images (build and boot)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the app image
+        run: docker build --pull -t aurix-app:ci .
+      - name: Boot the app and wait for /api/health
+        run: |
+          docker run -d --name app -p 127.0.0.1:7000:7000 aurix-app:ci
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:7000/api/health; then echo; exit 0; fi
+            sleep 2
+          done
+          docker logs --tail 120 app; exit 1
+      - name: Build the mission sandbox image
+        run: docker build --pull -t aurix-sandbox:ci mission_sandbox
+      - name: Sandbox tools import under the production restrictions
+        run: |
+          docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 \
+            aurix-sandbox:ci python -c "import numpy, scipy, pandas, pydicom, SimpleITK, skimage, trimesh, stl, pymeshlab, faster_whisper; print('sandbox tools import OK')"
+      - name: Boot the sandbox (fail-closed token, read-only, no capabilities) and wait for /health
+        run: |
+          docker run -d --name sbx -p 127.0.0.1:8765:8765 -e SANDBOX_TOKEN="$(openssl rand -hex 16)" \
+            --read-only --tmpfs /tmp --tmpfs /app/data/workspace:uid=1000,gid=1000 \
+            --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 aurix-sandbox:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8765/health; then echo; exit 0; fi
+            sleep 2
+          done
+          docker logs --tail 80 sbx; exit 1
