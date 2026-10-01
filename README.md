@@ -49,8 +49,8 @@ pull request guidelines.
 
 ### Option 1: Docker (recommended)
 ```bash
-git clone https://github.com/pewdiepie-archdaemon/odysseus.git
-cd odysseus
+git clone https://github.com/RascalOtaku/Aurix.git
+cd Aurix
 cp .env.example .env       # optional, but recommended for explicit defaults
 docker compose up -d --build
 ```
@@ -128,8 +128,8 @@ sudo dnf install tmux
 
 Then install Odysseus:
 ```bash
-git clone https://github.com/pewdiepie-archdaemon/odysseus.git
-cd odysseus
+git clone https://github.com/RascalOtaku/Aurix.git
+cd Aurix
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -142,8 +142,8 @@ Windows support is not actively tested. Use it with caution; Docker on Linux
 or a Linux/macOS manual install is the safer path for now.
 
 ```powershell
-git clone https://github.com/pewdiepie-archdaemon/odysseus.git
-cd odysseus
+git clone https://github.com/RascalOtaku/Aurix.git
+cd Aurix
 python -m venv venv
 venv\Scripts\Activate.ps1
 pip install -r requirements.txt
