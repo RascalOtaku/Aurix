@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AURIX Command Center</title>
 <style>
-  /* Tokens match Odysseus: the chosen theme's colours are read from localStorage['odysseus-theme'] at load. */
+  /* Tokens match Aurix: the chosen theme's colours are read from localStorage['aurix-theme'] at load (legacy 'odysseus-theme' honoured). */
   :root { --bg:#282c34; --fg:#9cdef2; --panel:#111111; --border:#355a66; --red:#e06c75;
           --ok:#50fa7b; --warn:#f0ad4e; --bad:#ff5d6c; --idle:#6b7280; --accent:var(--fg);
           --card: color-mix(in srgb, var(--panel) 88%, var(--bg)); --dim: color-mix(in srgb, var(--fg) 55%, var(--bg)); }
@@ -217,7 +217,7 @@
     <div id="skill-nudge" class="small" style="margin-top:8px"></div></section>
   <section class="card c5"><h2>Running now</h2><div id="running"></div>
     <h2 style="margin-top:14px">Launch pad</h2>
-    <div class="launch"><a class="btn" href="/">&#128172; Odysseus chat</a>
+    <div class="launch"><a class="btn" href="/">&#128172; Aurix chat</a>
       <a class="btn" id="l-godseye" href="#" target="_blank" rel="noopener">&#127757; God's Eye View</a>
       <a class="btn" href="/systems">&#129504; Systems + STOP</a>
       <a class="btn" id="l-kuma" href="#" target="_blank" rel="noopener">&#128200; Uptime Kuma</a></div>
@@ -330,9 +330,9 @@ const $ = (id) => document.getElementById(id);
 function el(tag, attrs, text) { const n = document.createElement(tag); for (const k in (attrs || {})) n.setAttribute(k, attrs[k]); if (text !== undefined) n.textContent = text; return n; }
 function toast(msg) { const t = $("toast"); t.textContent = msg; t.style.display = "block"; setTimeout(() => t.style.display = "none", 6000); }
 
-// Match the Odysseus theme the user picked (colours live in localStorage['odysseus-theme'].colors).
+// Match the Aurix theme the user picked (colours live in localStorage['aurix-theme'].colors, legacy 'odysseus-theme' honoured).
 try {
-  const saved = JSON.parse(localStorage.getItem("odysseus-theme") || "null");
+  const saved = JSON.parse(localStorage.getItem("aurix-theme") || localStorage.getItem("odysseus-theme") || "null");
   const c = saved && saved.colors;
   if (c) { const r = document.documentElement.style;
     if (c.bg) r.setProperty("--bg", c.bg); if (c.fg) r.setProperty("--fg", c.fg); if (c.panel) r.setProperty("--panel", c.panel);

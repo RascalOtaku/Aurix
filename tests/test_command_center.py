@@ -189,7 +189,7 @@ class DashboardDataTests(_Base):
         self.assertFalse(rows["Neo4j"]["ok"])
         self.assertEqual(rows["Neo4j"]["detail"], "not answering")
         self.assertTrue(rows["ChromaDB"]["ok"])
-        for name in ("Odysseus app", "LLM gateway", "SearXNG", "ntfy", "God's Eye", "Sandbox gateway"):
+        for name in ("Aurix app", "LLM gateway", "SearXNG", "ntfy", "God's Eye", "Sandbox gateway"):
             self.assertIn(name, rows)
 
     def test_peer_hosts_can_be_overridden_and_default_to_compose_service_names(self):
@@ -243,7 +243,7 @@ class DashboardDataTests(_Base):
             raise RuntimeError("dns is down")
         s = cc.snapshot(SYS, EXTRA, service_check=explode)
         rows = {r["name"]: r for r in s["services"]}
-        self.assertTrue(rows["Odysseus app"]["ok"])                                          # the card is still there...
+        self.assertTrue(rows["Aurix app"]["ok"])                                          # the card is still there...
         self.assertFalse(rows["Neo4j"]["ok"])                                                # ...and the broken check reads as "down"
         self.assertFalse(rows["ChromaDB"]["ok"])
 
@@ -488,15 +488,15 @@ class PageTests(unittest.TestCase):
         self.assertIn("X-AURIX-Confirm", code)
         self.assertIn("/api/systems/stop", code)
 
-    def test_uses_the_odysseus_theme(self):
-        self.assertIn("odysseus-theme", self.src())
+    def test_uses_the_aurix_theme(self):
+        self.assertIn("aurix-theme", self.src())
 
     def test_the_page_has_every_card_the_owner_asked_for(self):
         src = self.src()
         for element_id in ("skills", "running", "sched", "todos", "projects", "services", "missions", "standing", "organs",
                            "l-godseye", "l-kuma", "skill-nudge", "approvals"):
             self.assertIn(f'id="{element_id}"', src, element_id)
-        for label in ("Odysseus chat", "God's Eye View", "Uptime Kuma", "Running now", "Tasks &amp; projects", "Services"):
+        for label in ("Aurix chat", "God's Eye View", "Uptime Kuma", "Running now", "Tasks &amp; projects", "Services"):
             self.assertIn(label, src, label)
 
     def test_server_card_ranks_severity_properly_and_is_wired(self):

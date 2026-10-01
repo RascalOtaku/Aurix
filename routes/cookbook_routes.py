@@ -31,10 +31,10 @@ from routes.cookbook_helpers import (
 
 _HF_TOKEN_STATUS_SNIPPET = (
     'if [ -n "$HF_TOKEN" ]; then '
-    'echo "[odysseus] HF token: applied"; '
+    'echo "[aurix] HF token: applied"; '
     'else '
-    'echo "[odysseus] HF token: NOT SET — gated/private models will be denied. '
-    'Add one in Odysseus Settings -> Cookbook -> HuggingFace Token."; '
+    'echo "[aurix] HF token: NOT SET — gated/private models will be denied. '
+    'Add one in Aurix Settings -> Cookbook -> HuggingFace Token."; '
     'fi'
 )
 

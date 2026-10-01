@@ -501,7 +501,7 @@ def _oauth_authorize_page(auth_url: str, server_id: str, host: str) -> str:
     """Page with Google sign-in link and URL paste-back form for remote access."""
     return f"""<!DOCTYPE html>
 <html><head>
-<meta charset="UTF-8"><title>Authorize — Odysseus</title>
+<meta charset="UTF-8"><title>Authorize — Aurix</title>
 <style>
   body {{ font-family: 'Fira Code', monospace; background: #0f0f0f; color: #e0e0e0;
     display: flex; justify-content: center; align-items: center; min-height: 100vh; }}

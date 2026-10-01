@@ -3,8 +3,8 @@
 
 // ── Key constants ──
 export const KEYS = {
-  THEME: 'odysseus-theme',
-  TOGGLES: 'odysseus-toggles',
+  THEME: 'aurix-theme',
+  TOGGLES: 'aurix-toggles',
   SIDEBAR_COLLAPSED: 'sidebar-collapsed',
   SIDEBAR_WIDTH: 'sidebar-width',
   SIDEBAR_SIDE: 'sidebar-side',
@@ -13,18 +13,48 @@ export const KEYS = {
   COMPARE_CHAT: 'compare-continue-chat',
   COMPARE_BLIND: 'compare-blind',
   COMPARE_RANDOM: 'compare-randomize',
-  MODELS_EXPANDED: 'odysseus-model-expanded',
-  MODEL_ENDPOINTS: 'odysseus-model-endpoints',
-  MODEL_SELECTED: 'odysseus-selected-model',
-  SORT_ORDER: 'odysseus-sessions-sort',
-  CHAT_SEARCH_SCOPE: 'odysseus-search-scope',
-  INCOGNITO: 'odysseus-incognito',
-  RAG_ACTIVE: 'odysseus-rag-active',
-  MCP_ACTIVE: 'odysseus-mcp-active',
+  MODELS_EXPANDED: 'aurix-model-expanded',
+  MODEL_ENDPOINTS: 'aurix-model-endpoints',
+  MODEL_SELECTED: 'aurix-selected-model',
+  SORT_ORDER: 'aurix-sessions-sort',
+  CHAT_SEARCH_SCOPE: 'aurix-search-scope',
+  INCOGNITO: 'aurix-incognito',
+  RAG_ACTIVE: 'aurix-rag-active',
+  MCP_ACTIVE: 'aurix-mcp-active',
   SECTION_ORDER: 'sidebar-section-order',
   ADMIN_LAST_TAB: 'admin-last-tab',
-  DENSITY: 'odysseus-density'
+  DENSITY: 'aurix-density'
 };
+
+// ── Legacy storage-key migration (Odysseus → Aurix rename) ──
+// Copy any legacy `odysseus…` storage keys to their `aurix…` equivalents
+// so user settings (theme, favourites, UI state…) survive the app
+// rename. Runs on every load: it only copies when the new key is
+// absent, and the legacy key is left in place (harmless) so rolling
+// back to the old build still finds its settings. Keep this
+// permanently — legacy keys can resurface from old backups at any
+// time.
+(function migrateLegacyKeys() {
+  const stores = [];
+  try { stores.push(localStorage); } catch (_) {}
+  try { stores.push(sessionStorage); } catch (_) {}
+  for (const store of stores) {
+    try {
+      const legacy = [];
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i);
+        if (k && k.startsWith('odysseus')) legacy.push(k);
+      }
+      for (const oldKey of legacy) {
+        const newKey = 'aurix' + oldKey.slice('odysseus'.length);
+        if (store.getItem(newKey) === null) {
+          const v = store.getItem(oldKey);
+          if (v !== null) store.setItem(newKey, v);
+        }
+      }
+    } catch (_) {}
+  }
+})();
 
 /**
  * Safely get and parse a JSON value from localStorage.

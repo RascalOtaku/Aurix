@@ -25,10 +25,10 @@ services:
       - ${AURIX_BRAIN_HOST:-./data/aurix-brain}/sandbox/upgrades:/aurix/upgrades
       # Game doctor: the PC's fact report comes in, signed approvals go out (gaming/, synced with the Windows PC).
       - ${AURIX_BRAIN_HOST:-./data/aurix-brain}/gaming:/aurix/gaming
-      # Cookbook remote-server SSH identity. Odysseus can generate a key here;
+      # Cookbook remote-server SSH identity. Aurix can generate a key here;
       # add the shown public key to each remote server's authorized_keys.
       - ./data/ssh:/app/.ssh
-      # Cookbook local model cache. Inside Docker, "Local" means the Odysseus
+      # Cookbook local model cache. Inside Docker, "Local" means the Aurix
       # container, so persist its HuggingFace cache under ./data/huggingface.
       - ./data/huggingface:/app/.cache/huggingface
       # Cookbook-installed Python CLIs/packages (vLLM, llama-cpp-python, etc.)

@@ -202,7 +202,7 @@ def probe_services(raw: Dict[str, Any], check: Optional[Callable[[str, int], boo
     tg = raw.get("telegram") or {}
     sb = raw.get("sandbox") or {}
     rows: List[Dict[str, Any]] = [
-        {"name": "Odysseus app", "ok": True, "detail": "this page is served by it"},
+        {"name": "Aurix app", "ok": True, "detail": "this page is served by it"},
         {"name": "Telegram listener", "ok": bool(tg.get("listener_alive")),
          "detail": "receiving your commands" if tg.get("listener_alive") else ("not running" if tg.get("configured") else "not configured")},
         {"name": "Standing scheduler", "ok": bool(tg.get("scheduler_alive")), "detail": "ticking about once a minute" if tg.get("scheduler_alive") else "not running"},
