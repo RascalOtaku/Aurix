@@ -233,7 +233,7 @@ def probe_services(raw: Dict[str, Any], check: Optional[Callable[[str, int], boo
 # Homelab Ecosystem Plan) is gone - nothing listens there any more. Override with AURIX_HOMELAB_LINKS="Name|http://host:port;Name 2|http://host2:port".
 HOMELAB_DEFAULT = ("3431 GPU (Ollama)|http://100.64.0.10:11434|quiet;"
                    "Jellyfin (Pi)|http://10.0.0.75:8096;Pi-hole (Pi)|http://10.0.0.75/admin;"
-                   "Vaultwarden (7070)|http://100.64.0.11:8080;Uptime Kuma (7070)|http://100.64.0.11:3001")
+                   "Vaultwarden (7070)|https://100.64.0.11;Uptime Kuma (7070)|http://100.64.0.11:3001")
 # The Pi is on the LAN only (not on Tailscale), so its links open at home; the reachability check runs from
 # wherever the app itself is hosted, on the same LAN. "quiet" = shown and checked, but never messaged about:
 # a machine that sleeps at night (the 3431 gaming PC) must not page anyone.
