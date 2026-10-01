@@ -1,11 +1,13 @@
-# Odysseus
+# Aurix
 ───────────────────────────────────────────────
- ⊹ ࣪ ˖ ૮( ˶ᵔ ᵕ ᵔ˶ )っ  Odysseus vers. 1.0
+ ⊹ ࣪ ˖ ૮( ˶ᵔ ᵕ ᵔ˶ )っ  Aurix vers. 1.0
 ───────────────────────────────────────────────
 
-![Odysseus](docs/odysseus.jpg)
+![Aurix](docs/odysseus.jpg)
 
 A self-hosted AI workspace -- meant to be the self-hosted version of the UI experience you get from ChatGPT and Claude. But with more jank and fun. Running on your own hardware, with your own data -- local-first, privacy-first, and no trojan.
+
+> **Aurix is a personal fork of [Odysseus](https://github.com/pewdiepie-archdaemon/odysseus)** — the self-hosted AI workspace by [pewdiepie-archdaemon](https://github.com/pewdiepie-archdaemon). Everything below is Odysseus's design, kept and tuned for one person's daily use.
 
 ## Features
   - **Chat** -- chat with any local model or API; adding them is super simple.<br>　<sub>vLLM · llama.cpp · Ollama · OpenRouter · OpenAI</sub>
@@ -38,7 +40,7 @@ A full, hover-to-play tour lives on the landing page (`docs/index.html`). A few 
 ## Quick Start
 
 Defaults work out of the box — clone, run, configure inside the app.
-Open the **Settings** panel after first login to point Odysseus at your LLM
+Open the **Settings** panel after first login to point Aurix at your LLM
 server, search provider, email account, etc. Only touch `.env` if you need
 to override deployment-level things like `AUTH_ENABLED`, `DATABASE_URL`,
 or pre-seed `ODYSSEUS_ADMIN_PASSWORD` (otherwise an initial password is
@@ -49,17 +51,17 @@ pull request guidelines.
 
 ### Option 1: Docker (recommended)
 ```bash
-git clone https://github.com/pewdiepie-archdaemon/odysseus.git
-cd odysseus
+git clone https://github.com/RascalOtaku/Aurix.git
+cd Aurix
 cp .env.example .env       # optional, but recommended for explicit defaults
 docker compose up -d --build
 ```
-Compose starts Odysseus, ChromaDB, SearXNG, and ntfy. First run does a full
+Compose starts Aurix, ChromaDB, SearXNG, and ntfy. First run does a full
 image build. Open `http://localhost:7000` after the containers are healthy.
 If port `7000` is already taken, set `APP_PORT=7001` (or another free port)
 in `.env`, recreate the container, and open `http://localhost:7001`.
 
-Cookbook remote servers use an Odysseus-owned SSH key from `./data/ssh`
+Cookbook remote servers use an Aurix-owned SSH key from `./data/ssh`
 inside Docker. In **Cookbook -> Settings -> Servers**, generate/copy the
 public key and add it to the remote server's `~/.ssh/authorized_keys`.
 After generating the key, you can also install it from the host with:
@@ -67,12 +69,12 @@ After generating the key, you can also install it from the host with:
 ssh-copy-id -i data/ssh/id_ed25519.pub user@server
 ```
 Cookbook local downloads are stored in `./data/huggingface`, mounted as
-`~/.cache/huggingface` inside the Odysseus container. Cookbook-installed
+`~/.cache/huggingface` inside the Aurix container. Cookbook-installed
 serve engines and Python CLIs are stored in `./data/local`, mounted as
 `~/.local`, so vLLM/llama.cpp installs survive container recreation.
 
 After downloading a model, open **Cookbook -> Serve**, pick the cached model,
-and launch it. When the server answers `/v1/models`, Odysseus adds it to the
+and launch it. When the server answers `/v1/models`, Aurix adds it to the
 chat model picker automatically. For NVIDIA / AMD GPUs in Docker, install
 the host runtime (NVIDIA Container Toolkit or ROCm drivers) and enable the
 matching overlay via `COMPOSE_FILE` in `.env`:
@@ -108,7 +110,7 @@ MemoryVectorStore initialized
 ```
 
 The Cookbook model catalog check should print a non-zero count. If it prints
-`0`, rebuild the Odysseus image with `docker compose build --no-cache odysseus`.
+`0`, rebuild the Aurix image with `docker compose build --no-cache odysseus`.
 
 ### Option 2: Manual install — Linux / macOS
 **Requirements:** Python 3.11+. On Linux/Termux, Cookbook also requires `tmux`
@@ -126,10 +128,10 @@ sudo pacman -S tmux
 sudo dnf install tmux
 ```
 
-Then install Odysseus:
+Then install Aurix:
 ```bash
-git clone https://github.com/pewdiepie-archdaemon/odysseus.git
-cd odysseus
+git clone https://github.com/RascalOtaku/Aurix.git
+cd Aurix
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
@@ -142,8 +144,8 @@ Windows support is not actively tested. Use it with caution; Docker on Linux
 or a Linux/macOS manual install is the safer path for now.
 
 ```powershell
-git clone https://github.com/pewdiepie-archdaemon/odysseus.git
-cd odysseus
+git clone https://github.com/RascalOtaku/Aurix.git
+cd Aurix
 python -m venv venv
 venv\Scripts\Activate.ps1
 pip install -r requirements.txt
@@ -171,11 +173,11 @@ bash scripts/aurix_git_sync.sh sync            # commit local edits, merge GitHu
 It never rebases or force-pushes, keeps `data/`, `logs/` and `.env` out (plus a scan that stops on keys and
 tokens), and on a conflict leaves both versions marked in the file and pushes nothing. To bring in a reviewed
 branch as well: `AURIX_SYNC_MERGE="claude/exciting-darwin-9gwtrc" bash scripts/aurix_git_sync.sh sync`.
-To run it every 15 minutes: `*/15 * * * * cd ~/ai-brain-sync/odysseus && bash scripts/aurix_git_sync.sh sync`
+To run it every 15 minutes: `*/15 * * * * cd ~/ai-brain-sync/Aurix && bash scripts/aurix_git_sync.sh sync`
 (adjust the path to where your checkout lives).
 
 ## Security Notes
-Odysseus is a self-hosted workspace with powerful local tools: shell access, file uploads, model downloads, web research, email/calendar integrations, and API tokens. Treat it like an admin console.
+Aurix is a self-hosted workspace with powerful local tools: shell access, file uploads, model downloads, web research, email/calendar integrations, and API tokens. Treat it like an admin console.
 
 - Keep `AUTH_ENABLED=true` for any network-accessible deployment.
 - Do not expose it directly to the public internet without HTTPS and a trusted reverse proxy.
@@ -188,12 +190,12 @@ Odysseus is a self-hosted workspace with powerful local tools: shell access, fil
 - Before publishing a fork, run `git status --short` and confirm no private files from `.env`, `data/`, `logs/`, uploads, backups, or local databases are staged.
 
 ### Putting it behind HTTPS
-Odysseus serves plain HTTP on its port. That's fine for `localhost` and trusted LAN/VPN use, but browsers will warn ("Password fields present on an insecure page") and the login + API tokens travel in cleartext. For anything reachable outside your machine — including a Tailscale IP shared with other devices — put a TLS-terminating reverse proxy in front.
+Aurix serves plain HTTP on its port. That's fine for `localhost` and trusted LAN/VPN use, but browsers will warn ("Password fields present on an insecure page") and the login + API tokens travel in cleartext. For anything reachable outside your machine — including a Tailscale IP shared with other devices — put a TLS-terminating reverse proxy in front.
 
 Shortest path with [Caddy](https://caddyserver.com/) (auto-renews Let's Encrypt certs):
 
 ```caddy
-odysseus.example.com {
+aurix.example.com {
   reverse_proxy localhost:7000
 }
 ```
@@ -227,8 +229,8 @@ Key settings:
 ### Bundled services
 Docker Compose includes these by default. The bundled service ports bind to `127.0.0.1` unless you opt in to a different bind address in `.env`, so they are reachable from the host machine but not from your LAN or the public internet by default:
 
-  - **ChromaDB** → vector store for semantic memory. In Docker, Odysseus connects to `chromadb:8000`; from the host it is exposed as `${CHROMADB_BIND:-127.0.0.1}:8100`.
-  - **SearXNG** → meta search for web search. In Docker, Odysseus connects to `searxng:8080`; from the host it is exposed as `127.0.0.1:8080`.
+  - **ChromaDB** → vector store for semantic memory. In Docker, Aurix connects to `chromadb:8000`; from the host it is exposed as `${CHROMADB_BIND:-127.0.0.1}:8100`.
+  - **SearXNG** → meta search for web search. In Docker, Aurix connects to `searxng:8080`; from the host it is exposed as `127.0.0.1:8080`.
   - **ntfy** → local notification service, exposed as `${NTFY_BIND:-127.0.0.1}:8091`.
 
 **Phone push notifications via ntfy:** A phone cannot subscribe to `127.0.0.1` on your server. To expose ntfy safely without opening it on every interface:
@@ -241,7 +243,7 @@ Docker Compose includes these by default. The bundled service ports bind to `127
 
 ### Built-in MCP servers (optional setup)
 
-Odysseus auto-registers a few built-in MCP servers at startup. The npx-based ones (currently the browser server, `@playwright/mcp`) only start when their npm package is already in the local npx cache. If a package isn't cached, that server is skipped with a startup log message explaining what to do, so a fresh install does not block on a multi-minute npm download or hang if Playwright system deps are missing.
+Aurix auto-registers a few built-in MCP servers at startup. The npx-based ones (currently the browser server, `@playwright/mcp`) only start when their npm package is already in the local npx cache. If a package isn't cached, that server is skipped with a startup log message explaining what to do, so a fresh install does not block on a multi-minute npm download or hang if Playwright system deps are missing.
 
 To enable the browser MCP (page navigation, screenshots, vision), run once:
 
@@ -249,10 +251,10 @@ To enable the browser MCP (page navigation, screenshots, vision), run once:
 npx -y @playwright/mcp@latest --version
 ```
 
-That installs `@playwright/mcp` plus Playwright (~300MB total). Restart Odysseus and the server will register at startup.
+That installs `@playwright/mcp` plus Playwright (~300MB total). Restart Aurix and the server will register at startup.
 
 ### Ollama with Docker
-If Odysseus is running in Docker and Ollama is running on the host, add the endpoint in Settings as:
+If Aurix is running in Docker and Ollama is running on the host, add the endpoint in Settings as:
 
 `http://host.docker.internal:11434/v1`
 
@@ -262,9 +264,9 @@ The default Compose file already maps `host.docker.internal` on Linux. Ollama al
 OLLAMA_HOST=0.0.0.0:11434 ollama serve
 ```
 
-For a systemd Ollama install, set that in the Ollama service override. If Odysseus can see Ollama but requests hang or fail, check that your host firewall allows Docker bridge traffic to port `11434`.
+For a systemd Ollama install, set that in the Ollama service override. If Aurix can see Ollama but requests hang or fail, check that your host firewall allows Docker bridge traffic to port `11434`.
 
-First-token latency is usually Ollama/model/hardware, not Odysseus. To compare, test Ollama directly:
+First-token latency is usually Ollama/model/hardware, not Aurix. To compare, test Ollama directly:
 
 ```bash
 curl http://127.0.0.1:11434/v1/models
@@ -287,11 +289,11 @@ All user data lives in `data/` (gitignored): `app.db` (sessions, messages, docum
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=pewdiepie-archdaemon%2Fodysseus&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=RascalOtaku%2FAurix&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=pewdiepie-archdaemon/odysseus&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=pewdiepie-archdaemon/odysseus&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=pewdiepie-archdaemon/odysseus&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=RascalOtaku/Aurix&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=RascalOtaku/Aurix&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=RascalOtaku/Aurix&type=date&legend=top-left" />
  </picture>
 </a>
 
