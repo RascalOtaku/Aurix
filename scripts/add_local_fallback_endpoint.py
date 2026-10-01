@@ -1,9 +1,9 @@
-"""One-off: make the CPU box's own Ollama the default-model fallback for the GPU box.
+"""One-off: make the 7070's own Ollama the default-model fallback for the 3431 GPU box.
 
 Adds a second ModelEndpoint for local Ollama (host.docker.internal) and points
 `default_model_fallbacks` at it, so when the gaming PC is off Telegram degrades
 to slow-but-alive instead of failing. Also fixes a stale `default_model`
-(qwen2.5:14b does not exist on the GPU box) and the misleading endpoint name.
+(qwen2.5:14b does not exist on the 3431) and the misleading endpoint name.
 
 DRY RUN by default - prints the plan and changes nothing. Idempotent.
 Run inside the container, feeding this file on stdin:
@@ -22,12 +22,12 @@ from src.settings import load_settings, save_settings
 APPLY = "--apply" in sys.argv
 
 LOCAL_URL = "http://host.docker.internal:11434/v1"
-LOCAL_NAME = "CPU box local (CPU fallback)"
-LOCAL_MODEL = "qwen2.5:3b"       # what the CPU box's Ollama is known to have
-STALE_DEFAULT = "qwen2.5:14b"    # not present on the GPU box
+LOCAL_NAME = "7070 local (CPU fallback)"
+LOCAL_MODEL = "qwen2.5:3b"       # what the 7070's Ollama is known to have
+STALE_DEFAULT = "qwen2.5:14b"    # not present on the 3431 GPU box
 NEW_DEFAULT = "qwen2.5:7b"
 MISLEADING_NAME = "127.0.0.1:11434"
-GPU_NAME = "GPU box (Ollama)"
+GPU_NAME = "3431 GPU (Ollama)"
 
 
 def main():

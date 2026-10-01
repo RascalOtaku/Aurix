@@ -7,6 +7,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libgl1 libglu1-mesa libglib2.0-0 libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Debian trixie's own `apt nodejs` package is 20.x - too old for OpenClaw (needs >=24.16.0, confirmed
+# live 2026-09-25: "this OpenClaw release requires Node >=24.16.0 <25 || >=26.1.0. detected Node 20.19.2").
+# NodeSource's setup script installs a real current major version instead. Non-fatal: if NodeSource is
+# unreachable at build time, Node stays absent and the OpenClaw layer below cleanly no-ops too.
+RUN (curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+     && apt-get install -y --no-install-recommends nodejs && rm -rf /var/lib/apt/lists/*) \
+    || echo "Node.js 24.x not installed (optional; needed only for the OpenClaw layer below)"
+
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
@@ -18,6 +26,12 @@ COPY requirements-openhands.txt /tmp/requirements-openhands.txt
 RUN pip freeze > /tmp/constraints.txt \
     && pip install --no-cache-dir -c /tmp/constraints.txt -r /tmp/requirements-openhands.txt \
     || echo "OpenHands SDK layer not installed (optional; likely a dependency conflict with the mission tools): missions fall back to the built-in agent"
+
+# OPTIONAL second coding-agent layer: OpenClaw (github.com/openclaw/openclaw), a Node.js personal-assistant
+# agent runtime used here ONLY as a task executor - see src/foundation/openclaw.py for why it never gets its
+# own authority. Never allowed to fail the build (Node/npm churns; a `latest` global install can break).
+RUN npm install -g openclaw@latest --allow-scripts=openclaw \
+    || echo "OpenClaw layer not installed (optional): missions with executor=openclaw fall back to the built-in agent"
 
 # Bake a speech model so transcription works offline. Non-fatal if the download fails.
 RUN python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8', download_root='/models')" \

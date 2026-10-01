@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""aurix_upgrade_agent.py - the host-side half of the upgrade lane (stdlib only; cron every minute on the host, under flock).
+"""aurix_upgrade_agent.py - the host-side half of the upgrade lane (stdlib only; cron every minute on the 7070, under flock).
 
   approved/<id>.json (+ payload/<id>.json)  ->  verify the HMAC signature, expiry, every path, and that each file on disk is EXACTLY what the proposal
       was made against  ->  back up the originals  ->  write the new files  ->  py_compile them  ->  scripts/aurix_deploy.sh (build + health check;

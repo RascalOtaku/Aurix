@@ -32,6 +32,10 @@ from src.foundation import nightshift
 from src.foundation import transcription
 from src.foundation import earnings
 from src.foundation import freelance
+from src.foundation.land import hub as land
+from src.foundation import workers as fworkers
+from src.foundation import integrate
+from src.foundation import versions
 from src.foundation import content
 from src.foundation import learning
 from src.foundation import subscriptions
@@ -191,6 +195,21 @@ _PATTERNS = [
     ("todos", re.compile(r"^\s*/?todos\s*$", re.I)),
     ("todo_new", re.compile(r"^\s*/?todo\s*[:\-]\s*(\S.*)$", re.I | re.S)),
     ("todo_done", re.compile(r"^\s*/?done\s+(t-[0-9a-f]{6})\s*$", re.I)),
+    # LandPilot (src/foundation/land): research + the acquisition gate. A land card is only ever approved with its explicit id.
+    ("land_yes", re.compile(r"^\s*/?(?:yes|approve)\s+land\s+(a-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
+    ("land_no", re.compile(r"^\s*/?(?:no|deny|reject)\s+land\s+(a-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
+    ("land_build", re.compile(r"^\s*/?land\s+build\s+([A-Za-z0-9_\-]{2,60})\s*$", re.I)),
+    ("land_cap", re.compile(r"^\s*/?land\s+cap\s+(\S{2,60}\s+\$?[\d,]+(?:\.\d{1,2})?(?:\s+\$?[\d,]+(?:\.\d{1,2})?)?)\s*$", re.I)),
+    ("land_promote", re.compile(r"^\s*/?land\s+promote\s+(m-[0-9a-f]{6}\s+[A-Za-z0-9_\-]{2,60})\s*$", re.I)),
+    ("land_propose", re.compile(r"^\s*/?land\s+propose\s+(\S{2,60})\s*$", re.I)),
+    ("land_show", re.compile(r"^\s*/?land\s+show\s+(\S{2,60})\s*$", re.I)),
+    ("land", re.compile(r"^\s*/?(?:land|land\s*pilot|parcels?)\s*\??\s*$", re.I)),
+    ("integ_adopt", re.compile(r"^\s*/?(?:adopt|yes\s+adopt)\s+(i-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
+    ("integ_skip", re.compile(r"^\s*/?skip\s+(i-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
+    ("version", re.compile(r"^\s*/?(?:version|versions|aurix\s+version|changelog)\s*\??\s*$", re.I)),
+    ("reviewed", re.compile(r"^\s*/?reviewed\s+(v?\d+\.\d+\.\d+)\s*$", re.I)),
+    ("integrations", re.compile(r"^\s*/?(?:integrations?|integration\s+plans?)\s*\??\s*$", re.I)),
+    ("workers", re.compile(r"^\s*/?(?:router|models|worker\s+registry|who\s+does\s+what)\s*\??\s*$", re.I)),   # "workers" = shards
     ("new", re.compile(r"^\s*/?mission\s*[:\-]?\s+(\S.{2,})$", re.I | re.S)),
 ]
 
@@ -265,7 +284,7 @@ def parse(text: str) -> Optional[Tuple[str, str]]:
             lowered = ("approve_mission", "deny_mission", "revoke", "approve_standing", "deny_standing",
                        "pause_standing", "resume_standing", "retire_standing", "show", "files", "send_files",
                        "todo_done", "skill_show", "approve_skill", "deny_skill", "retire_skill",
-                       "teacher", "lesson_show", "approve_lesson", "deny_lesson", "retire_lesson", "fix_yes", "fix_no", "fix_undo", "repo_yes", "repo_no", "mem_yes", "mem_no", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrades_cfg", "money_set", "shard_pause", "shard_resume", "freelance_yes", "freelance_no", "content_yes", "content_no", "learn_yes", "learn_no")
+                       "teacher", "lesson_show", "approve_lesson", "deny_lesson", "retire_lesson", "fix_yes", "fix_no", "fix_undo", "repo_yes", "repo_no", "mem_yes", "mem_no", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrades_cfg", "money_set", "shard_pause", "shard_resume", "freelance_yes", "freelance_no", "content_yes", "content_no", "learn_yes", "learn_no", "land_yes", "land_no", "integ_adopt", "integ_skip")
             return kind, (arg.lower() if kind in lowered else arg)
     bare = _bare_skill_decision(text) or _bare_fix_decision(text) or _bare_ack(text) or _bare_repo_link(text)
     if bare:
@@ -410,6 +429,10 @@ class Foundation:
             await self._maybe_nightly_evals(now or time.time())
         except Exception:
             pass
+        try:                                    # noticing a repeated gap must never break scheduling either
+            await self._maybe_forge_autonomy(now or time.time())
+        except Exception:
+            pass
         try:                                    # the learning flywheel + "what's new" (both read-only on existing records)
             experience.harvest()
             for text in announce.tick(now or time.time()):
@@ -428,6 +451,11 @@ class Foundation:
             pass
         try:                                    # repo links: new reports and the outcome of approvals (small file reads, no thread hop)
             for text in repos.tick(now):
+                await self.notify_ui(text)
+        except Exception:
+            pass
+        try:                                    # integration lane: announce finished plans; plan the next absorbed repo in a background thread
+            for text in integrate.tick(now):
                 await self.notify_ui(text)
         except Exception:
             pass
@@ -540,6 +568,31 @@ class Foundation:
             await asyncio.to_thread(nightshift.run_shift, now_ts)
         except Exception as e:
             audit.append("nightshift_failed", why=repr(e)[:200])
+
+    async def _maybe_forge_autonomy(self, now_ts: float) -> None:
+        """Once a day, notice a REAL repeated gap (the same mission objective genuinely blocked more
+        than once) and let the forge draft a candidate skill for it on its own - see
+        forge.check_autonomous_trigger. Skipped while a mission runs (it would compete for the same
+        sandbox). The result still only ever reaches `pending`: approval stays the owner's."""
+        if self.running():
+            return
+        today = st.local_now(now_ts).strftime("%Y-%m-%d")
+        state_path = forge.forge_dir() / "autonomy_check.json"
+        try:
+            last = json.loads(state_path.read_text(encoding="utf-8")).get("date", "")
+        except (OSError, ValueError):
+            last = ""
+        if last == today:
+            return
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps({"date": today}), encoding="utf-8")
+        try:
+            result = await forge.check_autonomous_trigger(self.llm)
+        except Exception as e:
+            audit.append("forge_autonomy_failed", why=repr(e)[:200])
+            return
+        if result:
+            await self.notify(result)
 
     async def _maybe_digest(self, now_ts: float) -> None:
         """Opt-in: AURIX_DIGEST_AT=07:00 sends one owner digest per local day."""
@@ -738,6 +791,40 @@ class Foundation:
             return await asyncio.to_thread(freelance.decline, arg)
         if kind == "freelance_status":
             return await asyncio.to_thread(freelance.status_text)
+        if kind == "land":
+            return await asyncio.to_thread(land.overview)
+        if kind == "version":
+            return await asyncio.to_thread(versions.status_text)
+        if kind == "reviewed":
+            return await asyncio.to_thread(versions.mark_reviewed, arg)
+        if kind == "integrations":
+            return await asyncio.to_thread(integrate.list_text)
+        if kind in ("integ_adopt", "integ_skip"):
+            msg, idea = await asyncio.to_thread(integrate.decide, arg, kind == "integ_adopt")
+            if idea is None:
+                return msg
+            plan, _ = integrate.find_idea(arg)
+            spec = integrate.spec_for_lane(plan, idea)
+            if idea["kind"] == "upgrade":                    # enters the upgrade lane: drafted by the coder worker, tested, then `yes u-...`
+                return "✅ Adopted → upgrade lane.\n" + await asyncio.to_thread(upgrades.add_idea, spec)
+            return "✅ Adopted → skill forge.\n" + await forge.propose(spec, self.llm)      # drafted + tested in the sandbox, then `approve skill`
+        if kind == "workers":
+            return await asyncio.to_thread(fworkers.status_text)
+        if kind == "land_show":
+            return await asyncio.to_thread(land.show, arg)
+        if kind == "land_build":
+            return await asyncio.to_thread(land.build, arg)
+        if kind == "land_cap":
+            return await asyncio.to_thread(land.cap_command, arg)
+        if kind == "land_promote":
+            mid, _, name = arg.partition(" ")
+            return await asyncio.to_thread(land.promote, mid.lower(), name.strip())
+        if kind == "land_propose":
+            return await asyncio.to_thread(land.propose, arg)
+        if kind == "land_yes":
+            return await asyncio.to_thread(land.approve, arg)
+        if kind == "land_no":
+            return await asyncio.to_thread(land.decline, arg)
         if kind == "freelance_find":
             return await asyncio.to_thread(freelance.find_lead)
         if kind == "content":
@@ -907,6 +994,18 @@ class Foundation:
         if name in NOT_YET_AUTHORIZATIONS:
             audit.append("authorization_refused", name=name)
             return NOT_YET_AUTHORIZATIONS[name]
+        if name.startswith("worker-"):                         # one cloud model endpoint (workers.py): only a REAL one, never a pattern
+            from src.foundation import workers as _w
+            real = {f"worker-{_w._slug(w.title.split(' @ ', 1)[-1])}" for w in _w.registry() if w.locality == "cloud"}
+            if name not in real:
+                return (f"'{name}' is not one of your cloud model endpoints. Add the endpoint in Settings → Model Endpoints first; "
+                        "then `models` shows the exact name to authorize." + (f" Known: {', '.join(sorted(real))}." if real else ""))
+            granted = cap.load_authorizations()
+            granted[name] = {"granted_by": "owner", "at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), **({"expires": expires} if expires else {})}
+            self._write_authorizations(granted)
+            audit.append("authorization_granted", name=name, expires=expires)
+            return (f"✅ Cloud worker <code>{name}</code> enabled for PUBLIC work. Add <code>authorize cloud-internal</code> to let it "
+                    f"also take AURIX's own code and drafts. Private data never goes to it. <code>revoke {name}</code> turns it off.")
         c = cap.lookup(name)
         if c is None or c.kind != "authorization":
             known = ", ".join(sorted(x.id for x in cap.REGISTRY.values() if x.kind == "authorization"

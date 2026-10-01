@@ -1,6 +1,6 @@
 """src/foundation/gamepilot.py - GamePilot: see and drive your gaming PC from a Fire TV Stick (or any browser), safely.
 
-    Fire TV / browser  <-- frames, state --  the relay (this module, in the app on the server)  -- commands, want_frames -->  PC agent
+    Fire TV / browser  <-- frames, state --  the relay (this module, in the app on the 7070)  -- commands, want_frames -->  PC agent
     (gamepilot.html)   --- keys/mouse ---->                                                   <-- frames, foreground name --  (outbound only)
 
 Nothing connects INTO the gaming PC: its agent calls out to the relay over Tailscale, signs every request (HMAC, shared key), and verifies the
@@ -40,8 +40,8 @@ MAX_EVENTS_PER_CALL = 40
 MAX_QUEUE = 400
 MAX_FRAME_BYTES = 900_000
 CODE_RX = re.compile(r"^\d{6}$")
-LAN_URL = os.environ.get("AURIX_LAN_URL", "http://10.0.0.100:7000")
-TAILNET_URL = os.environ.get("AURIX_TAILNET_URL", "http://gaming-pc.example.ts.net:7000")
+LAN_URL = os.environ.get("AURIX_LAN_URL", "http://<server-lan-ip>:7000")
+TAILNET_URL = os.environ.get("AURIX_TAILNET_URL", "http://<server>.<tailnet>.ts.net:7000")
 TOKEN_RX = re.compile(r"^[A-Za-z0-9_-]{20,80}$")
 
 KEYS = ({c: c for c in "abcdefghijklmnopqrstuvwxyz0123456789"}
@@ -217,6 +217,11 @@ def arm(minutes: int = ARM_DEFAULT_MIN, now: Optional[float] = None) -> str:
         return "Nothing is paired yet. Open the GamePilot page on the TV and send me the code."
     minutes = max(1, min(int(minutes or ARM_DEFAULT_MIN), ARM_MAX_MIN))
     _atomic(_data() / "state.json", {"armed_until": now + minutes * 60})
+    try:                                        # arming means someone wants to actually drive the PC now
+        from src.foundation import wake
+        wake.wake_gpu_box(now=now, reason="gamepilot arm")
+    except Exception:
+        pass
     audit.append("gamepilot_armed", minutes=minutes)
     return f"🎮 Armed for {minutes} min: the paired TV can send keys and mouse while a game or Steam is in front. <code>disarm</code> or STOP ends it instantly."
 

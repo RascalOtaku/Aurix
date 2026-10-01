@@ -229,15 +229,14 @@ def probe_services(raw: Dict[str, Any], check: Optional[Callable[[str, int], boo
     return rows
 
 
-# Other homelab dashboards/services worth one click from here. A retired machine's "Homepage" dashboard (port 3000 in the
-# Homelab Ecosystem Plan) was the owner's overview of every service; it lived on another machine, so it was wired as a link
-# with a live reachability dot. Override with AURIX_HOMELAB_LINKS="Name|http://host:port;Name 2|http://host2:port".
+# Other homelab dashboards/services worth one click from here. The retired Linux install's "Homepage" dashboard (port 3000 in the
+# Homelab Ecosystem Plan) is gone - nothing listens there any more. Override with AURIX_HOMELAB_LINKS="Name|http://host:port;Name 2|http://host2:port".
 HOMELAB_DEFAULT = ("GPU box (Windows PC, Ollama)|http://100.64.0.10:11434|quiet;"
                    "Jellyfin (Pi)|http://10.0.0.75:8096;Pi-hole (Pi)|http://10.0.0.75/admin;"
                    "Vaultwarden (server)|http://100.64.0.20:8080;Uptime Kuma (server)|http://100.64.0.20:3001")
-# Example addresses only - set AURIX_HOMELAB_LINKS in .env to your own. The Pi is on the LAN only (not on Tailscale),
-# so its links open at home; the reachability check runs from wherever the app itself is hosted, on the same LAN.
-# "quiet" = shown and checked, but never messaged about: a machine that sleeps at night must not page anyone.
+# The Pi is on the LAN only (not on Tailscale), so its links open at home; the reachability check runs from
+# wherever the app itself is hosted, on the same LAN. "quiet" = shown and checked, but never messaged about:
+# a machine that sleeps at night (the 3431 gaming PC) must not page anyone.
 MAX_HOMELAB_LINKS = 8
 
 
@@ -360,6 +359,8 @@ def snapshot(system_probes: Optional[Dict[str, Callable[[], Any]]] = None,
     from src.foundation import transcription
     from src.foundation import earnings
     from src.foundation import freelance
+    from src.foundation.land import hub as land
+    from src.foundation import workers as fworkers
     from src.foundation import content
     from src.foundation import learning
     from src.foundation import subscriptions
@@ -404,6 +405,8 @@ def snapshot(system_probes: Optional[Dict[str, Callable[[], Any]]] = None,
         "transcription": safe("transcription", transcription.panel, {}),
         "earnings": safe("earnings", earnings.panel, {}),
         "freelance": safe("freelance", freelance.panel, {}),
+        "land": safe("land", land.panel, {"dossiers": [], "pending": []}),
+        "workers": safe("workers", fworkers.panel, {"workers": [], "routes": {}}),
         "content": safe("content", content.panel, {}),
         "library": safe("library", learning.panel, {}),
         "subscriptions": safe("subscriptions", subscriptions.panel, {}),

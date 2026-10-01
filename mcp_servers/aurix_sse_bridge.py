@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
-"""aurix_sse_bridge.py — AURIX MCP SSE server (mcp 1.27.x)"""
-import json, os, urllib.request
-from mcp.server import Server
+"""aurix_sse_bridge.py — AURIX MCP SSE server (runs on MCP SDK 1.x and 2.x via mcp_servers._common.mcp_server)
+
+Listens on 127.0.0.1 by default: it exposes a shell tool and has no login of its own. Set AURIX_SSE_HOST=0.0.0.0
+only on a network you trust (e.g. bound to a Tailscale address), never on a public interface.
+"""
+import json, os, sys, urllib.request
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from mcp_servers._common import mcp_server  # noqa: E402  works on MCP SDK 1.x and 2.x
 from mcp.server.sse import SseServerTransport
 from mcp.types import Tool, TextContent
 from starlette.applications import Starlette
@@ -23,7 +29,7 @@ def _call(path, method="GET", body=None):
     except Exception as e:
         return {"error": str(e)}
 
-server = Server("aurix-brain")
+server = mcp_server("aurix-brain")
 
 @server.list_tools()
 async def list_tools():
@@ -41,7 +47,7 @@ async def list_tools():
              description="Search AURIX memory and wiki knowledge base",
              inputSchema={"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}),
         Tool(name="aurix_shell",
-             description="Run shell command on the GPU workstation",
+             description="Run shell command on Precision 3431",
              inputSchema={"type":"object","properties":{"command":{"type":"string"}},"required":["command"]}),
     ]
 
@@ -80,4 +86,5 @@ app = Starlette(routes=[
 ])
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=7778, log_level="warning")
+    uvicorn.run(app, host=os.environ.get("AURIX_SSE_HOST", "127.0.0.1"),
+                port=int(os.environ.get("AURIX_SSE_PORT", "7778")), log_level="warning")

@@ -76,5 +76,5 @@ def checks() -> Dict[str, Any]:
     tiers: Dict[str, Any] = {}
     for h in reversed(hist):                             # a code-only run must not hide the planning result from an earlier run
         for k, v in h.get("tiers", {}).items():
-            tiers.setdefault(k, {"passed": v.get("passed"), "total": v.get("total"), "failed": list(v.get("failed", []))[:6], "ts": str(h.get("ts", ""))[:16].replace("T", " ")})
+            tiers.setdefault(k, {"passed": v.get("passed"), "total": v.get("total", 0), "failed": list(v.get("failed", []))[:6], "ts": str(h.get("ts", ""))[:16].replace("T", " ")})
     return {"have": True, "ts": str(hist[-1].get("ts", ""))[:16].replace("T", " "), "tiers": tiers}

@@ -11,7 +11,7 @@ OWNER = "rascal"
 def main():
     db = SessionLocal()
     try:
-        # Prefer the configured default endpoint (the GPU box) over "whichever
+        # Prefer the configured default endpoint (the 3431 GPU box) over "whichever
         # enabled endpoint comes first", now that a local fallback endpoint exists too.
         from src.settings import load_settings
         default_id = (load_settings().get("default_endpoint_id") or "").strip()

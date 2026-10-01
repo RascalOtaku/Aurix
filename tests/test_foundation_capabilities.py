@@ -94,7 +94,7 @@ class PresenceTests(unittest.TestCase):
             self.assertEqual(cp.load_authorizations(), {})
 
     def test_service_needs_a_probe(self):
-        cap = cp.REGISTRY["gpu-box"]
+        cap = cp.REGISTRY["gpu-3431"]
         self.assertFalse(cp.presence(cap).present)                       # never touches the network by itself
         self.assertTrue(cp.presence(cap, probe=lambda h, p: (h, p) == ("100.64.0.10", 11434)).present)
 

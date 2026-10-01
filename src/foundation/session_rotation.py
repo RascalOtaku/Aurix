@@ -14,7 +14,7 @@ that fixed, an ever-growing single session is fragile by design: one very bad da
          not a frozen env var, so this takes effect immediately - no restart, no .env edit)
 
 Nothing here deletes anything: the old, full session stays in app.db exactly as it was, just no longer the active one.
-Pure stdlib + sqlite3 so this is testable everywhere (dev PC, the host, the app container), unlike routes/chat_helpers.py.
+Pure stdlib + sqlite3 so this is testable everywhere (dev PC, 7070 host, the app container), unlike routes/chat_helpers.py.
 """
 from __future__ import annotations
 
@@ -115,7 +115,7 @@ def _build_transcript(messages: List[Tuple[str, str]]) -> str:
 
 def _default_local(system: str, prompt: str, max_tokens: int) -> Tuple[Optional[str], str]:
     from src.foundation import teacher
-    return teacher._local_fallback(system, prompt, max_tokens)
+    return teacher._local_fallback(system, prompt, max_tokens, purpose="summarize", json_mode=False, data_class="private")   # chat logs never leave
 
 
 def daily_rotate(now: Optional[float] = None, local: Optional[Callable[[str, str, int], Tuple[Optional[str], str]]] = None,

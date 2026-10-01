@@ -16,6 +16,7 @@ The model proposes; code decides. Nothing here can change the gate, the audit lo
 """
 from __future__ import annotations
 
+import functools
 import ast
 import base64
 import difflib
@@ -358,7 +359,7 @@ def _call_engineer(user_text: str, post: Post, extra_messages: Optional[List[dic
     """Asks the frontier engineer; if no key is set, its credit balance is empty, it's refused, or the network is down, falls back
     to the free local model (self-hosted: the upgrade lane never has to stop for lack of paid credits, just draws weaker drafts).
     `meta`, when given, is filled with {"source": "frontier"|"local"} so the caller can log which one actually answered."""
-    local = local or teacher._local_fallback
+    local = local or functools.partial(teacher._local_fallback, purpose="code_edit", json_mode=True, data_class="internal")   # routed; replies are JSON
     c = config()
     err = "no ANTHROPIC_API_KEY is set"
     if os.environ.get("ANTHROPIC_API_KEY", "").strip():

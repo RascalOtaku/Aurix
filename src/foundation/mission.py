@@ -72,6 +72,7 @@ class Step:
     status: str = "pending"            # pending | running | done | blocked
     evidence: str = ""
     executor: str = "agent"            # "agent" (chat agent loop) | "openhands" (coding agent in the sandbox)
+                                        # | "openclaw" (OpenClaw workboard task in the sandbox, see openclaw.py)
 
 
 @dataclass

@@ -18,7 +18,7 @@ ALLOWED_KINDS = frozenset({
     "fix_yes", "fix_no", "fix_undo", "approve_lesson", "deny_lesson", "retire_lesson", "approve_mission", "deny_mission",
     "approve_standing", "deny_standing", "approve_skill", "deny_skill", "run_all", "dashboard", "games", "fixes", "games_refresh",
     "lessons", "evals", "teach", "fastlane", "teacher", "timeline", "menu", "trades", "level", "doctor", "disk", "homelab", "help", "status",
-    "history", "todos", "projects", "ack", "trust", "repo", "repos", "repo_yes", "repo_no", "mem_yes", "mem_no", "memory", "recall", "unforget", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrade_now", "upgrade_openhands", "upgrades", "money", "money_show", "money_set", "unwrap", "night_now", "transcripts", "earnings", "freelance_status", "freelance_find", "content_status", "learn_status", "subscriptions_status", "lab", "gp_status", "gp_disarm", "shards",
+    "history", "todos", "projects", "ack", "trust", "repo", "repos", "repo_yes", "repo_no", "mem_yes", "mem_no", "memory", "recall", "unforget", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrade_now", "upgrade_openhands", "upgrades", "money", "money_show", "money_set", "unwrap", "night_now", "transcripts", "earnings", "freelance_status", "freelance_find", "content_status", "learn_status", "subscriptions_status", "lab", "gp_status", "gp_disarm", "shards", "land", "land_show", "land_yes", "land_no", "workers", "integ_adopt", "integ_skip", "integrations", "version",
 })
 
 MAIN_MENU: List[List[Tuple[str, str]]] = [
@@ -94,6 +94,13 @@ def for_reply(kind: str, text: str) -> Optional[dict]:
         rows.append([("✅ Keep it", f"yes {cid}"), ("❌ Discard", f"no {cid}")])
     for nid in list(dict.fromkeys(re.findall(r"\byes (n-[0-9a-f]{6})", t)))[:3]:
         rows.append([("✅ Keep it", f"yes {nid}"), ("❌ Discard", f"no {nid}")])
+
+    for aid in list(dict.fromkeys(re.findall(r"\byes land (a-[0-9a-f]{6})", t)))[:2]:
+        rows.append([("✅ APPROVE", f"yes land {aid}"), ("❌ REJECT", f"no land {aid}")])
+    for iid in list(dict.fromkeys(re.findall(r"\badopt (i-[0-9a-f]{6})", t)))[:5]:
+        rows.append([(f"✅ Adopt {iid[-6:]}", f"adopt {iid}"), (f"⏭ Skip {iid[-6:]}", f"skip {iid}")])
+    for key in list(dict.fromkeys(re.findall(r"\bland show ([A-Za-z0-9_\-]{2,60})", t)))[:3]:
+        rows.append([(f"🏞️ {key[:40]}", f"land show {key}")])
 
     fixes = list(dict.fromkeys(re.findall(r"\byes (g-[0-9a-f]{6})", t)))[:3]
     for gid in fixes:

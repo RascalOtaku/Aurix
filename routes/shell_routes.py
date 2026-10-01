@@ -27,9 +27,11 @@ from pydantic import BaseModel
 
 
 def _require_admin(request: Request):
-    return
     """Reject non-admin callers. Shell exec is admin-only — never expose to
-    regular users; that's RCE-after-signup."""
+    regular users; that's RCE-after-signup.
+
+    Restored 2026-09-29: an early bare `return` plus a forced `current_user = "rascal"` had switched this check off, so any
+    logged-in account could run shell commands and pip installs (tests/test_shell_routes_admin.py pins it now)."""
     auth_manager = getattr(request.app.state, "auth_manager", None)
     if not auth_manager:
         # No auth at all — only safe in fully-trusted localhost dev mode
@@ -40,11 +42,7 @@ def _require_admin(request: Request):
     # honour it here as admin-equivalent.
     if user == "internal-tool":
         return
-    request.state.current_user = "rascal"
-    user = "rascal"
-    if False:
-        raise HTTPException(403, "Admin only")
-    if not auth_manager.is_admin(user):
+    if not user or not auth_manager.is_admin(user):
         raise HTTPException(403, "Admin only")
 
 logger = logging.getLogger(__name__)

@@ -20,6 +20,7 @@ Guard rails (all code, none of it the model's opinion):
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import html
 import json
@@ -263,16 +264,32 @@ def default_post(url: str, headers: Dict[str, str], body: dict, timeout: float) 
             return e.code, {}
 
 
-def _local_fallback(system: str, user_text: str, max_tokens: int = 1500) -> Tuple[Optional[str], str]:
-    """The free, self-hosted model, used whenever the paid frontier path is unavailable. Lazy import + broad except: this must
-    never make a caller who only wanted a cheap fallback pay for a network stack trace."""
+def _local_fallback(system: str, user_text: str, max_tokens: int = 1500, purpose: str = "general",
+                    json_mode: Optional[bool] = None, data_class: str = "private") -> Tuple[Optional[str], str]:
+    """The free, self-hosted models, used whenever the paid frontier path is unavailable. Since 2026-09-29 this goes through the
+    Worker Registry & Router (workers.py): the right local worker for the PURPOSE (a coder model for code edits, with enforced JSON
+    where the caller parses JSON), private data kept on local/LAN workers, every call audited. Only if the registry cannot be read at
+    all (no database, e.g. a host script) does it fall back to the old single default model. Never raises."""
+    reason = ""
+    try:
+        from src.foundation import workers
+        text, info = workers.ask(purpose, system, user_text, data_class=data_class, max_tokens=max_tokens, json_mode=json_mode)
+        if text and text.strip():
+            return text.strip(), ""
+        reason = info.get("reason") or "the routed worker gave an empty reply"
+        if info.get("tried") or "no enabled worker" not in reason:
+            return None, f"the local workers failed: {reason}"           # real workers were tried: say so, don't mask it
+        if any(w.backend != "executor" for w in workers.registry()):         # model workers exist but none may take this
+            return None, f"the local workers could not take this: {reason}"
+    except Exception as e:                                                      # noqa: BLE001 - fall through to the legacy path
+        reason = f"router error: {type(e).__name__}"
     try:
         import asyncio
 
         from src.foundation import llm_bridge
         text = asyncio.run(llm_bridge.default_llm(system, user_text, max_tokens=max_tokens))
     except Exception as e:                                                      # noqa: BLE001 - best-effort fallback, never fatal
-        return None, f"the local model failed too: {type(e).__name__}"
+        return None, f"the local model failed too: {type(e).__name__}" + (f" ({reason})" if reason else "")
     text = (text or "").strip()
     return (text, "") if text else (None, "the local model gave an empty reply")
 
@@ -280,7 +297,7 @@ def _local_fallback(system: str, user_text: str, max_tokens: int = 1500) -> Tupl
 def call_teacher(user_text: str, post: Post = default_post, local: Callable[[str, str], Tuple[Optional[str], str]] = None) -> Tuple[Optional[str], str]:
     """One capped call to the frontier model; if a key isn't configured, its credit balance is empty, it's refused, or the network
     is down, falls back to the free local model instead of failing outright (self-hosted: this never has to cost money). Never raises."""
-    local = local or _local_fallback
+    local = local or functools.partial(_local_fallback, purpose="review", json_mode=True, data_class="internal")   # lessons are JSON
     c = config()
     err = "no ANTHROPIC_API_KEY is set"
     if os.environ.get("ANTHROPIC_API_KEY", "").strip():

@@ -310,7 +310,8 @@ def tick(now: Optional[float] = None) -> List[str]:
                 rec["status"], rec["result"] = "absorbed", res
                 audit.append("repo_absorbed", id=rid, repo=f"{rec['owner']}/{rec['repo']}")
                 msgs.append(f"📦 <b>Absorbed</b> {e(rec['owner'])}/{e(rec['repo'])} <code>{rid}</code>\n<i>{e(str(res.get('detail', ''))[:300])}</i>\n"
-                            "It is stored inert, pinned to that commit. To actually use something from it, tell me what you want (that becomes a mission that asks first).")
+                            "It is stored inert, pinned to that commit. AURIX's own models will now plan what to adopt from it and send you an "
+                            "integration card (<code>integrations</code>); nothing is built until you adopt an idea and its lane asks you again.")
             else:
                 rec["status"], rec["result"] = "failed", res
                 msgs.append(f"⚠️ Could not store <b>{e(rec['owner'])}/{e(rec['repo'])}</b>: {e(str(res.get('status')))} - {e(str(res.get('detail', ''))[:300])}")

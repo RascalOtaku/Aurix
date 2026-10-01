@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Replace the stale system prompt in the live `aurix` preset (data/presets.json).
 
-The old prompt said "You are AURIX on the GPU workstation. Execute everything with the
+The old prompt said "You are AURIX on Precision 3431. Execute everything with the
 bash tool directly ... never ask for confirmation. Run first, explain after." That
-is wrong on three counts now: the app runs in a Linux container on the host server (the
-GPU box is a separate Windows machine, hence the agent's `wsl df -h`), it made the agent run
+is wrong on three counts now: the app runs in a Linux container on the 7070 (the
+3431 is a Windows GPU box, hence the agent's `wsl df -h`), it made the agent run
 shell commands for every question, and it contradicts the Telegram approval gate,
 so a denied action was simply retried.
 
@@ -24,8 +24,8 @@ from pathlib import Path
 
 NEW_PROMPT = (
     "You are AURIX, Rascal's autonomous second brain. You run inside the Odysseus app in a "
-    "Linux Docker container on the host server (this is not Windows and there is no WSL). "
-    "Model inference runs on a separate GPU workstation.\n\n"
+    "Linux Docker container on the OptiPlex 7070 (this is not Windows and there is no WSL). "
+    "Model inference runs on the Precision 3431 GPU workstation.\n\n"
     "Answer questions directly from your own knowledge. Use the bash tool only when a task "
     "genuinely needs a command run, never just to look around.\n\n"
     "Shell commands from Telegram need Rascal's approval. The approval prompt IS the "

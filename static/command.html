@@ -31,6 +31,17 @@
   .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c6 { grid-column: span 6; } .c7 { grid-column: span 7; }
   .c8 { grid-column: span 8; } .c12 { grid-column: span 12; }
   @media (max-width:1000px){ .c4,.c5,.c6,.c7,.c8 { grid-column: span 12; } }
+  /* Tabs: each panel's cards stay direct children of main's grid (display:contents), so the same
+     12-column layout applies inside every tab - only ONE tab's cards are ever in the document flow
+     at once, which is the whole point (no more scrolling past 30+ cards to find one). */
+  .tabs { grid-column: 1 / -1; display:flex; flex-wrap:wrap; gap:6px; margin-bottom:2px;
+          position:sticky; top:53px; z-index:4; background:var(--bg); padding:4px 0; }
+  .tabbtn { font:inherit; color:var(--dim); background:transparent; border:1px solid var(--border); border-radius:999px;
+            padding:6px 14px; cursor:pointer; font-size:12px; letter-spacing:.04em; }
+  .tabbtn:hover { color:var(--fg); border-color:var(--fg); }
+  .tabbtn.active { color:var(--bg); background:var(--fg); border-color:var(--fg); font-weight:600; }
+  .tabpanel.active { display:contents; }
+  .tabpanel:not(.active) { display:none; }
   .dim { color:var(--dim); } .small { font-size:12px; }
   .row { padding:8px 0; border-bottom:1px solid color-mix(in srgb, var(--border) 60%, transparent); } .row:last-child { border-bottom:0; }
   .tag { font-size:11px; padding:1px 7px; border-radius:6px; border:1px solid var(--border); color:var(--dim); margin-left:6px; }
@@ -187,30 +198,46 @@
 </header>
 <div id="err"></div>
 <main>
+
+<nav class="tabs" id="tabs" role="tablist">
+  <button type="button" class="tabbtn active" data-tab="overview">Overview</button>
+  <button type="button" class="tabbtn" data-tab="money">Money & work</button>
+  <button type="button" class="tabbtn" data-tab="missions">Missions & skills</button>
+  <button type="button" class="tabbtn" data-tab="growth">Growth & trust</button>
+  <button type="button" class="tabbtn" data-tab="helpers">Autonomy & helpers</button>
+  <button type="button" class="tabbtn" data-tab="fun">Fun</button>
+</nav>
+  <div class="tabpanel active" data-tab="overview">
   <section class="card c12" id="card-runall" aria-live="polite"><h2>Check everything <button type="button" id="runall-x" class="small">dismiss</button></h2><div id="runall-body"></div></section>
   <section class="card c12" id="card-decide" aria-live="polite"><h2>Waiting for your yes / no <span class="small" id="decide-n"></span></h2><div id="decide"></div></section>
-  <section class="card c12"><h2>Send AURIX a repo <span class="small" id="repos-n">paste a GitHub link, then approve the report</span></h2>
-    <div class="sendrepo"><input id="repo-url" type="url" inputmode="url" autocomplete="off" placeholder="https://github.com/owner/repo" aria-label="GitHub repository link">
-      <button type="button" id="repo-go" class="primary">Look inside it</button></div>
-    <div class="dim small" style="margin:6px 0 8px">It copies the repo read-only, reads it as text and tells you what is in it. Nothing is run or installed. Yes stores it inert in a library.</div>
-    <div id="repos"></div></section>
-  <section class="card c12"><h2>What AURIX knows about you <span class="small" id="mind-n"></span></h2>
-    <div class="sendrepo"><input id="mem-text" type="text" maxlength="400" autocomplete="off" placeholder="Tell it something to remember, e.g. I prefer short answers" aria-label="Something for AURIX to remember">
-      <button type="button" id="mem-go" class="primary">Remember</button><button type="button" id="mem-undo">Undo last forget</button></div>
-    <div class="dim small" style="margin:6px 0 8px">Pinned things are always in its context; the rest are recalled when relevant. Things you say about yourself show up above for a yes/no. Secrets are refused.</div>
-    <div id="mind"></div></section>
-  <section class="card c12"><h2>Upgrade lane <span class="small" id="upg-n"></span></h2>
-    <div class="upgbar"><button type="button" id="upg-toggle" class="primary">Turn on</button><button type="button" id="upg-now">Work on one now</button>
-      <span class="dim small" id="upg-info"></span></div>
-    <div class="sendrepo"><input id="upg-idea" type="text" maxlength="600" autocomplete="off" placeholder="Queue an upgrade idea, e.g. the dashboard should show trades per week" aria-label="An upgrade idea">
-      <button type="button" id="upg-add">Queue it</button></div>
-    <div class="dim small" style="margin:6px 0 8px">Your API tokens go here while you are away: it drafts one small upgrade at a time, tests it in the isolated sandbox against everything that already passes, and asks you. Approve deploys it with a health check that rolls itself back; Undo restores the old code.</div>
-    <div id="upgrades"></div></section>
+  <section class="card c7"><h2>Always running <span class="small" id="alive-n"></span></h2><div id="alive"></div></section>
+  <section class="card c5"><h2>What it is doing <span class="small">live</span></h2><div class="feed" id="feed"></div></section>
+  <section class="card c12"><h2>Open anything in AURIX <span class="small">every screen, one tap</span></h2><div class="apps" id="apps"></div></section>
+  <section class="card c7"><h2>Needs you <span class="small" id="need-n"></span></h2><div id="approvals"></div>
+    <div id="skill-nudge" class="small" style="margin-top:8px"></div></section>
+  <section class="card c5"><h2>Running now</h2><div id="running"></div>
+    <h2 style="margin-top:14px">Launch pad</h2>
+    <div class="launch"><a class="btn" href="/">&#128172; Odysseus chat</a>
+      <a class="btn" id="l-godseye" href="#" target="_blank" rel="noopener">&#127757; God's Eye View</a>
+      <a class="btn" href="/systems">&#129504; Systems + STOP</a>
+      <a class="btn" id="l-kuma" href="#" target="_blank" rel="noopener">&#128200; Uptime Kuma</a></div>
+    <div class="dim small" style="margin-top:10px">Homelab <span id="homelab-n"></span></div>
+    <div class="launch" id="homelab" style="margin-top:6px"></div></section>
+  <section class="card c7"><h2>Services <span class="small" id="services-n"></span></h2><div id="services"></div></section>
+  <section class="card c5"><h2>Server <span class="small" id="server-n"></span></h2><div id="server"></div>
+    <h2 style="margin-top:16px">Systems <a class="small" href="/systems">details &rarr;</a></h2><div class="organs" id="organs"></div></section>
+  <section class="card c6"><h2>Live audit ticker</h2><div id="ticker"></div></section>
+  </div>
+  <div class="tabpanel" data-tab="money">
   <section class="card c12"><h2>Money <span class="small" id="money-n"></span></h2>
     <div class="dim small" style="margin-bottom:8px">Simulation and estimates only. AURIX never moves real money or opens accounts; every idea says what only you can do.</div>
     <div class="tblwrap"><table class="tbl" id="lab-table"><thead><tr><th>Paper strategy</th><th class="n">Per year</th><th class="n">Sharpe</th><th class="n">Worst drop</th><th class="n">Out-of-sample</th><th class="n">Live</th><th>Verdict</th></tr></thead><tbody id="lab-rows"></tbody></table></div>
     <div class="dim small" id="lab-note" style="margin:6px 0 12px"></div>
     <h2 style="margin-top:6px">Ways to make or save money <span class="small">ranked by expected $ per hour of your time</span></h2><div id="ideas"></div></section>
+  <section class="card c12"><h2>LandPilot <span class="small" id="land-n"></span></h2>
+    <div class="dim small" style="margin-bottom:8px">Research only. <code>land propose &lt;property&gt;</code> makes an acquisition card once the dossier is ELIGIBLE; you sign and pay, AURIX does neither.</div>
+    <div id="land-pending"></div>
+    <h2 style="margin-top:10px">Dossiers <span class="small" id="land-dossiers-n"></span></h2><div id="land-dossiers"></div></section>
   <section class="card c12"><h2>Freelance drafts <span class="small" id="fl-n"></span></h2>
     <div class="dim small" style="margin-bottom:8px">Send AURIX a job brief with <code>freelance: &lt;brief&gt;</code> and it drafts a working script. You review, keep or discard, and deliver it yourself.</div>
     <div id="freelance"></div></section>
@@ -232,59 +259,68 @@
   <section class="card c12"><h2>Earnings ledger <span class="small" id="earn-n"></span></h2>
     <div class="dim small" style="margin-bottom:8px">Estimated (~) entries are what finished work is roughly worth, logged automatically; confirmed entries are real payments you tell AURIX landed. AURIX never touches the money itself.</div>
     <div id="earnings"></div></section>
-  <section class="card c12"><h2>While you were away <span class="small" id="ns-n"></span></h2>
-    <div class="upgbar"><button type="button" id="ns-now" class="primary">Run a shift now</button>
-      <span class="dim small">Every night AURIX builds a pile of finished things for your morning message: a health check, a money idea researched, quiet projects, strategy lab news. Free and local.</span></div>
-    <div id="nightshift"></div></section>
-  <section class="card c12"><h2>GamePilot <span class="small" id="gp-n"></span></h2>
-    <div class="dim small" style="margin-bottom:8px">See and control your gaming PC from a Fire TV Stick or any browser. It only ever shows a game or Steam, never your desktop; control is off until you arm it and turns itself off.</div>
-    <div class="upgbar"><button type="button" id="gp-arm" class="primary">Arm control (15 min)</button><button type="button" id="gp-disarm">Disarm</button><button type="button" id="gp-unpair" class="deny">Unpair all screens</button>
-      <a class="btn" id="gp-open" href="/gamepilot" target="_blank" rel="noopener">Open the viewer</a></div>
-    <div class="sendrepo"><input id="gp-code" type="text" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="Code shown on the TV, e.g. 123456" aria-label="Pairing code shown on the TV"><button type="button" id="gp-pair">Pair this screen</button></div>
-    <div class="dim small" style="margin-top:8px">On the Fire TV open the Silk browser and go to <code id="gp-url"></code>. The PC agent has to be running (<code>python gaming\agent\aurix_gamepilot_agent.py run</code>); nothing starts it automatically.</div></section>
-  <section class="card c12"><h2>Helpers that work on their own <span class="small" id="shards-n"></span></h2>
-    <div class="upgbar"><button type="button" id="sh-pause-all" class="deny">Pause everything</button><button type="button" id="sh-resume-all" class="primary">Resume everything</button>
-      <span class="dim small">Each helper lists what it can spend and what only you can approve. Pausing also stops its cron job on the server.</span></div>
-    <div id="shards"></div></section>
-  <section class="card c7"><h2>Always running <span class="small" id="alive-n"></span></h2><div id="alive"></div></section>
-  <section class="card c5"><h2>What it is doing <span class="small">live</span></h2><div class="feed" id="feed"></div></section>
-  <section class="card c12"><h2>Growth &middot; from day one to now <span class="small" id="growth-n"></span></h2>
-    <div class="then-now" id="thennow"></div><div class="dim small" id="spark-label"></div><div id="spark"></div>
-    <div class="tl" id="timeline"></div><div style="margin-top:10px"><button type="button" id="tl-more" class="small">Show the whole timeline</button></div></section>
-  <section class="card c6"><h2>Why you can trust it <span class="small" id="trust-n"></span></h2><div id="trust"></div></section>
-  <section class="card c6"><h2>How it learns from every fail, test and message <span class="small" id="learn-n"></span></h2><div id="learning"></div></section>
-  <section class="card c12"><h2>Open anything in AURIX <span class="small">every screen, one tap</span></h2><div class="apps" id="apps"></div></section>
-  <section class="card c7"><h2>Your games <span class="small" id="games-n"></span></h2><div id="games"></div></section>
   <section class="card c5"><h2>Paper trading <span class="small" id="trade-n"></span></h2><div id="trading"></div></section>
+  </div>
+  <div class="tabpanel" data-tab="missions">
+  <section class="card c12"><h2>Send AURIX a repo <span class="small" id="repos-n">paste a GitHub link, then approve the report</span></h2>
+    <div class="sendrepo"><input id="repo-url" type="url" inputmode="url" autocomplete="off" placeholder="https://github.com/owner/repo" aria-label="GitHub repository link">
+      <button type="button" id="repo-go" class="primary">Look inside it</button></div>
+    <div class="dim small" style="margin:6px 0 8px">It copies the repo read-only, reads it as text and tells you what is in it. Nothing is run or installed. Yes stores it inert in a library.</div>
+    <div id="repos"></div></section>
+  <section class="card c12"><h2>Upgrade lane <span class="small" id="upg-n"></span></h2>
+    <div class="upgbar"><button type="button" id="upg-toggle" class="primary">Turn on</button><button type="button" id="upg-now">Work on one now</button>
+      <span class="dim small" id="upg-info"></span></div>
+    <div class="sendrepo"><input id="upg-idea" type="text" maxlength="600" autocomplete="off" placeholder="Queue an upgrade idea, e.g. the dashboard should show trades per week" aria-label="An upgrade idea">
+      <button type="button" id="upg-add">Queue it</button></div>
+    <div class="dim small" style="margin:6px 0 8px">Your API tokens go here while you are away: it drafts one small upgrade at a time, tests it in the isolated sandbox against everything that already passes, and asks you. Approve deploys it with a health check that rolls itself back; Undo restores the old code.</div>
+    <div id="upgrades"></div></section>
   <section class="card c6"><h2>Self-check exam <span class="small" id="checks-n"></span></h2><div id="checks"></div></section>
   <section class="card c6"><h2>Lessons from the teacher <span class="small" id="lessons-n"></span></h2><div id="lessons"></div></section>
-  <section class="card c12"><h2>Add-ons <span class="small" id="addons-n"></span></h2><div class="tiles" id="addons"></div></section>
-  <section class="card c12"><h2>Monitors <span class="small" id="mon-n"></span></h2><div class="mon" id="monitors"></div></section>
-  <section class="card c5" id="card-level"><h2>Agent level <span class="small" id="lvl-today"></span></h2><div class="level" id="level"></div></section>
-  <section class="card c7"><h2>Needs you <span class="small" id="need-n"></span></h2><div id="approvals"></div>
-    <div id="skill-nudge" class="small" style="margin-top:8px"></div></section>
   <section class="card c7"><h2>Skills <span class="small" id="skills-n"></span></h2><div id="skills"></div>
     <div class="dim small" style="margin-top:10px">Make one in Telegram: <code>forge: &lt;a small tool&gt;</code>. It is tested in the sandbox first; nothing runs until you approve it here or with <code>approve skill &lt;name&gt;</code>.</div></section>
-  <section class="card c5"><h2>Running now</h2><div id="running"></div>
-    <h2 style="margin-top:14px">Launch pad</h2>
-    <div class="launch"><a class="btn" href="/">&#128172; Odysseus chat</a>
-      <a class="btn" id="l-godseye" href="#" target="_blank" rel="noopener">&#127757; God's Eye View</a>
-      <a class="btn" href="/systems">&#129504; Systems + STOP</a>
-      <a class="btn" id="l-kuma" href="#" target="_blank" rel="noopener">&#128200; Uptime Kuma</a></div>
-    <div class="dim small" style="margin-top:10px">Homelab <span id="homelab-n"></span></div>
-    <div class="launch" id="homelab" style="margin-top:6px"></div></section>
   <section class="card c7"><h2>Missions <span class="small">say <code>mission: &lt;goal&gt;</code> in Telegram</span></h2><div id="missions"></div>
     <h2 style="margin-top:14px">Standing (scheduled)</h2><div id="standing"></div></section>
   <section class="card c5"><h2>Tasks &amp; projects <span class="small" id="tasks-n"></span></h2>
     <div class="dim small">Scheduled tasks</div><div id="sched"></div>
     <div class="dim small" style="margin-top:10px">To-dos <span>(<code>todo: &lt;text&gt;</code>)</span></div><div id="todos"></div>
     <div class="dim small" style="margin-top:10px">Unfinished projects <span>(<code>project: &lt;name&gt;</code>)</span></div><div id="projects"></div></section>
-  <section class="card c7"><h2>Services <span class="small" id="services-n"></span></h2><div id="services"></div></section>
-  <section class="card c5"><h2>Server <span class="small" id="server-n"></span></h2><div id="server"></div>
-    <h2 style="margin-top:16px">Systems <a class="small" href="/systems">details &rarr;</a></h2><div class="organs" id="organs"></div></section>
+  </div>
+  <div class="tabpanel" data-tab="growth">
+  <section class="card c12"><h2>What AURIX knows about you <span class="small" id="mind-n"></span></h2>
+    <div class="sendrepo"><input id="mem-text" type="text" maxlength="400" autocomplete="off" placeholder="Tell it something to remember, e.g. I prefer short answers" aria-label="Something for AURIX to remember">
+      <button type="button" id="mem-go" class="primary">Remember</button><button type="button" id="mem-undo">Undo last forget</button></div>
+    <div class="dim small" style="margin:6px 0 8px">Pinned things are always in its context; the rest are recalled when relevant. Things you say about yourself show up above for a yes/no. Secrets are refused.</div>
+    <div id="mind"></div></section>
+  <section class="card c12"><h2>Growth &middot; from day one to now <span class="small" id="growth-n"></span></h2>
+    <div class="then-now" id="thennow"></div><div class="dim small" id="spark-label"></div><div id="spark"></div>
+    <div class="tl" id="timeline"></div><div style="margin-top:10px"><button type="button" id="tl-more" class="small">Show the whole timeline</button></div></section>
+  <section class="card c6"><h2>Why you can trust it <span class="small" id="trust-n"></span></h2><div id="trust"></div></section>
+  <section class="card c6"><h2>How it learns from every fail, test and message <span class="small" id="learn-n"></span></h2><div id="learning"></div></section>
+  <section class="card c5" id="card-level"><h2>Agent level <span class="small" id="lvl-today"></span></h2><div class="level" id="level"></div></section>
   <section class="card c6"><h2>Memory &amp; knowledge graph</h2><div class="grid2" id="memory"></div>
     <h2 style="margin-top:14px">Knowledge gaps <span class="small">pages the wiki links to but that do not exist</span></h2><div id="gaps"></div></section>
-  <section class="card c6"><h2>Live audit ticker</h2><div id="ticker"></div></section>
+  </div>
+  <div class="tabpanel" data-tab="helpers">
+  <section class="card c12"><h2>While you were away <span class="small" id="ns-n"></span></h2>
+    <div class="upgbar"><button type="button" id="ns-now" class="primary">Run a shift now</button>
+      <span class="dim small">Every night AURIX builds a pile of finished things for your morning message: a health check, a money idea researched, quiet projects, strategy lab news. Free and local.</span></div>
+    <div id="nightshift"></div></section>
+  <section class="card c12"><h2>Helpers that work on their own <span class="small" id="shards-n"></span></h2>
+    <div class="upgbar"><button type="button" id="sh-pause-all" class="deny">Pause everything</button><button type="button" id="sh-resume-all" class="primary">Resume everything</button>
+      <span class="dim small">Each helper lists what it can spend and what only you can approve. Pausing also stops its cron job on the server.</span></div>
+    <div id="shards"></div></section>
+  <section class="card c12"><h2>Add-ons <span class="small" id="addons-n"></span></h2><div class="tiles" id="addons"></div></section>
+  <section class="card c12"><h2>Monitors <span class="small" id="mon-n"></span></h2><div class="mon" id="monitors"></div></section>
+  </div>
+  <div class="tabpanel" data-tab="fun">
+  <section class="card c12"><h2>GamePilot <span class="small" id="gp-n"></span></h2>
+    <div class="dim small" style="margin-bottom:8px">See and control your gaming PC from a Fire TV Stick or any browser. It only ever shows a game or Steam, never your desktop; control is off until you arm it and turns itself off.</div>
+    <div class="upgbar"><button type="button" id="gp-arm" class="primary">Arm control (15 min)</button><button type="button" id="gp-disarm">Disarm</button><button type="button" id="gp-unpair" class="deny">Unpair all screens</button>
+      <a class="btn" id="gp-open" href="/gamepilot" target="_blank" rel="noopener">Open the viewer</a></div>
+    <div class="sendrepo"><input id="gp-code" type="text" inputmode="numeric" maxlength="6" autocomplete="off" placeholder="Code shown on the TV, e.g. 123456" aria-label="Pairing code shown on the TV"><button type="button" id="gp-pair">Pair this screen</button></div>
+    <div class="dim small" style="margin-top:8px">On the Fire TV open the Silk browser and go to <code id="gp-url"></code>. The PC agent has to be running (<code>python gaming\agent\aurix_gamepilot_agent.py run</code>); nothing starts it automatically.</div></section>
+  <section class="card c7"><h2>Your games <span class="small" id="games-n"></span></h2><div id="games"></div></section>
+  </div>
 </main>
 <div id="toast"></div>
 <script nonce="{{CSP_NONCE}}">
@@ -302,6 +338,20 @@ try {
     if (c.bg) r.setProperty("--bg", c.bg); if (c.fg) r.setProperty("--fg", c.fg); if (c.panel) r.setProperty("--panel", c.panel);
     if (c.border) r.setProperty("--border", c.border); if (c.red) r.setProperty("--red", c.red); }
 } catch (e) { /* default theme */ }
+
+// Tabs: which panel is showing is purely a display toggle (every panel's data still loads/refreshes
+// underneath, so nothing depends on which tab happens to be open) - just remembered per-browser so
+// coming back later opens on the same one instead of always "Overview".
+function showTab(name) {
+  for (const b of document.querySelectorAll(".tabbtn")) b.classList.toggle("active", b.dataset.tab === name);
+  for (const p of document.querySelectorAll(".tabpanel")) p.classList.toggle("active", p.dataset.tab === name);
+  try { localStorage.setItem("aurix-command-tab", name); } catch (e) { /* private mode */ }
+}
+for (const b of document.querySelectorAll(".tabbtn")) b.addEventListener("click", () => showTab(b.dataset.tab));
+try {
+  const wanted = localStorage.getItem("aurix-command-tab");
+  if (wanted && document.querySelector(`.tabpanel[data-tab="${wanted}"]`)) showTab(wanted);
+} catch (e) { /* private mode: stay on the default tab */ }
 
 let state = null;
 
@@ -749,6 +799,23 @@ function drawLibrary(l) {
   if (!items.length) box.appendChild(el("div", { class: "dim small" }, "Nothing sent yet."));
 }
 
+function drawLand(l) {
+  l = l || {}; const pend = $("land-pending"); pend.replaceChildren();
+  const pending = l.pending || [], dossiers = l.dossiers || [];
+  $("land-n").textContent = dossiers.length ? dossiers.length + " dossier(s)" + (pending.length ? " - " + pending.length + " waiting" : "") : "";
+  $("land-dossiers-n").textContent = "";
+  pending.forEach((c) => { const row = el("div", { class: "grow warn" }); row.appendChild(el("i"));
+    const mid = el("div", { style: "flex:1;min-width:0" }); mid.appendChild(el("b", { style: "display:block;white-space:normal" }, c.label || c.property));
+    mid.appendChild(el("div", { class: "small" }, "max $" + Number(c.max_usd || 0).toLocaleString() + " · " + c.id + " - decide above in Needs you")); row.appendChild(mid); pend.appendChild(row); });
+  if (!pending.length) pend.appendChild(el("div", { class: "dim small" }, "Nothing waiting."));
+  const box = $("land-dossiers"); box.replaceChildren();
+  const lamp = { "ELIGIBLE": "ok", "LOCKED": "warn" };
+  dossiers.forEach((d) => { const row = el("div", { class: "grow " + (lamp[(d.gate || "").split(":")[0]] || "") }); row.appendChild(el("i"));
+    const mid = el("div", { style: "flex:1;min-width:0" }); mid.appendChild(el("b", { style: "display:block;white-space:normal" }, d.label || d.key));
+    mid.appendChild(el("div", { class: "small" }, (d.verdict || "") + (d.unknowns ? " · " + d.unknowns + " unknown(s)" : "") + " · " + d.mode)); row.appendChild(mid); box.appendChild(row); });
+  if (!dossiers.length) box.appendChild(el("div", { class: "dim small" }, "None yet. Try: land build <name>, then land propose <name>."));
+}
+
 function drawFreelance(f) {
   f = f || {}; const box = $("freelance"); box.replaceChildren();
   const jobs = f.jobs || [];
@@ -1040,6 +1107,7 @@ function render() {
   if (changed("nightshift", state.nightshift)) drawNight(state.nightshift || {});
   if (changed("transcription", state.transcription)) drawTranscripts(state.transcription || {});
   if (changed("earnings", state.earnings)) drawEarnings(state.earnings || {});
+  if (changed("land", state.land)) drawLand(state.land || {});
   if (changed("freelance", state.freelance)) drawFreelance(state.freelance || {});
   if (changed("content", state.content)) drawContent(state.content || {});
   if (changed("subscriptions", state.subscriptions)) drawSubscriptions(state.subscriptions || {});

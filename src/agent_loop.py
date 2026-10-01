@@ -176,7 +176,7 @@ TOOL_SECTIONS = {
 <shell command>
 ```
 Run any shell command. Output is returned to you. Use for: installing packages, checking files, git, curl, system info, etc.
-WHERE THIS RUNS: a Linux (Debian) container on the owner's home server, NOT on his Windows PC. Use plain POSIX commands (`df -h /app/data`, `du -sh <dir>`, `free -m`, `uptime`). `powershell`, `wsl`, `Get-PSDrive` and other Windows commands do not exist here and will fail. For disk space the owner can also just say `disk`.
+WHERE THIS RUNS: a Linux (Debian) container on the owner's home server (the "7070"), NOT on his Windows PC. Use plain POSIX commands (`df -h /app/data`, `du -sh <dir>`, `free -m`, `uptime`). `powershell`, `wsl`, `Get-PSDrive` and other Windows commands do not exist here and will fail. For disk space the owner can also just say `disk`.
 For LONG-running commands (package installs, pip/npm, ffmpeg, model downloads, training, builds — anything that may take more than ~20s), make the FIRST line `#!bg` to run it in the BACKGROUND. You get a job id back immediately and are automatically re-invoked with the full output when it finishes — so you never block the chat waiting. Example:
 ```bash
 #!bg

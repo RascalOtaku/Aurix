@@ -1,5 +1,5 @@
 """Pure logic in the sandbox's baked-in tools (mission_sandbox/tools). The imaging/ASR/SDK parts need the
-sandbox image (numpy, whisper, OpenHands) and are covered by `mission_sandbox/verify_tools.sh` on the host;
+sandbox image (numpy, whisper, OpenHands) and are covered by `mission_sandbox/verify_tools.sh` on the 7070;
 everything decidable without them is tested here, on the dev PC, with the standard library only."""
 import contextlib
 import importlib.util

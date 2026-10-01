@@ -130,6 +130,7 @@ if AUTH_ENABLED:
         "/api/auth/settings",
         "/api/auth/integrations/presets",
         "/api/health",
+        "/api/health/telegram",        # loopback-only (checked in the handler); booleans only - used by scripts/aurix_deploy.sh
         "/api/version",
         "/login",
     }
@@ -705,6 +706,18 @@ async def get_version():
 @app.get("/api/health")
 async def health_check() -> Dict[str, str]:
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+@app.get("/api/health/telegram")
+async def telegram_readiness_check(request: Request):
+    """Deploy readiness for the Telegram listener. Answers ONLY loopback callers (the deploy script asks from inside the container),
+    so it reveals nothing to the LAN. 200 = listener running and Telegram answered a poll recently; 503 = not ready."""
+    from fastapi.responses import JSONResponse
+    client = request.client.host if request.client else ""
+    if client not in ("127.0.0.1", "::1"):
+        raise HTTPException(status_code=404)
+    from src.foundation import sysview
+    ready, body = sysview.telegram_readiness()
+    return JSONResponse(body, status_code=200 if ready else 503)
 
 @app.get("/api/runtime")
 async def runtime_info() -> Dict[str, object]:

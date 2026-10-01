@@ -147,8 +147,18 @@ def _session_is_gated(session_id: Optional[str]) -> bool:
         return False
     if mode == "all":
         return True
-    telegram_session = os.environ.get("TELEGRAM_AGENT_SESSION_ID", "")
-    return bool(telegram_session) and session_id == telegram_session
+    # The Telegram agent's session ROTATES daily (session_rotation.py) and the listener talks to the live one, so the gate must
+    # follow the same pointer - comparing only the frozen env var left every rotated session ungated (found 2026-09-28).
+    # If the live pointer cannot be read, fail closed: gate this call.
+    telegram_sessions = {os.environ.get("TELEGRAM_AGENT_SESSION_ID", "")}
+    try:
+        from src.foundation import session_rotation
+        telegram_sessions.add(session_rotation.current_session_id() or "")
+    except Exception:
+        logger.warning("could not read the live Telegram session; gating this call")
+        return True
+    telegram_sessions.discard("")
+    return bool(session_id) and session_id in telegram_sessions
 
 
 def requires_approval(tool: str, session_id: Optional[str]) -> bool:

@@ -1,6 +1,6 @@
 """Spec §10 task 7: "LiteLLM in front of Ollama - confirm one request can be routed end-to-end to a local model."
-Here: one OpenAI-compatible endpoint; a request for `aurix-local` really reaches the GPU box's 7B model; a request whose primary is
-unreachable is really answered by the CPU box's own CPU model through LiteLLM's fallback; and the endpoint is not open to anyone.
+Here: one OpenAI-compatible endpoint; a request for `aurix-local` really reaches the 3431's 7B model; a request whose primary is
+unreachable is really answered by the 7070's own CPU model through LiteLLM's fallback; and the endpoint is not open to anyone.
 """
 import json
 import os
@@ -34,6 +34,8 @@ def call(method, path, body=None, key=KEY, timeout=300):
         except ValueError:
             return e.code, {}
 
+
+GPU_HOST = os.environ.get("AURIX_GPU_HOST", "100.64.0.10")   # the GPU box's Tailscale address
 
 def ollama_ps(host):
     """Names of the models an Ollama server currently has loaded (what it really ran), or []."""
@@ -79,22 +81,22 @@ def main():
     status, body, text, secs = ask("aurix-local")
     check("aurix-local answers (HTTP 200) with real text", status == 200 and bool(text.strip()), f"{status}, {text.strip()[:40]!r}, {secs:.1f}s")
     check("the answer is the one asked for", "ready" in text.lower(), repr(text.strip()[:40]))
-    ps = ollama_ps("100.64.0.10")
-    check("...and the GPU box's Ollama itself reports the 7B model resident (LiteLLM only echoes the alias, so ask the machine)",
+    ps = ollama_ps(GPU_HOST)
+    check("...and the 3431's Ollama itself reports the 7B model resident (LiteLLM only echoes the alias, so ask the machine)",
           any(m.startswith("qwen2.5:7b") for m in ps), ", ".join(ps) or "nothing loaded")
 
     print("== fallback MECHANISM: primary unreachable -> LiteLLM falls back to the next route")
     status, body, text, secs = ask("aurix-fallback-test")
     check("the request still succeeds (HTTP 200) with real text", status == 200 and bool(text.strip()), f"{status}, {secs:.1f}s")
     check("...only AFTER the dead primary was tried and timed out (>= 5 s), so this really was the fallback", secs >= 5.0, f"{secs:.1f}s")
-    check("...and the answer came from the fallback route's model (3B on the GPU box)", any(m.startswith("qwen2.5:3b") for m in ollama_ps("100.64.0.10")))
+    check("...and the answer came from the fallback route's model (3B on the 3431)", any(m.startswith("qwen2.5:3b") for m in ollama_ps(GPU_HOST)))
 
-    print("== the real fallback route: the CPU box's own CPU model")
+    print("== the real fallback route: the 7070's own CPU model")
     status, body, text, secs = ask("aurix-local-cpu", "Reply with the single word: ready")
     if status == 200:
-        check("the CPU box's CPU model answers through LiteLLM", bool(text.strip()), f"{secs:.1f}s, {text.strip()[:30]!r}")
+        check("the 7070's CPU model answers through LiteLLM", bool(text.strip()), f"{secs:.1f}s, {text.strip()[:30]!r}")
     else:
-        check("the CPU box's CPU model answers through LiteLLM (if this fails: ufw must allow 172.30.77.0/24 -> port 11434 on the CPU box)",
+        check("the 7070's CPU model answers through LiteLLM (if this fails: ufw must allow 172.30.77.0/24 -> port 11434 on the 7070)",
               False, f"HTTP {status} after {secs:.0f}s")
 
     print("== nonsense in, sane error out")

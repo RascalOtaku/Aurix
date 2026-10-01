@@ -1,7 +1,7 @@
 """src/remote_inference.py - model selection when Ollama runs on ANOTHER machine.
 
 The resource governor sizes models from THIS host's RAM/VRAM. That is wrong once
-inference is served elsewhere (e.g. the GPU box over Tailscale): the host server
+inference is served elsewhere (e.g. the 3431 GPU box over Tailscale): the 7070
 has plenty of RAM but no GPU, and the remote box may not have the model the
 governor picks at all (it asked a 6GB-VRAM machine for qwen2.5:14b).
 

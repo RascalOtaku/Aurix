@@ -57,6 +57,39 @@ class SpendLedgerTests(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 402)
         post.assert_not_called()
 
+    def test_openrouter_stream_usage_reaches_the_ledger_once(self):
+        """OpenRouter puts usage beside an empty {"role", "content": ""} delta, not in a choice-less chunk."""
+        import asyncio
+        import json as _json
+        import httpx
+        from src import llm_core
+        sent = {}
+        chunks = [{"choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hi"}}]},
+                  {"choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": "stop"}],
+                   "usage": {"prompt_tokens": 12, "completion_tokens": 3}},
+                  {"choices": [], "usage": {"prompt_tokens": 12, "completion_tokens": 3}}]      # a repeat: not counted twice
+        body = "".join(f"data: {_json.dumps(c)}\n\n" for c in chunks) + "data: [DONE]\n\n"
+
+        def handler(request):
+            sent["payload"] = _json.loads(request.content)
+            return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+
+        async def run():
+            client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+            with mock.patch.object(llm_core, "_get_http_client", return_value=client), \
+                 mock.patch.object(spend_ledger, "record") as rec:
+                out = [e async for e in llm_core.stream_llm("https://openrouter.ai/api/v1/chat/completions", "openai/gpt-4o",
+                                                             [{"role": "user", "content": "hi"}], headers={"Authorization": "Bearer x"})]
+            await client.aclose()
+            return out, rec
+        out, rec = asyncio.run(run())
+        self.assertEqual(sent["payload"].get("usage"), {"include": True})
+        self.assertNotIn("stream_options", sent["payload"])
+        rec.assert_called_once()
+        self.assertEqual(rec.call_args[0][3:5], (12, 3))
+        self.assertTrue(any('"delta": "Hi"' in e for e in out))
+        self.assertEqual(sum('"type": "usage"' in e for e in out), 1)
+
 
 class AgentShieldTests(unittest.TestCase):
     def high(self, text):

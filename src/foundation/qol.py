@@ -54,6 +54,10 @@ HELP = """<b>AURIX - what you can say</b>
 • <code>shards</code> · <code>pause &lt;id&gt;</code> · <code>resume &lt;id&gt;</code> · <code>pause all</code> - every helper that works on its own, what it can spend, and a pause switch for each (it also stops the cron jobs)
 • <code>gamepilot</code> · <code>pair 123456</code> · <code>arm [min]</code> · <code>disarm</code> · <code>unpair</code> - see and control your gaming PC from a Fire TV: watch by default, control only while armed
 • <code>money</code> · <code>money &lt;id&gt;</code> · <code>money &lt;id&gt; start|pause|reject</code> · <code>lab</code> - an honest ranked list of ways to make or save money, and the paper strategy leaderboard (simulation only; real-money trading stays refused)
+• <code>land</code> · <code>land build &lt;name&gt;</code> · <code>land show &lt;property&gt;</code> · <code>land cap &lt;property&gt; &lt;max&gt; [&lt;target&gt;]</code> (your maximum TRUE exposure for one property) · <code>land promote m-xxxxxx &lt;name&gt;</code> (a mission's draft into the evidence store; its sources stay leads) · <code>land propose &lt;property&gt;</code> · <code>yes|no land a-xxxxxx</code> - LandPilot: evidence-graded land dossiers (research only). An acquisition card is approved only with its id and only for the dossier version you saw; approving records your decision, AURIX never buys, signs or contacts anyone
+• <code>version</code> · <code>reviewed vX.Y.Z</code> - AURIX's version history; a big shift in the code opens a review ticket for Claude Code
+• <code>integrations</code> · <code>adopt|skip i-xxxxxx</code> - after a repo is absorbed, AURIX's own models plan what to take from it; adopting queues the idea into the upgrade lane or skill forge, which draft, test and ask you again
+• <code>models</code> (or <code>router</code>) - every model/agent AURIX can use, which are on, and where each kind of work goes (private data stays on your own machines)
 • <code>workspace &lt;id&gt;</code> - if your Anthropic key needs a workspace id (the teacher and upgrade lane say so when it does)
 • <code>upgrade: &lt;idea&gt;</code> · <code>upgrades</code> · <code>upgrades on 3|off</code> · <code>upgrade now</code> · <code>upgrade openhands</code> · <code>yes|no u-xxxxxx</code> · <code>undo u-xxxxxx</code> - your API tokens become tested upgrades while you are away: I draft, test in the sandbox, you tap approve; a bad build rolls itself back. <code>upgrade openhands</code> drafts the next one with the sandboxed OpenHands coding agent instead of my own prompt
 • Send a GitHub link (or <code>repo &lt;link&gt;</code>) - I look inside it (nothing runs), then you answer <code>yes|no r-xxxxxx</code>; yes stores it inert in a library · <code>repos</code>
@@ -180,7 +184,7 @@ def tools_text(**presence_kw) -> str:
 
 
 def disk_text(warn_pct: float = 85.0, critical_pct: Optional[float] = None) -> str:
-    """`disk`: how full the SERVER's disk is (the host - this app runs in a Linux container there, not on the Windows PC).
+    """`disk`: how full the SERVER's disk is (the 7070 - this app runs in a Linux container there, not on the Windows PC).
 
     Deterministic: no model, no shell, no approval. Uses the same df-style percentage as the watchdog, so what this says
     and when the watchdog pings you can never disagree."""
@@ -193,7 +197,7 @@ def disk_text(warn_pct: float = 85.0, critical_pct: Optional[float] = None) -> s
         return f"I couldn't read the disk: {e(str(err))}"
     filled = min(10, int(round(d["pct"] / 10)))
     bar = "▰" * filled + "▱" * (10 - filled)
-    lines = [f"💾 <b>Server disk</b> (the host - not your PC)",
+    lines = [f"💾 <b>Server disk</b> (the 7070 - not your PC)",
              f"{bar} <b>{d['pct']:.0f}% used</b> · {d['free_gb']:.1f} GB free of {d['total_gb']:.0f} GB"]
     foot = []
     for label, path in (("mission workspaces", data / "workspace"), ("forged skills", data / "forge")):

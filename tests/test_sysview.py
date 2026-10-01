@@ -14,9 +14,9 @@ from src.foundation import audit, sysview, mission as ms, standing as st  # noqa
 ORGANS = {"skeletal", "nervous", "brain", "circulatory", "immune", "muscular", "memory", "endocrine"}
 GOOD = {
     "system": lambda: {"cpu_pct": 12.0, "mem_pct": 40.0, "disk_pct": 50.0, "disk_free_gb": 200.0, "load1": 0.4, "uptime_h": 30.0},
-    "endpoints": lambda: [{"name": "GPU box", "ok": True, "url": "http://x:11434",
+    "endpoints": lambda: [{"name": "Precision 3431", "ok": True, "url": "http://x:11434",
                            "loaded": [{"name": "qwen2.5:14b", "vram_gb": 5.1, "size_gb": 9.0}], "models": None},
-                          {"name": "CPU box local", "ok": False, "url": "http://y:11434", "loaded": [], "models": None}],
+                          {"name": "7070 local", "ok": False, "url": "http://y:11434", "loaded": [], "models": None}],
     "sandbox": lambda: {"available": True, "tools_present": 9, "tools_total": 11, "openhands": True, "missing": ["blender"]},
     "telegram": lambda: {"configured": True, "listener_alive": True, "scheduler_alive": True, "in_flight": 0},
     "governor": lambda: {"mode": "balanced"},
@@ -51,8 +51,8 @@ class SnapshotTests(_Base):
     def test_brain_reports_endpoint_up_and_down(self):
         m = sysview.snapshot(GOOD)["organs"]["brain"]
         self.assertEqual(m["status"], "ok")
-        self.assertIn("qwen2.5:14b", m["metrics"]["GPU box"])
-        self.assertEqual(m["metrics"]["CPU box local"], "DOWN")
+        self.assertIn("qwen2.5:14b", m["metrics"]["Precision 3431"])
+        self.assertEqual(m["metrics"]["7070 local"], "DOWN")
 
     def test_all_endpoints_down_is_bad_and_no_endpoints_is_idle(self):
         down = dict(GOOD, endpoints=lambda: [{"name": "a", "ok": False, "loaded": []}])
@@ -220,7 +220,7 @@ try:
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     HAVE_FASTAPI = True
-except Exception:                                         # the dev PC has no fastapi; the host image does
+except Exception:                                         # the dev PC has no fastapi; the 7070 image does
     HAVE_FASTAPI = False
 
 

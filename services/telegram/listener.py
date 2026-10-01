@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import time
 import urllib.request
 
 import httpx
@@ -27,6 +28,7 @@ from src.approval_gate import (
 )
 from src.foundation import buttons as buttons_mod
 from src.foundation import commands as fcommands
+from src.foundation import honesty
 from src.foundation import session_rotation
 
 logger = logging.getLogger(__name__)
@@ -71,6 +73,7 @@ class TelegramListener:
         self._control_tasks = set()
         self._foundation = None
         self._sched_task = None
+        self._last_poll_ok = None     # when Telegram last ANSWERED a poll (ok=true): the deploy readiness signal
 
     # -- Foundation (missions) ---------------------------------------------------
     async def _notify(self, text: str, buttons: dict = None) -> None:
@@ -158,6 +161,8 @@ class TelegramListener:
             payload["offset"] = self._offset
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(None, self._api, "getUpdates", payload)
+        if result.get("ok") is True:                   # a real answer from Telegram, not the {} that _api returns on failure
+            self._last_poll_ok = time.time()
         return result.get("result", [])
 
     async def _call_agent_loop(self, text: str) -> str:
@@ -174,6 +179,7 @@ class TelegramListener:
                                                    # search...) for real Telegram-dispatched missions, found live 2026-09-23
         }
         chunks = []
+        tools_ran = []                                   # the ONLY proof a tool ran: the agent loop's own tool_output events
         async with httpx.AsyncClient(timeout=AGENT_LOOP_TIMEOUT) as client:
             async with client.stream("POST", f"{ODYSSEUS_URL}/api/chat_stream",
                                       data=form, headers=headers) as resp:
@@ -190,12 +196,14 @@ class TelegramListener:
                         continue
                     if "delta" in event:
                         chunks.append(event["delta"])
+                    elif event.get("type") == "tool_output":
+                        tools_ran.append({k: event.get(k) for k in ("tool", "exit_code", "output")})
                     elif event.get("type") == "metrics":
                         round_texts = event.get("data", {}).get("round_texts", [])
                         non_empty = [t for t in round_texts if t.strip()]
                         if non_empty:
                             chunks = [non_empty[-1]]
-        return "".join(chunks).strip() or "(agent ran but returned no clear final answer)"
+        return honesty.check("".join(chunks).strip(), tools_ran)          # never a claim the tools do not back up
 
     async def _handle_message(self, text: str) -> str:
         if not _agent_session_id():
@@ -205,7 +213,8 @@ class TelegramListener:
             return await self._call_agent_loop(text)
         except Exception as e:
             logger.error("Telegram agent-loop call failed: %s", repr(e))
-            return f"Hit an error reaching the agent loop: {e!r}"
+            reason = "it took too long" if isinstance(e, httpx.TimeoutException) else type(e).__name__
+            return f"❌ No answer: the agent failed ({reason}). Nothing was done."
 
     async def _process_message(self, text: str):
         loop = asyncio.get_event_loop()

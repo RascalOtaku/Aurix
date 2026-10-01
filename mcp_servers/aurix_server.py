@@ -62,7 +62,7 @@ TOOLS = [
     },
     {
         "name": "aurix_shell",
-        "description": "Run a shell command on the AURIX GPU workstation",
+        "description": "Run a shell command on the AURIX Precision Tower 3431",
         "inputSchema": {"type":"object","properties":{
             "command":{"type":"string","description":"Shell command to run"}
         },"required":["command"]}

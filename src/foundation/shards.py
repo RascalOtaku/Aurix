@@ -5,7 +5,7 @@ fast lane, paper trading, the strategy lab, the game doctor, the repo reviewer, 
 that is not listed here. For each one you can see what it does, when it runs, what it can spend, what only you can approve, and whether it is healthy; and you
 can pause any of them with one tap (`pause <id>`, `resume <id>`, `pause all`).
 
-The pause flag is a plain file (paused.json in the shards folder) that BOTH the app and the host scripts read, so pausing also stops the cron jobs on the host
+The pause flag is a plain file (paused.json in the shards folder) that BOTH the app and the host scripts read, so pausing also stops the cron jobs on the 7070
 (each checks the file before it does anything). Pausing never deletes anything and never changes what you already approved. "stale" means it should have run
 recently and did not; the morning digest says so.
 """
@@ -36,24 +36,24 @@ def _atomic(path: Path, obj: Any) -> None:
 
 # id, name, icon, what, schedule, runs on, spend, gate
 REGISTRY = [
-    ("upgrades", "Upgrade lane", "🛠️", "Drafts one small upgrade at a time with the frontier model and tests it in the sandbox.", "up to N drafts a day, every ~3 h", "app (server)", "Anthropic API tokens (capped per day)",
+    ("upgrades", "Upgrade lane", "🛠️", "Drafts one small upgrade at a time with the frontier model and tests it in the sandbox.", "up to N drafts a day, every ~3 h", "app (7070)", "Anthropic API tokens (capped per day)",
      "you approve every deploy; bad builds roll back by themselves"),
-    ("upgrade_applier", "Upgrade applier", "🚀", "Applies ONLY upgrades you approved: backup, apply, health-checked deploy, auto-restore.", "every minute (does nothing unless approved)", "host cron (server)", "none", "a signed approval from you"),
-    ("teacher", "Frontier teacher", "🎓", "Turns failures into lessons for the small local model.", "on demand, capped per day", "app (server)", "Anthropic API tokens (capped per day)", "you approve every lesson"),
-    ("fastlane", "Fast lane", "⚡", "Starts safe, read-only or sandbox-only missions without waiting for a tap.", "whenever a safe mission is proposed", "app (server)", "local model time", "code decides what counts as safe; anything risky still asks"),
-    ("paper_trading", "Paper trading agent", "📈", "Simulated trading with a paper ledger against SPY. Places no orders.", "weekdays: 08:00 scan, every 30 min monitor, 14:15 close", "host cron (server)", "none (free public prices)", "simulation only; real money is refused in code"),
-    ("strategy_lab", "Strategy lab", "🧪", "Backtests and live-tracks 11 textbook strategies on paper.", "weekdays 14:30 after the close", "host cron (server)", "none (free public prices)", "simulation only"),
+    ("upgrade_applier", "Upgrade applier", "🚀", "Applies ONLY upgrades you approved: backup, apply, health-checked deploy, auto-restore.", "every minute (does nothing unless approved)", "host cron (7070)", "none", "a signed approval from you"),
+    ("teacher", "Frontier teacher", "🎓", "Turns failures into lessons for the small local model.", "on demand, capped per day", "app (7070)", "Anthropic API tokens (capped per day)", "you approve every lesson"),
+    ("fastlane", "Fast lane", "⚡", "Starts safe, read-only or sandbox-only missions without waiting for a tap.", "whenever a safe mission is proposed", "app (7070)", "local model time", "code decides what counts as safe; anything risky still asks"),
+    ("paper_trading", "Paper trading agent", "📈", "Simulated trading with a paper ledger against SPY. Places no orders.", "weekdays: 08:00 scan, every 30 min monitor, 14:15 close", "host cron (7070)", "none (free public prices)", "simulation only; real money is refused in code"),
+    ("strategy_lab", "Strategy lab", "🧪", "Backtests and live-tracks 11 textbook strategies on paper.", "weekdays 14:30 after the close", "host cron (7070)", "none (free public prices)", "simulation only"),
     ("game_doctor", "Game doctor", "🎮", "Reads your Steam games and mods, proposes signed, reversible fixes.", "every ~30 min while the PC is on", "your PC (scheduled task) + app", "none", "you approve every fix; the PC re-checks the signature"),
-    ("absorb", "Repo reviewer", "📥", "Fetches a repo you send, reads it as text, reports; stores it inert only if you say yes.", "every minute (does nothing unless you sent a link)", "host cron (server)", "none", "you approve storing anything; nothing is ever run"),
-    ("gamepilot", "GamePilot", "📺", "Shows a game to a paired Fire TV and, only while armed, presses keys for it.", "on demand", "app (server) + your PC agent (started by you)", "none", "pairing code from you; arming from you; expires by itself"),
-    ("memory", "Memory intake", "🧠", "Notices things you say about yourself and offers to remember them.", "on every message you send", "app (server)", "none", "you approve every memory; secrets are refused"),
-    ("subscriptions", "Subscriptions", "💳", "Builds a checklist and monthly total from subscriptions you list, with a to-do reminder near each renewal.", "on demand, whenever you send a list", "app (server)", "none (code only, no model)", "reviewing statements and cancelling stays yours"),
-    ("content", "Content drafts", "📝", "Drafts a piece for a niche channel/site topic you give it, flagging any fact it is not sure of with [VERIFY].", "on demand, whenever you send a topic", "app (server)", "none (free, local by default)", "recording, editing, and publishing stays yours"),
-    ("freelance", "Freelance drafts", "🧰", "Drafts a small script for a job brief you paste in, using the frontier or free local model.", "on demand, whenever you send a brief", "app (server)", "none (free, local by default)", "keeping, delivering, and getting paid stays yours"),
-    ("learning", "Reading library", "📚", "Fetches an article or takes pasted text you send, summarizes it, and tracks video links, storing anything inert only if you say yes.", "on demand, whenever you send a link or text", "app (server)", "none (free, local by default)", "you approve every item kept; nothing fetched is ever run"),
-    ("transcription", "Transcription", "🎙️", "Turns a voice note or audio file you send into a text transcript with a local Whisper model.", "on demand, whenever you send audio", "app (server)", "none (free, local, no account)", "delivering and getting paid for it stays yours"),
-    ("nightshift", "Overnight shift", "🎁", "Builds a pile of finished things each night (health check, a money idea researched, quiet projects, strategy lab news) for the morning.", "02:00 nightly, opened at the morning digest", "app (server)", "none (free, local)", "read-only notes; nothing is sent, bought or changed"),
-    ("backup", "Nightly backup", "💾", "Copies AURIX's state to the NAS as dated snapshots.", "03:30 every night", "host cron (server)", "none", "read-only copy; secrets excluded"),
+    ("absorb", "Repo reviewer", "📥", "Fetches a repo you send, reads it as text, reports; stores it inert only if you say yes.", "every minute (does nothing unless you sent a link)", "host cron (7070)", "none", "you approve storing anything; nothing is ever run"),
+    ("gamepilot", "GamePilot", "📺", "Shows a game to a paired Fire TV and, only while armed, presses keys for it.", "on demand", "app (7070) + your PC agent (started by you)", "none", "pairing code from you; arming from you; expires by itself"),
+    ("memory", "Memory intake", "🧠", "Notices things you say about yourself and offers to remember them.", "on every message you send", "app (7070)", "none", "you approve every memory; secrets are refused"),
+    ("subscriptions", "Subscriptions", "💳", "Builds a checklist and monthly total from subscriptions you list, with a to-do reminder near each renewal.", "on demand, whenever you send a list", "app (7070)", "none (code only, no model)", "reviewing statements and cancelling stays yours"),
+    ("content", "Content drafts", "📝", "Drafts a piece for a niche channel/site topic you give it, flagging any fact it is not sure of with [VERIFY].", "on demand, whenever you send a topic", "app (7070)", "none (free, local by default)", "recording, editing, and publishing stays yours"),
+    ("freelance", "Freelance drafts", "🧰", "Drafts a small script for a job brief you paste in, using the frontier or free local model.", "on demand, whenever you send a brief", "app (7070)", "none (free, local by default)", "keeping, delivering, and getting paid stays yours"),
+    ("learning", "Reading library", "📚", "Fetches an article or takes pasted text you send, summarizes it, and tracks video links, storing anything inert only if you say yes.", "on demand, whenever you send a link or text", "app (7070)", "none (free, local by default)", "you approve every item kept; nothing fetched is ever run"),
+    ("transcription", "Transcription", "🎙️", "Turns a voice note or audio file you send into a text transcript with a local Whisper model.", "on demand, whenever you send audio", "app (7070)", "none (free, local, no account)", "delivering and getting paid for it stays yours"),
+    ("nightshift", "Overnight shift", "🎁", "Builds a pile of finished things each night (health check, a money idea researched, quiet projects, strategy lab news) for the morning.", "02:00 nightly, opened at the morning digest", "app (7070)", "none (free, local)", "read-only notes; nothing is sent, bought or changed"),
+    ("backup", "Nightly backup", "💾", "Copies AURIX's state to the NAS as dated snapshots.", "03:30 every night", "host cron (7070)", "none", "read-only copy; secrets excluded"),
 ]
 PAUSABLE_NOT = {"game_doctor", "backup"}                                      # these run outside the app's reach; the pause button says so instead of pretending
 IDS = [r[0] for r in REGISTRY]

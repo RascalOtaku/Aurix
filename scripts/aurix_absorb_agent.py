@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""aurix_absorb_agent.py - the host-side half of "send AURIX a repo link" (stdlib only; run from cron every minute on the host).
+"""aurix_absorb_agent.py - the host-side half of "send AURIX a repo link" (stdlib only; run from cron every minute on the 7070).
 
   requests/<id>.json  ->  clone (shallow, hooks/filters/symlinks off)  ->  READ the files as text  ->  facts/<id>.json
   approved/<id>.json  ->  verify the HMAC signature + expiry  ->  absorb: move the snapshot into library/<owner>__<repo>/<commit7>/ (no .git)

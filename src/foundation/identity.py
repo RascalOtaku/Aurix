@@ -41,6 +41,10 @@ PROTECTED_COMPONENTS: Dict[str, List[str]] = {
         "src/foundation/gaming.py", "data/gaming/", "gaming/",
         "src/foundation/repos.py", "scripts/aurix_absorb_agent.py", "data/repos/", "src/foundation/memory.py", "data/memory/",
         "src/foundation/shards.py", "data/shards/", "src/foundation/gamepilot.py", "routes/gamepilot_routes.py", "data/gamepilot/", "src/foundation/money.py", "money/", "data/money/", "src/foundation/upgrades.py", "scripts/aurix_upgrade_agent.py", "scripts/aurix_deploy.sh", "data/upgrades/",
+        "src/foundation/land/", "data/land/",        # LandPilot: dossiers, evidence and acquisition approvals
+        "src/foundation/workers.py",                 # Worker Registry & Router: decides where private data may go
+        "src/foundation/integrate.py", "data/integrate/",
+        "src/foundation/versions.py", "data/versions/",     # version history + big-shift review tickets   # integration lane: plans + adopt decisions feeding the upgrade/skill lanes
         "data/fastlane.json", "data/teacher.json", "data/teacher_usage.json", "data/lessons/", "data/evals/",
     ],
     "credential_custody": [".env", "*.env", ".env.*", "data/auth.json", "data/ssh/"],

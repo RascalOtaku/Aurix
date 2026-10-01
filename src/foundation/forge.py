@@ -60,12 +60,42 @@ FORGE_SYSTEM = """You write ONE small, self-contained Python tool for an assista
 Rules (a checker rejects violations):
 - Python 3 standard library only. Pure function: `def run(args: dict):` takes JSON-like input and RETURNS a JSON-serializable value.
 - No files, no network, no shell, no environment, no eval/exec/open/getattr/sys/os. Validate `args`; raise ValueError on bad input.
+- Validate the TYPE of every field before using it, not just its format: a wrong type entirely (a number where text is required,
+  or vice versa) must raise ValueError just as reliably as a right-type-wrong-format value (e.g. text that isn't a valid date).
+  isinstance() checks up front catch both; a bare try/except around one parsing call usually only catches the format case.
 - Tests may ONLY check behaviour stated in the skill request / DESCRIPTION. Never invent limits, formats or extra rules.
   The bad-input test uses a wrong TYPE only (e.g. a number where text is required).
 - Tests use `unittest` in a module that does `from skill import run`. At least 3 tests including an edge case and a bad-input case.
 - Deterministic: no randomness or clocks in results.
 - NEVER return NaN or Infinity (not valid JSON, and nan != nan breaks tests): for empty or degenerate input raise ValueError instead.
 - Keep it short. Tests compare plain values (ints, strings, lists, dicts of those); avoid float equality, use assertAlmostEqual.
+
+Worked example (follow this exact shape - a real, recurring failure is tests that run zero cases because they were not
+methods on a unittest.TestCase subclass, or a bad-input test that only exercises a format error, not a type error):
+NAME: add_two
+DESCRIPTION: args {"a": number, "b": number} -> their sum
+=== skill.py ===
+def run(args: dict):
+    a, b = args.get("a"), args.get("b")
+    if not isinstance(a, (int, float)) or isinstance(a, bool) or not isinstance(b, (int, float)) or isinstance(b, bool):
+        raise ValueError("a and b must both be numbers")
+    return a + b
+=== test_skill.py ===
+import unittest
+from skill import run
+
+
+class T(unittest.TestCase):
+    def test_basic(self):
+        self.assertEqual(run({"a": 2, "b": 3}), 5)
+
+    def test_negative(self):
+        self.assertEqual(run({"a": -1, "b": 1}), 0)
+
+    def test_bad_input_wrong_type(self):
+        with self.assertRaises(ValueError):
+            run({"a": "2", "b": 3})
+
 Reply in EXACTLY this format and nothing else:
 NAME: <snake_case name, 3-31 chars>
 DESCRIPTION: <one line: what it does and what `args` it takes>
@@ -381,6 +411,117 @@ async def propose(description: str, llm: Optional[LLM], run: Optional[Runner] = 
     audit.append("skill_proposed", name=name, status=meta["status"], sha256=meta["sha256"][:16], attempts=attempt,
                  tests_ran=result.get("ran", 0))
     return render_proposal(load(name) or {**meta, **draft}, problems if not passed else [])
+
+
+# ---------------------------------------------------------------------------
+# autonomous trigger: notice a repeated gap, draft on its own (still only ever reaches "pending" -
+# approval stays the owner's, exactly like an on-demand `forge: <idea>` draft)
+# ---------------------------------------------------------------------------
+
+AUTONOMY_MIN_REPEATS = 2                    # the SAME kind of mission must have genuinely stalled at least this often
+AUTONOMY_COOLDOWN_DAYS = 14                  # don't re-propose the same noticed gap more than once per this many days
+AUTONOMY_LOOKBACK_EVENTS = 500
+
+
+def _autonomy_state_path() -> Path:
+    return forge_dir() / "autonomy_state.json"
+
+
+def _load_autonomy_state() -> Dict[str, Any]:
+    try:
+        v = json.loads(_autonomy_state_path().read_text(encoding="utf-8"))
+        return v if isinstance(v, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_autonomy_state(state: Dict[str, Any]) -> None:
+    for k in sorted(state, key=lambda k: state[k].get("ts", 0))[:-40]:               # keep the state file bounded
+        state.pop(k, None)
+    _write_atomic(_autonomy_state_path(), json.dumps(state, indent=2, ensure_ascii=False))
+
+
+def _norm(s: str) -> str:
+    return " ".join((s or "").split()).lower()
+
+
+def _similar(a: str, b: str) -> bool:
+    """Deliberately crude (same style as runner._looks_repeated): normalized-text containment, not a
+    diff/similarity library - a false negative just means the same gap gets noticed one cycle later."""
+    a, b = _norm(a), _norm(b)
+    if not a or not b:
+        return False
+    if len(a) < 12 or len(b) < 12:
+        return a == b
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    return shorter[:len(shorter) * 3 // 4] in longer
+
+
+def find_repeated_gap(min_repeats: int = AUTONOMY_MIN_REPEATS, lookback: int = AUTONOMY_LOOKBACK_EVENTS,
+                      store: Optional[ms.MissionStore] = None) -> Optional[Dict[str, Any]]:
+    """Scans the audit log for missions whose STEPS got blocked - never the "only you can provide this"
+    preflight kind (credentials/authorizations), since no skill can substitute for those - and groups
+    them by their mission's objective. Returns the most-repeated group once the SAME kind of task has
+    genuinely stalled more than once (across separate missions, not just retries within one), or None."""
+    store = store or ms.MissionStore()
+    groups: List[Dict[str, Any]] = []                          # [{"objective", "missions": set(), "reasons": [...]}]
+    for rec in audit.recent(lookback):
+        if rec.get("event") != "mission_blocked" or "step" not in rec:
+            continue
+        mission_id = rec.get("mission")
+        if not mission_id:
+            continue
+        m = store.load(mission_id)
+        if m is None or not m.objective:
+            continue
+        idx = next((i for i, g in enumerate(groups) if _similar(g["objective"], m.objective)), None)
+        if idx is None:
+            idx = len(groups)
+            groups.append({"objective": m.objective, "missions": set(), "reasons": []})
+        groups[idx]["missions"].add(mission_id)
+        groups[idx]["reasons"].append(str(rec.get("reason", ""))[:200])
+
+    candidates = [g for g in groups if len(g["missions"]) >= min_repeats]
+    if not candidates:
+        return None
+    best = max(candidates, key=lambda g: len(g["missions"]))
+    return {"objective": best["objective"], "count": len(best["missions"]),
+            "reasons": [r for r in best["reasons"] if r][-3:]}
+
+
+def _already_covered(objective: str) -> bool:
+    """True when a skill - in ANY status, including denied/retired - was already drafted for
+    essentially this same gap, so autonomy should not keep re-proposing something already tried."""
+    return any(_similar(s.get("wanted", ""), objective) for s in all_skills())
+
+
+async def check_autonomous_trigger(llm: Optional[LLM], run: Optional[Runner] = None,
+                                   now: Optional[float] = None,
+                                   available: Optional[Callable[[], bool]] = None) -> Optional[str]:
+    """The only autonomous entry point into the forge: notices a REAL repeated gap (the same kind of
+    mission objective genuinely blocked more than once) and drafts a candidate skill for it exactly as
+    if the owner had typed `forge: <idea>`. Returns the forge result text to tell the owner about, or
+    None when there is nothing new to say - no repeated gap, the gap is already covered by an existing
+    skill, or this exact gap was already tried within the cooldown window. Forging itself never became
+    autonomous here, only the NOTICING did: the result still only ever reaches `pending`, awaiting
+    `approve skill <name>` like any other draft."""
+    now = now or time.time()
+    gap = find_repeated_gap()
+    if gap is None or _already_covered(gap["objective"]):
+        return None
+    key = _norm(gap["objective"])
+    state = _load_autonomy_state()
+    last = state.get(key)
+    if last and (now - float(last.get("ts", 0))) < AUTONOMY_COOLDOWN_DAYS * 86400:
+        return None
+    state[key] = {"ts": now, "objective": gap["objective"], "count": gap["count"]}
+    _save_autonomy_state(state)
+    description = (f"AURIX has tried and failed to complete this kind of mission {gap['count']} separate times: "
+                   f"\"{gap['objective'][:300]}\". Recent blockers: {' | '.join(gap['reasons'])[:300]}. "
+                   "Draft a small tool that would help get past this specific kind of blocker.")
+    audit.append("forge_autonomy_triggered", objective=gap["objective"][:200], count=gap["count"])
+    result = await propose(description, llm, run, available=available)
+    return "🔧 <b>Noticed a repeated gap on its own</b>\n" + result
 
 
 def approve(name: str) -> str:

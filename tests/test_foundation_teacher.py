@@ -56,7 +56,7 @@ class RedactionTests(unittest.TestCase):
     def test_secrets_are_redacted(self):
         samples = ["token 123456789:AAH-abcdefghijklmnopqrstuvwxyz012345", "key sk-abcdefghijklmnop1234", "ghp_abcdefghijklmnopqrstuvwx",
                    "AKIAABCDEFGHIJKLMNOP", "Authorization: Bearer abcdefghijklmnopqrstuvwxyz", "password=hunter2secret",
-                   "mail me at owner@example.com", "hash " + "a" * 40, "in /home/rascal_otaku/ai/brain", "C:\\Users\\winte\\Downloads\\x"]
+                   "mail me at owner@example.com", "hash " + "a" * 40, "in /home/owner/ai/brain", "C:\\Users\\owner\\Downloads\\x"]
         for s in samples:
             out, n = teacher.redact(s)
             self.assertGreaterEqual(n, 1, s)

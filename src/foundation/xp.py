@@ -131,12 +131,15 @@ def compute(records: Iterable[Dict[str, Any]], today: Optional[str] = None) -> X
     streak = 0
     if days_active:
         from datetime import date, timedelta
-        cursor = date.fromisoformat(today) if today else date.fromisoformat(max(days_active))
-        if cursor.isoformat() not in days_active:           # a streak survives until the day is over
-            cursor -= timedelta(days=1)
-        while cursor.isoformat() in days_active:
-            streak += 1
-            cursor -= timedelta(days=1)
+        try:
+            cursor = date.fromisoformat(today) if today else date.fromisoformat(max(days_active))
+            if cursor.isoformat() not in days_active:           # a streak survives until the day is over
+                cursor -= timedelta(days=1)
+            while cursor.isoformat() in days_active:
+                streak += 1
+                cursor -= timedelta(days=1)
+        except (ValueError, TypeError):
+            pass
     hint = next((UNLOCK_HINTS[l] for l in sorted(UNLOCK_HINTS) if l > level), "")
     return XPState(total=total, level=level, rank=rank_for(level), into_level=total - base, level_span=span,
                    to_next=0 if span == 0 else xp_for_level(level + 1) - total, by_category=dict(by_cat),

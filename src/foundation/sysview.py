@@ -184,9 +184,33 @@ def probe_telegram() -> dict:
     if obj is None:
         return {"configured": bool(os.environ.get("TELEGRAM_BOT_TOKEN")), "listener_alive": False,
                 "scheduler_alive": False}
+    last = getattr(obj, "_last_poll_ok", None)
     return {"configured": True, "listener_alive": bool(obj._task and not obj._task.done()),
             "scheduler_alive": bool(obj._sched_task and not obj._sched_task.done()),
-            "in_flight": len(obj._in_flight)}
+            "in_flight": len(obj._in_flight),
+            "last_poll_age_s": None if last is None else round(time.time() - last, 1)}
+
+
+TELEGRAM_READY_MAX_POLL_AGE_S = 180.0     # a healthy long-poll (25 s) answers far more often than this
+
+
+def telegram_readiness(probe: Optional[dict] = None, env: Optional[dict] = None) -> tuple:
+    """(ready, body) for the deploy readiness check. Honest by construction: READY means the listener task is running AND Telegram
+    itself answered one of its polls recently. If Telegram is not configured at all there is nothing to check, and that is said.
+    The body holds only booleans and an age - no token, chat id or message content."""
+    env = os.environ if env is None else env
+    configured = bool(env.get("TELEGRAM_BOT_TOKEN") and env.get("TELEGRAM_CHAT_ID")) and \
+        env.get("TELEGRAM_ENABLED", "true").lower() == "true"
+    if not configured:
+        return True, {"ready": True, "telegram": "not configured", "checked": False}
+    p = probe_telegram() if probe is None else probe
+    age = p.get("last_poll_age_s")
+    alive = bool(p.get("listener_alive"))
+    polled = age is not None and age <= TELEGRAM_READY_MAX_POLL_AGE_S
+    reason = "ok" if alive and polled else ("listener task not running" if not alive else
+                                            "no successful Telegram poll yet" if age is None else f"last good poll {age:.0f}s ago")
+    return alive and polled, {"ready": alive and polled, "telegram": reason, "checked": True,
+                              "listener_alive": alive, "last_poll_age_s": age}
 
 
 def probe_governor() -> dict:

@@ -66,10 +66,10 @@ class MemoryAndDiskTests(unittest.TestCase):
 
 class HomelabTests(unittest.TestCase):
     def test_a_service_that_never_answered_is_never_reported(self):
-        # the GPU box is simply switched off: alerting about it forever would be noise
+        # the 3431 is simply switched off: alerting about it forever would be noise
         st = {}
         for i in range(6):
-            msgs, st = run(snap(homelab=[row("GPU box dashboard", False)]), st, now=1000.0 + i * 300)
+            msgs, st = run(snap(homelab=[row("3431 dashboard", False)]), st, now=1000.0 + i * 300)
             self.assertEqual(msgs, [], i)
         self.assertEqual(st["homelab_up"], {})
 
@@ -229,12 +229,12 @@ class TickIntegrationTests(unittest.IsolatedAsyncioTestCase):
 
 class HomelabCommandTests(unittest.TestCase):
     def test_text_lists_each_service_and_the_down_ones_say_why(self):
-        text = qol.homelab_text([row("Jellyfin", True, "http://10.0.0.75:8096"), row("GPU box dashboard", False, "http://100.64.0.30:3000")])
+        text = qol.homelab_text([row("Jellyfin", True, "http://10.0.0.75:8096"), row("3431 dashboard", False, "http://100.64.0.11:3000")])
         self.assertIn("1 of 2 not answering", text)
         self.assertIn("✅ Jellyfin", text)
-        self.assertIn("❌ GPU box dashboard", text)
-        self.assertIn("http://100.64.0.30:3000", text)
-        self.assertIn("not answering", text.split("GPU box dashboard")[1])
+        self.assertIn("❌ 3431 dashboard", text)
+        self.assertIn("http://100.64.0.11:3000", text)
+        self.assertIn("not answering", text.split("3431 dashboard")[1])
         self.assertIn("everything answering", qol.homelab_text([row("A", True)]))
         self.assertIn("No homelab links", qol.homelab_text([]))
 

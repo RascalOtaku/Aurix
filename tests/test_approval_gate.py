@@ -82,6 +82,23 @@ class PolicyTests(_Base):
             self.assertFalse(ag.requires_approval("bash", None))
             self.assertFalse(ag.requires_approval("bash", ""))
 
+    def test_the_rotated_telegram_session_is_gated(self):
+        """Regression 2026-09-28: session_rotation moved the live Telegram session daily while the gate compared only the frozen
+        env var, so every rotated session ran consequential tools ungated."""
+        from src.foundation import session_rotation
+        ptr = session_rotation._pointer_path()
+        ptr.parent.mkdir(parents=True, exist_ok=True)
+        ptr.write_text(json.dumps({"session_id": "rotated-session-0929", "day": "2026-09-29"}), encoding="utf-8")
+        self.assertTrue(ag.requires_approval("bash", "rotated-session-0929"))
+        self.assertTrue(ag.requires_approval("bash", TG_SESSION))              # the original one stays gated too
+        self.assertFalse(ag.requires_approval("bash", "some-web-session"))     # the web UI is unchanged in telegram mode
+        self.assertFalse(ag.requires_approval("bash", None))
+
+    def test_an_unreadable_live_session_fails_closed(self):
+        from src.foundation import session_rotation
+        with mock.patch.object(session_rotation, "current_session_id", side_effect=OSError("disk")):
+            self.assertTrue(ag.requires_approval("bash", "any-session"))
+
     def test_mcp_aliases_of_gated_tools_are_gated(self):
         for tool in ("mcp__bash__bash", "mcp__python__python", "mcp__filesystem__write_file"):
             self.assertTrue(ag.requires_approval(tool, TG_SESSION), tool)

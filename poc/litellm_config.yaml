@@ -1,14 +1,14 @@
 # LiteLLM in front of Ollama (Activation Handoff §5/§10 task 7): one OpenAI-compatible endpoint that routes to the right box.
-#   aurix-local            the GPU box (a Windows PC) - qwen2.5:7b, over Tailscale
-#   aurix-local-cpu        the CPU box's own Ollama (CPU) - qwen2.5:3b - the real fallback when the GPU box is asleep.
-#                          Needs the CPU box's firewall to allow this network (see poc/README in FOUNDATION_AUDIT_1 / the run notes).
-#   aurix-local-alt        the GPU box's small model - used only to prove the fallback MECHANISM independent of the firewall
+#   aurix-local            the 3431 (the owner's Windows PC, GTX 1660 SUPER) - qwen2.5:7b, over Tailscale
+#   aurix-local-cpu        the 7070's own Ollama (CPU) - qwen2.5:3b - the real fallback when the 3431 is asleep.
+#                          Needs the 7070's firewall to allow this network (see poc/README in FOUNDATION_AUDIT_1 / the run notes).
+#   aurix-local-alt        the 3431's small model - used only to prove the fallback MECHANISM independent of the firewall
 #   aurix-fallback-test    a primary that is DELIBERATELY unreachable: the router must give up quickly and fall back
 model_list:
   - model_name: aurix-local
     litellm_params:
       model: ollama/qwen2.5:7b
-      api_base: http://100.64.0.10:11434
+      api_base: os.environ/AURIX_GPU_OLLAMA_URL   # e.g. http://<gpu-tailscale-ip>:11434
   - model_name: aurix-local-cpu
     litellm_params:
       model: ollama/qwen2.5:3b
@@ -17,7 +17,7 @@ model_list:
   - model_name: aurix-local-alt
     litellm_params:
       model: ollama/qwen2.5:3b
-      api_base: http://100.64.0.10:11434
+      api_base: os.environ/AURIX_GPU_OLLAMA_URL   # e.g. http://<gpu-tailscale-ip>:11434
   - model_name: aurix-fallback-test
     litellm_params:
       model: ollama/qwen2.5:7b

@@ -5,7 +5,7 @@ Two rules shape everything here. (1) AURIX never moves real money and never crea
 
     score = (middle of the estimated monthly range) x confidence x risk factor / hours per week (at least 0.5)
 
-so a small sure thing that takes no time beats a big long shot that eats your week. The strategy lab (tasks/strategy_lab.py, cron on the host) writes
+so a small sure thing that takes no time beats a big long shot that eats your week. The strategy lab (tasks/strategy_lab.py, cron on the 7070) writes
 runtime/strategy_lab.json; this module only reads it.
 """
 from __future__ import annotations

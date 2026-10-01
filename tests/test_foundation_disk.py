@@ -13,7 +13,7 @@ from src.foundation import commands, qol, sysview, watchdog  # noqa: E402
 
 DU = namedtuple("usage", "total used free")
 GB = 10 ** 9
-# the real host root filesystem on 2026-09-19: 234G total, 213G used, only 8.8G available (ext4 reserves ~5% for root)
+# the real 7070 root filesystem on 2026-09-19: 234G total, 213G used, only 8.8G available (ext4 reserves ~5% for root)
 FULL = DU(234 * GB, 213 * GB, int(8.8 * GB))
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -57,7 +57,7 @@ class DiskCommandTests(unittest.TestCase):
         self.assertIn("96% used", crit)
         self.assertIn("8.8 GB free of 234 GB", crit)
         self.assertIn("Critically full", crit)
-        self.assertIn("the host - not your PC", crit)
+        self.assertIn("the 7070 - not your PC", crit)
         warn = self.text(DU(100 * GB, 88 * GB, 12 * GB))
         self.assertIn("Getting full", warn)
         self.assertNotIn("Critically", warn)

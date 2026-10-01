@@ -9,6 +9,7 @@ of with [VERIFY] rather than inventing specifics with false confidence, and the 
 """
 from __future__ import annotations
 
+import functools
 import html
 import json
 import os
@@ -73,7 +74,7 @@ def pending() -> List[dict]:
 def _call_drafter(topic: str, post: teacher.Post = teacher.default_post,
                    local: Optional[Callable[[str, str, int], Tuple[Optional[str], str]]] = None) -> Tuple[Optional[str], str]:
     """Same paid-then-free-local shape as teacher.call_teacher / upgrades._call_engineer / freelance._call_drafter."""
-    local = local or teacher._local_fallback
+    local = local or functools.partial(teacher._local_fallback, purpose="write", json_mode=True, data_class="internal")   # routed; replies are JSON
     err = "no ANTHROPIC_API_KEY is set"
     if os.environ.get("ANTHROPIC_API_KEY", "").strip():
         body = {"model": teacher.config()["model"], "max_tokens": MAX_OUTPUT_TOKENS, "system": DRAFTER_SYSTEM,

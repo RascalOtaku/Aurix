@@ -4,8 +4,10 @@ Owner decision 2026-09-20: "read only and data gathering can skip approval". The
 fails closed: any doubt -> the mission is proposed as usual and waits for `approve mission <id>`.
 
 A mission qualifies only if EVERY one of these holds:
-  * its domain packs are on FAST_PACKS (no legal gates: not trading, bug bounty, social, real estate, medical data, self-improve...;
-    a pack's own sandbox notes are not a gate)
+  * it belongs to EXACTLY ONE explicitly recognised domain pack, and that pack is on FAST_PACKS. Unknown domain (no pack matches)
+    and ambiguous domain (several match) both fail closed: an unrecognised goal is not evidence of a safe goal (m-fd28e3,
+    2026-09-28, matched no pack and was auto-approved). Convenience loses to security: a plain lookup with no pack now asks.
+  * it names no capability, credential or authorization in its text that it has not declared (named counts as used)
   * it needs nothing from the owner (no credentials/authorizations/services, nothing to install, no unknown capabilities)
   * every capability it uses is either a read-only tool (read_file, web_search) or a sandbox tool (bash, python, write_file, openhands)
     and, for the sandbox tools, the mission really is sandboxed (isolated container: no secrets, no network, its own workspace)
@@ -37,7 +39,17 @@ _VERBS = ("send|e-?mail|post|publish|tweet|upload|push|deploy|purchase|buy|pay|w
 _OUTWARD = re.compile(
     r"\b(?:(?:" + _VERBS + r")(?:s|es|ed|d|ing)?|sent|bought|paid|"
     r"message (?:me|him|her|them|someone)|text me|place an order|sign[- ]?up|log[- ]?in|login|"
-    r"sudo|passwords?|passwd|credentials?|api[- ]?keys?|tokens?|secrets?|ssh|cron|crontab|systemctl|docker)\b", re.I)
+    r"sudo|passwords?|passwd|credentials?|api[- ]?keys?|tokens?|secrets?|ssh|cron|crontab|systemctl|docker|"
+    # contacting people or committing to anything is outward too (m-fd28e3, 2026-09-28: "gathered consent from property owners")
+    r"contact(?:s|ed|ing)?|consent\w*|reach(?:es|ed|ing)? out|phon(?:e|ed|ing)|call (?:the|them|him|her|owners?|sellers?|agents?|lenders?)|"
+    r"negotiat\w*|(?:make|made|submit) an? offer|offers? to|sign (?:a|an|the)|apply for|notify)\b", re.I)
+
+# SECONDARY layer only (defence in depth). The rule is the domain-pack requirement in check(); this list is not meant to grow, and
+# its absence of a match proves nothing.
+_GATED_DOMAIN = re.compile(
+    r"\b(?:propert(?:y|ies)|real[- ]estate|homesteads?|parcels?|acres?|acreage|land|deeds?|liens?|mortgages?|loans?|"
+    r"delinquen\w*|foreclos\w*|tax[- ]sales?|landlords?|tenants?|medical|patients?|diagnos\w*|stocks?|crypto\w*|"
+    r"brokerage|bug[- ]?bount\w*|exploit\w*|pentest\w*)\b", re.I)
 
 
 def state_path() -> Path:
@@ -87,8 +99,15 @@ def check(m) -> Tuple[bool, List[str]]:
                        ("installable", "needs packages installed"), ("unknown", "has unknown capabilities")):
         if req.get(key):
             blockers.append(label)
-    packs = set(req.get("packs") or [])
-    if not packs <= FAST_PACKS:
+    # Domain: recognised packs only. A pack counts as RECOGNISED only if the objective itself matches it; what the planner recorded is
+    # added on top (so a recorded extra pack still blocks), but a recorded pack alone never makes an unmatched goal recognised.
+    matched = {p.id for p in cap.match_packs(m.objective or "")}
+    packs = matched | set(req.get("packs") or [])
+    if not matched:
+        blockers.append("no recognised domain pack: fast lane only covers explicitly recognised domains")
+    elif len(packs) > 1:
+        blockers.append("ambiguous domain: matches several packs (" + ", ".join(sorted(packs)) + ")")
+    elif not packs <= FAST_PACKS:
         blockers.append("domain pack(s) " + ", ".join(sorted(packs - FAST_PACKS)) + " need your approval")
 
     used = {c for s in m.steps for c in s.capabilities} | set(req.get("capabilities") or [])
@@ -106,13 +125,32 @@ def check(m) -> Tuple[bool, List[str]]:
     if needs_sandbox and not m.sandboxed:
         blockers.append("its code would run outside the isolated sandbox")
 
-    # Steps that come from a code-defined domain pack carry safety notes ("nothing is pushed or deployed"); only their titles are
-    # scanned. Anything else (the goal, and every model-written step) is scanned in full.
-    pack_titles = {s.title for p in cap.match_packs(m.objective or "") for s in p.steps}
-    text = " ".join([m.objective or ""] + [s.title if s.title in pack_titles else f"{s.title} {s.description}" for s in m.steps])
+    # Steps copied VERBATIM from a code-defined domain pack carry safety notes ("nothing is pushed or deployed"); only their titles are
+    # scanned. A step counts as verbatim only if title AND description both match the pack's code exactly - a model that keeps a pack
+    # title but edits the description (2026-09-29 test) is scanned in full, like the goal and every model-written step.
+    pack_steps = {(s.title, s.description) for p in cap.match_packs(m.objective or "") for s in p.steps}
+    text = " ".join([m.objective or ""]
+                    + [s.title if (s.title, s.description) in pack_steps else f"{s.title} {s.description}" for s in m.steps]
+                    + [str(c) for c in (getattr(m, "success_criteria", None) or [])])      # what "done" means is scanned too
     hit = _OUTWARD.search(text)
     if hit:
         blockers.append(f"mentions an outward or destructive action ('{hit.group(0).lower()}')")
+    hit = _GATED_DOMAIN.search(text)
+    if hit:
+        blockers.append(f"touches a legally gated domain ('{hit.group(0).lower()}')")
+    # A plan can NAME a capability in prose without declaring it (the homestead mission's steps said "use live-trading" / "use
+    # patient-data-consent" with empty capability lists). Named counts as used: credentials/authorizations/services are matched by id
+    # or alias and always block; any other registered capability is matched by its exact id and blocks unless it was declared.
+    low = text.lower()
+    declared = {(cap.lookup(n).id if cap.lookup(n) else n) for n in used}
+    for c in cap.REGISTRY.values():
+        names = (c.id, *c.aliases) if c.kind in BLOCKING_KINDS else (c.id,)
+        if not any(re.search(rf"(?<![\w-]){re.escape(n.lower())}(?![\w-])", low) for n in names):
+            continue
+        if c.kind in BLOCKING_KINDS:
+            blockers.append(f"names {c.id} ({c.kind}) in its plan")
+        elif c.id not in declared:
+            blockers.append(f"names {c.id} in its plan without declaring it")
 
     if blockers:
         return False, blockers

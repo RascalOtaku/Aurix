@@ -5,11 +5,6 @@ updates:
     directory: /
     schedule: {interval: weekly}
     open-pull-requests-limit: 5
-    ignore:
-      # MCP SDK 2.x dropped the decorator API. The built-in servers are ported (mcp_servers/_common.mcp_server,
-      # tests/test_mcp_e2e.py passes on 1.x and 2.x); aurix_sse_bridge.py is next, then remove this rule.
-      - dependency-name: mcp
-        update-types: ["version-update:semver-major"]
   - package-ecosystem: npm
     directory: /
     schedule: {interval: weekly}

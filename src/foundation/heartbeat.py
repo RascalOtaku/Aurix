@@ -59,6 +59,7 @@ def waiting_for_you(limit: int = 6) -> str:
         except Exception:
             pass
     from src.foundation import content, forge, freelance, gaming, learning, memory, repos, teacher, upgrades
+    from src.foundation.land import hub as land
     add(gaming.pending, lambda p: f"🎮 {e(p['title'][:70])} - <code>yes {p['id']}</code> / <code>no {p['id']}</code>")
     add(lambda: [u for u in upgrades.all_proposals() if u["status"] == "review"], lambda u: f"🛠️ Upgrade: {e(u['title'][:60])} - <code>yes {u['id']}</code> / <code>no {u['id']}</code>")
     add(repos.pending, lambda r: f"📥 {e(r['owner'])}/{e(r['repo'])} - <code>yes {r['id']}</code> / <code>no {r['id']}</code>")
@@ -68,6 +69,7 @@ def waiting_for_you(limit: int = 6) -> str:
     add(content.pending, lambda p: f"📝 {e(p['title'][:60])} - <code>yes {p['id']}</code> / <code>no {p['id']}</code>")
     add(learning.pending, lambda r: f"📚 {e(r['title'][:60])} - <code>yes {r['id']}</code> / <code>no {r['id']}</code>")
     add(forge.pending, lambda s: f"🛠️ Skill: {e(s['name'])} - <code>approve skill {s['name']}</code> / <code>deny skill {s['name']}</code>")
+    add(land.pending, lambda c: f"🏞️ Land: {e(c.get('label', c.get('property', ''))[:60])} - <code>yes land {c['id']}</code> / <code>no land {c['id']}</code>")
     try:
         from src.foundation import shards as _shards
         for r in _shards.stale():

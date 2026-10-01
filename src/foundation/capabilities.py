@@ -74,8 +74,8 @@ REGISTRY: Dict[str, Capability] = {c.id: c for c in [
     # media
     Capability("ffmpeg", "Transcode audio/video", "binary", "ffmpeg",
                InstallPlan("dockerfile", "add 'ffmpeg' to the apt-get line in odysseus/Dockerfile, then docker compose up -d --build",
-                           "Or run on the GPU box: winget install Gyan.FFmpeg"), ("transcode", "transcoding", "ffprobe")),
-    _pip("faster-whisper", "faster_whisper", "Speech-to-text (GPU on the GPU box, CPU fallback)", "whisper", "transcription", "stt"),
+                           "Or run on the 3431: winget install Gyan.FFmpeg"), ("transcode", "transcoding", "ffprobe")),
+    _pip("faster-whisper", "faster_whisper", "Speech-to-text (GPU on the 3431, CPU fallback)", "whisper", "transcription", "stt"),
     # data / trading
     _pip("pandas", "pandas", "Tabular data"),
     _pip("alpaca-py", "alpaca", "Alpaca broker/market-data SDK (PAPER only for now)", "alpaca"),
@@ -92,8 +92,8 @@ REGISTRY: Dict[str, Capability] = {c.id: c for c in [
     Capability("nmap", "Port scanner", "binary", "nmap", InstallPlan("host_apt", "sudo apt install nmap"),
                legal="Port scanning without authorization can be illegal."),
     # services / hardware
-    Capability("gpu-box", "GPU inference on a dedicated machine (Ollama, e.g. over Tailscale)", "service",
-               "tcp:" + os.environ.get("AURIX_GPU_HOST", "100.64.0.10:11434"), aliases=("gpu",)),
+    Capability("gpu-3431", "GPU inference on the Precision 3431 (Ollama, Tailscale)", "service",
+               f"tcp:{os.environ.get('AURIX_GPU_HOST', '100.64.0.10')}:11434", aliases=("gpu", "3431")),
     Capability("claude-fallback", "Claude last-resort drafter (needs ANTHROPIC_API_KEY, off by default)",
                "credential", "ANTHROPIC_API_KEY", aliases=("claude",)),
     # coding agent: OpenHands' Python SDK, run INSIDE the sandbox (optional layer of its image)
@@ -126,6 +126,9 @@ REGISTRY: Dict[str, Capability] = {c.id: c for c in [
                "real-estate-license",
                legal="Compensation for finding/steering buyers or sellers generally requires a license in Colorado."),
     Capability("content-rights", "Owner confirms they own or may process the media", "authorization", "content-rights"),
+    Capability("cloud-internal", "Owner allows INTERNAL data (AURIX's own code, drafts, repo plans) to go to authorised free/cloud "
+               "model workers; PRIVATE data (chats, memory, personal notes) never does", "authorization", "cloud-internal",
+               legal="Free tiers may use what you send to train their models: nothing private is ever routed to them."),
 ]}
 
 
@@ -296,13 +299,13 @@ PACKS: List[DomainPack] = [
     DomainPack(
         "transcription", "Transcoding and transcription",
         (r"transcri", r"\bwhisper\b", r"subtitle", r"captions?\b", r"transcod", r"\bffmpeg\b", r"speech[- ]to[- ]text"),
-        ("ffmpeg", "faster-whisper", "gpu-box", "content-rights", "write_file"),
+        ("ffmpeg", "faster-whisper", "gpu-3431", "content-rights", "write_file"),
         ("Only process media you own or have written permission to transcribe.",
          "Many freelance platforms prohibit AI-only transcripts: check each platform's terms before selling."),
         (PackStep("Intake and validate media", "ffprobe each file: duration, codecs, audio quality.", ("ffmpeg",)),
          PackStep("Normalise audio", "ffmpeg to 16 kHz mono WAV.", ("ffmpeg",)),
-         PackStep("Transcribe", "faster-whisper; use the GPU box when reachable, else a small CPU model.",
-                  ("faster-whisper", "gpu-box"),
+         PackStep("Transcribe", "faster-whisper; use the 3431 GPU when reachable, else a small CPU model.",
+                  ("faster-whisper", "gpu-3431"),
                   sandbox_note="TOOL: `python3 /opt/tools/transcribe.py --input <media file> --outdir <workspace>/out "
                                "[--model base] [--language en] [--formats srt,vtt,txt,json] [--glossary terms.txt]` does "
                                "the normalise, transcribe, glossary and subtitle steps in one run (offline, CPU, baked-in "
@@ -379,6 +382,29 @@ PACKS: List[DomainPack] = [
          PackStep("Compile the lead sheet", "For the owner (and any licensed broker) to review.", ("write_file",))),
         ("scored lead sheet produced for owner review",),
         ("Do not contact sellers or buyers.", "Do not sign or bind anything.", "Do not collect any fee.")),
+    DomainPack(
+        "land_intelligence", "LandPilot: research small cheap parcels as a principal buyer (src/foundation/land)",
+        (r"\bland\s*pilot\b", r"\bparcels?\b", r"\bacreage\b", r"\bland\s+(?:dossier|deal|acquisition|intelligence)\b",
+         r"\btax\s+(?:sale|delinquent)\s+(?:land|propert)", r"\bdeeds?\s+of\s+trust\b"),
+        ("web_search", "browser", "write_file"),
+        ("Buying, holding, leasing or selling land YOU own is a principal activity; being paid to find or steer land for others is "
+         "brokerage and generally needs a license (Colorado, the owner's home state, and the state where the land is).",
+         "The law where the PARCEL sits governs title, zoning, tax sales and use (e.g. Virginia for Botetourt County); check it per parcel.",
+         "Public records and permitted sources only; obey site terms. Keep neighbours' and owners' personal details out of reports."),
+        (PackStep("Gather public records",
+                  "County assessor/GIS, treasurer, circuit-court land records index, zoning ordinance, FEMA flood map, imagery. "
+                  "Record every fact with its source, retrieval date and data vintage.", ("web_search", "browser")),
+         PackStep("Write a draft evidence file",
+                  "Save the findings in YOUR WORKSPACE as land_evidence/<name>.json in the LandPilot evidence format (sources with "
+                  "their type, locator and as-of date; claims with value and unit; exits; costs). Unknowns stay null; never guess a "
+                  "value, never assign a tier or confidence, never include a spending limit. data/land/ is protected: do not write there.",
+                  ("write_file",), "draft evidence file written in the workspace"),
+         PackStep("Hand back to the owner", "The owner reviews the draft and, if it holds up, places it in data/land/evidence/ and runs "
+                  "`land build <name>`; the dossier engine grades the evidence in code.", ())),
+        ("evidence file with a source for every claim",),
+        ("Do not contact owners, neighbours, agents, lenders or officials.", "Do not make or accept offers, sign, or pay anything.",
+         "Do not bid at tax sales or register for them."),
+        standing_ok=False),
     DomainPack(
         "reynolds_research", "Reynolds Gang treasure hunt (research)",
         (r"reynolds", r"treasure", r"outlaw", r"ghost town", r"prospect", r"colorado gold"),

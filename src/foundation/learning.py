@@ -12,6 +12,7 @@ Safety, since this accepts ANY url (repos.py is scoped to github.com, this is no
 """
 from __future__ import annotations
 
+import functools
 import html as html_lib
 import ipaddress
 import json
@@ -145,7 +146,7 @@ def _fetch(url: str) -> Tuple[Optional[str], Optional[str], str]:
 
 def _call_summarizer(text: str, post: teacher.Post = teacher.default_post,
                       local: Optional[Callable[[str, str, int], Tuple[Optional[str], str]]] = None) -> Tuple[Optional[str], str]:
-    local = local or teacher._local_fallback
+    local = local or functools.partial(teacher._local_fallback, purpose="summarize", json_mode=True, data_class="internal")   # routed; replies are JSON
     err = "no ANTHROPIC_API_KEY is set"
     if os.environ.get("ANTHROPIC_API_KEY", "").strip():
         body = {"model": teacher.config()["model"], "max_tokens": MAX_OUTPUT_TOKENS, "system": SUMMARY_SYSTEM,

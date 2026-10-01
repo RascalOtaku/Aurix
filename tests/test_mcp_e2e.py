@@ -60,6 +60,41 @@ class BuiltinMcpServerTests(unittest.TestCase):
                 spec.loader.exec_module(module)
                 self.assertTrue(hasattr(module, "server"))
 
+    def test_sse_bridge_serves_tools_over_sse(self):
+        """mcp_servers/aurix_sse_bridge.py: the one server on the SSE transport, started for real and called."""
+        import socket
+        import subprocess
+        import time
+        from mcp import ClientSession
+        from mcp.client.sse import sse_client
+
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        env = dict(os.environ, AURIX_SSE_PORT=str(port), AURIX_URL="http://127.0.0.1:9")    # nothing listens on :9
+        proc = subprocess.Popen([sys.executable, str(ROOT / "mcp_servers" / "aurix_sse_bridge.py")], env=env)
+
+        async def run():
+            for _ in range(100):                                     # wait for uvicorn to accept connections
+                try:
+                    socket.create_connection(("127.0.0.1", port), timeout=0.2).close()
+                    break
+                except OSError:
+                    await asyncio.sleep(0.1)
+            async with sse_client(f"http://127.0.0.1:{port}/sse") as (r, w):
+                async with ClientSession(r, w) as session:
+                    await session.initialize()
+                    tools = sorted(t.name for t in (await session.list_tools()).tools)
+                    result = await session.call_tool("aurix_status", {})
+                    return tools, result.content[0].text
+        try:
+            tools, text = asyncio.run(asyncio.wait_for(run(), timeout=60))
+        finally:
+            proc.terminate()
+            proc.wait(timeout=10)
+        self.assertEqual(tools, ["aurix_chat", "aurix_remember", "aurix_search", "aurix_shell", "aurix_status"])
+        self.assertIn('"error"', text)                               # the AURIX API is down: reported, not a crash
+
 
 if __name__ == "__main__":
     unittest.main()

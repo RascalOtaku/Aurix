@@ -28,12 +28,12 @@ else
                 | grep -E '^\+[^+]' | grep -nE -- "$1"; }
 fi
 
-files_matching() {   # files whose content (--tree) or added lines (--staged) match $1
+files_matching() {   # files whose content (--tree) or added lines (--staged) match $1, ignoring case
     if [ "$MODE" = "--tree" ]; then
-        git ls-files -z | xargs -0 -r grep -IlE -- "$1" 2>/dev/null
+        git ls-files -z | xargs -0 -r grep -IliE -- "$1" 2>/dev/null
     else
         git diff --cached --name-only --diff-filter=ACMR | while IFS= read -r f; do
-            git diff --cached -U0 -- "$f" | grep -E '^\+[^+]' | grep -qE -- "$1" && printf '%s\n' "$f"
+            git diff --cached -U0 -- "$f" | grep -E '^\+[^+]' | grep -qiE -- "$1" && printf '%s\n' "$f"
         done
     fi
 }
@@ -51,7 +51,8 @@ fi
 if [ -s "$PRIVATE" ]; then
     rx="$(grep -vE '^\s*(#|$)' "$PRIVATE" | paste -sd'|' -)"
     if [ -n "$rx" ]; then
-        phits="$(files_matching "$rx")"            # file names only: never print the private value itself
+        phits="$(files_matching "$rx")"            # file names only: never print the private value itself;
+                                                   # case-insensitive, so "MyHost" also catches "myhost.tailnet.ts.net"
         if [ -n "$phits" ]; then
             echo "secret-guard: matches your private patterns ($PRIVATE) at:"; printf '%s\n' "$phits" | sed 's/^/  /'; fail=1
         fi

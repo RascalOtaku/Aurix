@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs the four isolated spec proofs of concept (Activation Handoff §10 tasks #4-#7) on the host.
+# Runs the four isolated spec proofs of concept (Activation Handoff §10 tasks #4-#7) on the 7070.
 #   bash poc/run_spec_poc.sh all     start, test everything, print a verdict (leaves the stack running)
 #   bash poc/run_spec_poc.sh up | test | down
 #   bash poc/run_spec_poc.sh down    stop and DELETE everything (containers, network, volumes); images stay cached

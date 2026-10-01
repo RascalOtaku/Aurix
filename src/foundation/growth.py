@@ -35,7 +35,7 @@ def _clip(x: Any, n: int = 90) -> str:
 def _age(seconds: Optional[float]) -> str:
     if seconds is None:
         return "never"
-    s = max(0, int(seconds))
+    s = max(0, int(seconds or 0))
     return f"{s}s" if s < 90 else f"{s // 60} min" if s < 5400 else f"{s // 3600} h" if s < 172800 else f"{s // 86400} d"
 
 
@@ -424,10 +424,10 @@ def trust() -> Dict[str, Any]:
         "Secrets never leave the server and are never printed",
     ]
     auto = w("auto_allowed") + w("mission_allowed") + w("fast_lane_started")
-    asked = w("approved") + w("mission_approved") + w("gaming_fix_approved") + w("lesson_approved") + w("skill_forged") + w("freelance_kept") + w("content_kept") + w("learning_kept")
+    asked = w("approved") + w("mission_approved") + w("gaming_fix_approved") + w("lesson_approved") + w("skill_forged") + w("freelance_kept") + w("content_kept") + w("learning_kept") + w("land_gate_approved")
     return {"integrity_ok": ok, "records": len(recs), "rails": rails,
             "week": {"did_on_its_own": auto, "asked_and_you_approved": asked,
-                     "you_denied": w("denied") + w("mission_denied") + w("gaming_fix_declined") + w("freelance_discarded") + w("content_discarded") + w("learning_discarded") + w("skill_denied"),
+                     "you_denied": w("denied") + w("mission_denied") + w("gaming_fix_declined") + w("freelance_discarded") + w("content_discarded") + w("learning_discarded") + w("skill_denied") + w("land_gate_rejected"),
                      "refused_by_protection": sum(1 for r in week_recs if r.get("reason") == "protected_component"), "missions_completed": w("mission_completed"),
                      "missions_failed": w("mission_failed") + w("mission_expired"), "fixes_undone": w("gaming_fix_undo_requested"), "stops_pressed": w("owner_stop")}}
 

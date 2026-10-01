@@ -59,6 +59,14 @@ class SecretGuardTests(unittest.TestCase):
         self.assertEqual(self.guard().returncode, 1)
         self.assertEqual(self.guard("--tree").returncode, 1)
 
+    def test_private_patterns_ignore_case(self):
+        # "MyHost" in the patterns file must also catch "myhost.tailnet.ts.net" (hostnames are case-insensitive)
+        (self.repo / ".git" / "info").mkdir(exist_ok=True)
+        (self.repo / ".git" / "info" / "aurix-private-patterns").write_text("My-Secret-Host\n")
+        self.stage("app.py", "URL = 'http://my-secret-host.example.ts.net:7000'\n")
+        self.assertEqual(self.guard().returncode, 1)
+        self.assertEqual(self.guard("--tree").returncode, 1)
+
     def test_every_token_kind_is_redacted_in_the_report(self):
         telegram = "1234567890:AA" + "b" * 33
         self.stage("bot.py", f"TOKEN = '{telegram}'\n")

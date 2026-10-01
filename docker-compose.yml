@@ -129,7 +129,7 @@ services:
   # No secrets, no internet, no LAN, read-only root, only the workspace tree writable.
   sandbox:
     # NOT named "sandbox/": the repo's Syncthing ignore list has a `sandbox/` rule (for
-    # repo_absorb's cloned repos) that would silently keep this folder off the host.
+    # repo_absorb's cloned repos) that would silently keep this folder off the 7070.
     build: ./mission_sandbox
     environment:
       - SANDBOX_TOKEN=${SANDBOX_TOKEN:-}

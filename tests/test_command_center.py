@@ -16,7 +16,7 @@ from src.foundation import audit, command_center as cc, sysview, xp  # noqa: E40
 
 SYS = {
     "system": lambda: {"cpu_pct": 5.0, "mem_pct": 40.0, "disk_pct": 50.0},
-    "endpoints": lambda: [{"name": "gpu-box", "ok": True, "url": "x", "loaded": [], "models": None}],
+    "endpoints": lambda: [{"name": "3431", "ok": True, "url": "x", "loaded": [], "models": None}],
     "sandbox": lambda: {"available": True, "tools_present": 14, "tools_total": 19, "openhands": True, "missing": []},
     "telegram": lambda: {"configured": True, "listener_alive": True, "scheduler_alive": True, "in_flight": 0},
     "governor": lambda: {"mode": "aurix"},
@@ -177,15 +177,15 @@ class DashboardDataTests(_Base):
     def test_services_rows_show_what_is_up_and_what_is_down(self):
         raw = {"telegram": {"configured": True, "listener_alive": True, "scheduler_alive": False, "in_flight": 1},
                "sandbox": {"available": True, "tools_present": 14, "tools_total": 19, "openhands": True},
-               "endpoints": [{"name": "GPU box", "ok": True, "loaded": [{"name": "qwen2.5:7b", "vram_gb": 4.3}], "models": None},
-                             {"name": "CPU box", "ok": False, "loaded": [], "models": None}]}
+               "endpoints": [{"name": "3431 GPU", "ok": True, "loaded": [{"name": "qwen2.5:7b", "vram_gb": 4.3}], "models": None},
+                             {"name": "7070 CPU", "ok": False, "loaded": [], "models": None}]}
         rows = {r["name"]: r for r in cc.probe_services(raw, check=lambda host, port: host != "neo4j",
                                                          godseye_url="http://100.64.0.20:4173/")}
         self.assertTrue(rows["Telegram listener"]["ok"])
         self.assertFalse(rows["Standing scheduler"]["ok"])
         self.assertIn("14/19 tools", rows["Mission sandbox"]["detail"])
-        self.assertIn("qwen2.5:7b (4.3 GB VRAM)", rows["Model: GPU box"]["detail"])
-        self.assertFalse(rows["Model: CPU box"]["ok"])
+        self.assertIn("qwen2.5:7b (4.3 GB VRAM)", rows["Model: 3431 GPU"]["detail"])
+        self.assertFalse(rows["Model: 7070 CPU"]["ok"])
         self.assertFalse(rows["Neo4j"]["ok"])
         self.assertEqual(rows["Neo4j"]["detail"], "not answering")
         self.assertTrue(rows["ChromaDB"]["ok"])
@@ -258,22 +258,20 @@ class DashboardDataTests(_Base):
 
 
 class HomelabLinkTests(_Base):
-    def test_default_watches_the_gpu_box_which_is_the_owners_windows_pc_and_not_the_retired_linux_node(self):
+    def test_default_is_placeholders_and_the_real_links_come_from_env(self):
+        # The repository is public: the built-in list is example addresses; the owner's real links live in .env.
         with mock.patch.dict(os.environ):
             os.environ.pop("AURIX_HOMELAB_LINKS", None)
             links = cc.parse_homelab_links()
-        self.assertEqual(links[0]["url"], "http://100.64.0.10:11434")                   # this Windows PC's Ollama, on its Tailscale address
-        self.assertEqual((links[0]["host"], links[0]["port"]), ("100.64.0.10", "11434"))
-        self.assertIn("GPU box", links[0]["name"])
+        self.assertEqual(links[0]["url"], "http://100.64.0.10:11434")                       # GPU box's Ollama (example address)
         self.assertTrue(links[0]["quiet"])                                                  # a gaming PC that sleeps must never page anyone
-        self.assertFalse(any("100.64.0.30" in l["url"] for l in links))                   # the retired Linux install's node is gone
-        self.assertFalse(any(l["port"] == "3000" for l in links))                           # ...and so is its Homepage dashboard
+        self.assertFalse(any(l["port"] == "3000" for l in links))
         by_name = {l["name"]: l for l in links}
         self.assertEqual((by_name["Jellyfin (Pi)"]["host"], by_name["Jellyfin (Pi)"]["port"]), ("10.0.0.75", "8096"))
         self.assertEqual((by_name["Pi-hole (Pi)"]["host"], by_name["Pi-hole (Pi)"]["port"]), ("10.0.0.75", "80"))
-        self.assertEqual(by_name["Vaultwarden (server)"]["port"], "8080")
-        self.assertEqual(by_name["Uptime Kuma (server)"]["port"], "3001")
-        self.assertEqual(len(links), 5)
+        with mock.patch.dict(os.environ, {"AURIX_HOMELAB_LINKS": "GPU (3431)|http://100.64.0.42:11434|quiet;Kuma|http://100.64.0.43:3001"}):
+            links = cc.parse_homelab_links()
+        self.assertEqual([(l["name"], l["port"], l["quiet"]) for l in links], [("GPU (3431)", "11434", True), ("Kuma", "3001", False)])
 
     def test_env_override_supports_several_links_default_ports_and_a_cap(self):
         spec = "Jellyfin|http://10.0.0.75:8096; Vault|https://vault.local ;Plain|http://box.local"

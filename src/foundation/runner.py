@@ -23,6 +23,7 @@ from src.foundation import audit
 from src.foundation import capabilities as cap
 from src.foundation import forge
 from src.foundation import mission as ms
+from src.foundation import openclaw as ocw
 from src.foundation import openhands as oh
 from src.foundation import sandbox
 from src.foundation import skills as skills_mod
@@ -235,6 +236,42 @@ class MissionRunner:
                      exit_code=res.get("exit_code"))
         return outcome
 
+    async def _run_openclaw(self, m: ms.MissionContract, index: int) -> Optional[Dict[str, str]]:
+        """Run a step through OpenClaw's workboard INSIDE the sandbox. Returns the step result, or
+        None to fall back to the built-in agent (OpenClaw not available). Same contract as
+        _run_openhands - AURIX's mission contract stays the authority either way, OpenClaw is only
+        ever handed one task and asked for one result (see src/foundation/openclaw.py)."""
+        step = m.steps[index]
+        ok, why = await asyncio.to_thread(ocw.ready, m)
+        if not ok:
+            audit.append("openclaw_unavailable", mission=m.id, step=step.id, reason=why)
+            if ocw.fallback_enabled():
+                await self._say(f"ℹ [{m.id}] step {index + 1}: OpenClaw is unavailable ({why}); "
+                                "using the built-in agent for this step.")
+                return None
+            return {"state": "blocked", "text": f"OpenClaw unavailable: {why}"[:300]}
+        live = self._load()
+        if live is None:
+            return {"state": "blocked", "text": "mission is no longer active"}
+        task_path = ocw.write_task(m, step, skills_for_step(m, step))
+        self.store.record_tool_call(live)
+        self.store.record_model_call(live)
+        audit.append("openclaw_started", mission=m.id, step=step.id)
+        await self._say(f"\U0001F99E [{m.id}] step {index + 1}: handing '{step.title}' to OpenClaw "
+                        "(sandboxed). `stop` halts it.")
+        try:
+            res = await asyncio.to_thread(sandbox.run, m.id, "bash", ocw.command(task_path), ocw.STEP_TIMEOUT_SECONDS)
+        except asyncio.CancelledError:
+            await asyncio.to_thread(sandbox.kill, m.id)                # STOP: terminate it, don't just stop waiting
+            raise
+        except sandbox.SandboxUnavailable as e:
+            return {"state": "blocked", "text": f"sandbox unavailable: {e}"[:300]}
+        outcome = ocw.interpret(ocw.parse_result(res.get("output") or res.get("stdout") or res.get("error", "")),
+                                res.get("exit_code"))
+        audit.append("openclaw_finished", mission=m.id, step=step.id, state=outcome["state"],
+                     exit_code=res.get("exit_code"))
+        return outcome
+
     async def _forged_skills_note(self, m: ms.MissionContract) -> str:
         """Prompt text for the owner-approved skills a SANDBOXED mission may call ('' if none / not applicable).
 
@@ -254,6 +291,10 @@ class MissionRunner:
     async def _run_step(self, m: ms.MissionContract, index: int) -> Dict[str, str]:
         if m.steps[index].executor == "openhands":
             outcome = await self._run_openhands(m, index)
+            if outcome is not None:
+                return outcome
+        elif m.steps[index].executor == "openclaw":
+            outcome = await self._run_openclaw(m, index)
             if outcome is not None:
                 return outcome
         prompt = build_step_prompt(m, index, await self._forged_skills_note(m))

@@ -97,6 +97,19 @@ class PromptTests(unittest.TestCase):
         self.assertIn("TEST may be the wrong part", forge.REPAIR_HINT)
         forge.REPAIR_HINT.format(problems="p", code="c", tests="t")          # still a valid template
 
+    def test_prompt_carries_a_worked_example_not_just_prose_rules(self):
+        """Real eval data (2026-09-20..24, the 'code' tier - reuses this exact prompt) sat at 6-8/8 while
+        'plan' held 12/12: prose-only rules were the same known small-model blind spot as the upgrade
+        lane's engineer prompt (see aurix-oss-selfhost-and-forge-autonomy memory) - a worked example, not
+        another rule, is the fix that actually moved that one. Two real recorded failures: a test file
+        with zero discoverable cases ('NO TESTS RAN'), and a bad-input test that only caught a format
+        error, not a type error - both addressed directly below."""
+        self.assertIn("Worked example", forge.FORGE_SYSTEM)
+        self.assertIn("class T(unittest.TestCase)", forge.FORGE_SYSTEM)
+        self.assertIn("def test_", forge.FORGE_SYSTEM)
+        self.assertIn("isinstance", forge.FORGE_SYSTEM)
+        self.assertIn("not just its format", forge.FORGE_SYSTEM)
+
 
 class ParseAndCheckTests(unittest.TestCase):
     def test_parse_plain_and_fenced_and_crlf(self):
@@ -613,6 +626,146 @@ class CrossCuttingWiringTests(Base):
         before = growth.trust()["week"]["you_denied"]
         forge.deny("weekday_names")
         self.assertEqual(growth.trust()["week"]["you_denied"], before + 1)
+
+
+class AutonomousTriggerTests(Base):
+    """`forge: <idea>` only ever ran on demand - AURIX never noticed a repeated gap and drafted a
+    skill for it on its own. find_repeated_gap/check_autonomous_trigger are the fix: a REAL signal
+    (the same kind of mission genuinely blocked more than once), not a hollow always-on trigger."""
+
+    def setUp(self):
+        super().setUp()
+        from src.foundation import mission as ms
+        self.ms = ms
+        self.store = ms.MissionStore()
+
+    def _blocked_mission(self, objective, reason="the agent repeated the same unfinished step without completing it"):
+        m = self.ms.MissionContract(
+            id=self.ms.new_mission_id(), objective=objective,
+            steps=[self.ms.Step("s1", "Step 1", "do the thing", ["bash"], "done")])
+        self.store.propose(m)
+        self.store.activate(m.id)
+        audit.append("mission_blocked", mission=m.id, step="s1", reason=reason)
+        return m.id
+
+    def test_no_gap_when_nothing_ever_blocked(self):
+        self.assertIsNone(forge.find_repeated_gap())
+
+    def test_a_single_blocked_mission_is_not_a_repeat(self):
+        self._blocked_mission("transcribe the board meeting recording")
+        self.assertIsNone(forge.find_repeated_gap())
+
+    def test_the_same_objective_blocked_twice_is_a_repeat(self):
+        self._blocked_mission("transcribe the board meeting recording")
+        self._blocked_mission("transcribe the board meeting recording")
+        gap = forge.find_repeated_gap()
+        self.assertIsNotNone(gap)
+        self.assertEqual(gap["count"], 2)
+        self.assertIn("transcribe", gap["objective"])
+
+    def test_near_duplicate_wording_still_groups_together(self):
+        self._blocked_mission("transcribe the board meeting recording into text")
+        self._blocked_mission("transcribe the board meeting recording into text and save it")
+        gap = forge.find_repeated_gap()
+        self.assertEqual(gap["count"], 2)
+
+    def test_two_different_objectives_each_blocked_once_is_not_a_repeat(self):
+        self._blocked_mission("transcribe the board meeting recording")
+        self._blocked_mission("convert a CT scan to STL")
+        self.assertIsNone(forge.find_repeated_gap())
+
+    def test_preflight_blocks_never_count_no_skill_fixes_a_missing_authorization(self):
+        m = self.ms.MissionContract(id=self.ms.new_mission_id(), objective="read the patient's chart",
+                                    steps=[self.ms.Step("s1", "Step 1", "do the thing", ["bash"], "done")])
+        self.store.propose(m)
+        self.store.activate(m.id)
+        audit.append("mission_blocked", mission=m.id, reason="preflight", missing=["patient-data-consent"])
+        m2 = self.ms.MissionContract(id=self.ms.new_mission_id(), objective="read the patient's chart",
+                                     steps=[self.ms.Step("s1", "Step 1", "do the thing", ["bash"], "done")])
+        self.store.propose(m2)
+        self.store.activate(m2.id)
+        audit.append("mission_blocked", mission=m2.id, reason="preflight", missing=["patient-data-consent"])
+        self.assertIsNone(forge.find_repeated_gap())
+
+    def test_retries_within_one_mission_count_once_not_twice(self):
+        mid = self._blocked_mission("transcribe the board meeting recording")
+        audit.append("mission_blocked", mission=mid, step="s1", reason="still stuck")   # a second retry, same mission
+        self.assertIsNone(forge.find_repeated_gap())            # only ONE distinct mission struggled, not two
+
+    async def test_triggers_a_real_forge_draft_for_a_genuine_repeat(self):
+        self._blocked_mission("turn a list of dates into weekday names")
+        self._blocked_mission("turn a list of dates into weekday names")
+        result = await forge.check_autonomous_trigger(FakeLLM(GOOD), run=local_runner, available=lambda: True)
+        self.assertIsNotNone(result)
+        self.assertIn("Noticed a repeated gap", result)
+        self.assertEqual([s["name"] for s in forge.pending()], ["weekday_names"])
+        self.assertIn("forge_autonomy_triggered", self.events())
+
+    async def test_does_not_re_propose_the_same_gap_twice_in_a_row(self):
+        self._blocked_mission("turn a list of dates into weekday names")
+        self._blocked_mission("turn a list of dates into weekday names")
+        await forge.check_autonomous_trigger(FakeLLM(GOOD), run=local_runner, available=lambda: True)
+        again = await forge.check_autonomous_trigger(FakeLLM(GOOD), run=local_runner, available=lambda: True)
+        self.assertIsNone(again)
+
+    async def test_an_already_forged_skill_for_the_same_wanted_text_blocks_a_repeat_proposal(self):
+        await forge.propose("turn a list of dates into weekday names", FakeLLM(GOOD), run=local_runner,
+                            available=lambda: True)
+        self._blocked_mission("turn a list of dates into weekday names")
+        self._blocked_mission("turn a list of dates into weekday names")
+        self.assertIsNone(await forge.check_autonomous_trigger(FakeLLM(GOOD), run=local_runner, available=lambda: True))
+
+    def test_similar_is_a_crude_normalized_containment_check(self):
+        self.assertTrue(forge._similar("transcribe the meeting recording",
+                                       "transcribe the meeting recording into text"))
+        self.assertFalse(forge._similar("transcribe the meeting recording", "convert a CT scan to STL"))
+        self.assertFalse(forge._similar("", "anything"))
+
+
+class CommandsWiringTests(unittest.IsolatedAsyncioTestCase):
+    """The autonomous trigger has to actually run somewhere - tick_standing, once a day, same
+    convention as the nightly evals and nightshift checks it sits next to."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.dict(os.environ, {"AURIX_PROJECT_ROOT": self.tmp.name})
+        self.env.start()
+        self.said = []
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    async def notify(self, text):
+        self.said.append(text)
+
+    async def test_runs_at_most_once_a_day_and_relays_a_real_result(self):
+        agent = lambda p: None
+        f = commands.Foundation(agent, self.notify, llm=FakeLLM(GOOD))
+        with mock.patch.object(forge, "check_autonomous_trigger", new=mock.AsyncMock(return_value="found one")) as trig:
+            await f._maybe_forge_autonomy(1_800_000_000.0)
+            await f._maybe_forge_autonomy(1_800_000_000.0 + 60)          # same day, a minute later
+        trig.assert_awaited_once()
+        self.assertEqual(self.said, ["found one"])
+
+    async def test_skipped_while_a_mission_is_running(self):
+        agent = lambda p: None
+        f = commands.Foundation(agent, self.notify, llm=FakeLLM(GOOD))
+        f.runner_task = asyncio.ensure_future(asyncio.sleep(60))
+        try:
+            with mock.patch.object(forge, "check_autonomous_trigger", new=mock.AsyncMock(return_value="found one")) as trig:
+                await f._maybe_forge_autonomy(1_800_000_000.0)
+            trig.assert_not_awaited()
+        finally:
+            f.runner_task.cancel()
+
+    async def test_a_failure_is_audited_not_raised(self):
+        agent = lambda p: None
+        f = commands.Foundation(agent, self.notify, llm=FakeLLM(GOOD))
+        with mock.patch.object(forge, "check_autonomous_trigger", new=mock.AsyncMock(side_effect=RuntimeError("boom"))):
+            await f._maybe_forge_autonomy(1_800_000_000.0)          # must not raise
+        events = [json.loads(l)["event"] for l in open(audit.audit_path(), encoding="utf-8")]
+        self.assertIn("forge_autonomy_failed", events)
 
 
 if __name__ == "__main__":

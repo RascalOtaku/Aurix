@@ -33,9 +33,9 @@ python-dateutil
 caldav
 cryptography
 bcrypt
-# Pinned below 2.x: mcp 2.0 removed the @server.list_tools()/call_tool() decorators that the built-in
-# Memory and RAG MCP servers (mcp_servers/*.py) use, so an unpinned rebuild silently broke both.
-mcp>=1.23,<2   # built-in servers already run on 2.x (mcp_servers/_common.mcp_server); lift to <3 once aurix_sse_bridge.py is ported
+# MCP SDK: every built-in server goes through mcp_servers/_common.mcp_server(), which runs on 1.x and 2.x
+# (2.0 removed the decorator API). tests/test_mcp_e2e.py starts real servers, so the next major break fails CI.
+mcp>=1.23,<3
 # Knowledge graph client (src/graph_memory.py). 5.x matches the neo4j:5 server image.
 neo4j>=6.3.1,<7
 pyotp

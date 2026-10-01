@@ -27,6 +27,7 @@ MEMID = re.compile(r"[0-9a-f]{8}")
 FID = re.compile(r"f-[0-9a-f]{6}")
 CID = re.compile(r"c-[0-9a-f]{6}")
 NID = re.compile(r"n-[0-9a-f]{6}")
+AID = re.compile(r"a-[0-9a-f]{6}")
 
 
 def _plain(t: Any) -> str:
@@ -74,6 +75,7 @@ def _teach():
 
 def run_action(name: str, arg: str = "") -> Dict[str, Any]:
     from src.foundation import announce, audit, content, fastlane, forge, freelance, gamepilot, gaming, learning, money, repos, shards, teacher, upgrades
+    from src.foundation.land import hub as land
     from src.foundation import memory as fmemory
     arg = (arg or "").strip()
     simple = {
@@ -87,6 +89,7 @@ def run_action(name: str, arg: str = "") -> Dict[str, Any]:
         "content_yes": (CID, content.approve), "content_no": (CID, content.decline),
         "learn_yes": (NID, learning.approve), "learn_no": (NID, learning.decline),
         "approve_skill": (forge.NAME_RE, forge.approve), "deny_skill": (forge.NAME_RE, forge.deny),
+        "land_yes": (AID, land.approve), "land_no": (AID, land.decline),
     }
     try:
         if name in simple:
@@ -103,6 +106,8 @@ def run_action(name: str, arg: str = "") -> Dict[str, Any]:
                 return {"ok": False, "message": "unknown helper"}
             return {"ok": True, "message": _plain(shards.set_paused(arg, name == "shard_pause"))}
         if name == "gp_arm":
+            if arg and not arg.isdigit():
+                return {"ok": False, "message": "Minutes must be a number."}
             return {"ok": True, "message": _plain(gamepilot.arm(int(arg) if arg.isdigit() else gamepilot.ARM_DEFAULT_MIN))}
         if name == "gp_disarm":
             return {"ok": True, "message": _plain(gamepilot.disarm())}
@@ -140,6 +145,8 @@ def run_action(name: str, arg: str = "") -> Dict[str, Any]:
         if name == "fastlane_off":
             return {"ok": True, "message": _plain(fastlane.set_enabled(False))}
         if name == "teacher_on":
+            if arg and not arg.isdigit():
+                return {"ok": False, "message": "Count must be a number."}
             n = int(arg) if arg.isdigit() else 5
             return {"ok": True, "message": _plain(teacher.set_config(True, n))}
         if name == "teacher_off":
@@ -166,12 +173,14 @@ def run_action(name: str, arg: str = "") -> Dict[str, Any]:
 ACTION_NAMES = ("fix_yes", "fix_no", "fix_undo", "lesson_approve", "lesson_deny", "lesson_retire", "fastlane_on", "fastlane_off", "teacher_on",
                 "teacher_off", "games_refresh", "ack", "evals_plan", "evals_all", "teach", "repo_add", "repo_yes", "repo_no", "mem_yes", "mem_no", "mem_forget", "mem_pin", "mem_unpin", "mem_add", "mem_unforget",
                 "upg_yes", "upg_no", "upg_undo", "upg_add", "upg_on", "upg_off", "upg_now", "money_set", "gp_arm", "gp_disarm", "gp_unpair", "gp_pair", "shard_pause", "shard_resume", "night_now",
-                "freelance_yes", "freelance_no", "content_yes", "content_no", "learn_yes", "learn_no", "approve_skill", "deny_skill")
+                "freelance_yes", "freelance_no", "content_yes", "content_no", "learn_yes", "learn_no", "approve_skill", "deny_skill",
+                "land_yes", "land_no")
 
 
 def decisions() -> List[Dict[str, Any]]:
     """Cards for everything waiting on the owner that a button can decide."""
     from src.foundation import content, forge, freelance, gaming, learning, repos, teacher, upgrades
+    from src.foundation.land import hub as land
     from src.foundation import memory as fmemory
     out: List[Dict[str, Any]] = []
     for u in [x for x in upgrades.all_proposals() if x["status"] == "review"]:
@@ -222,4 +231,9 @@ def decisions() -> List[Dict[str, Any]]:
                     "lines": [_plain(s.get("wanted", "")), f"Passed its tests in the sandbox (attempt {s.get('attempts', '?')})."],
                     "risk": "runs only in the sandbox, only on your say, and only as plain JSON in/out - no files, network or shell",
                     "buttons": [{"label": "Approve", "action": "approve_skill", "arg": s["name"], "style": "approve"}, {"label": "Deny", "action": "deny_skill", "arg": s["name"], "style": "deny"}]})
+    for c in land.pending():
+        out.append({"kind": "land", "id": c["id"], "icon": "🏞️", "title": "Land: " + _plain(c.get("label", c.get("property", ""))),
+                    "lines": [_plain(c.get("action", "")), f"Maximum TRUE exposure: ${c.get('max_usd', 0):,.0f} · dossier {c.get('dossier_version', '')[:12]}"],
+                    "risk": "records only your go-ahead within that maximum; you sign and pay, AURIX does neither",
+                    "buttons": [{"label": "Approve", "action": "land_yes", "arg": c["id"], "style": "approve"}, {"label": "Reject", "action": "land_no", "arg": c["id"], "style": "deny"}]})
     return out

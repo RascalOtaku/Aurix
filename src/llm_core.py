@@ -1,12 +1,13 @@
 # src/llm_core.py
 import httpx
 import asyncio
+import os
 import time
 import json
 import logging
 import hashlib
 from fastapi import HTTPException
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 from urllib.parse import urlparse
 
 from src import key_rotation, spend_ledger
@@ -110,18 +111,24 @@ def _clear_host_dead(url: str) -> None:
     _host_fails.pop(key, None)
 
 
-# Shared async HTTP client. Reusing one client keeps connections warm:
-# repeat calls to api.anthropic.com / api.openai.com / openrouter skip the
-# 100-500ms TCP+TLS handshake. Lazy init so we bind to the running event loop.
-_http_client: Optional[httpx.AsyncClient] = None
+# Shared async HTTP clients, ONE PER EVENT LOOP. Reusing a client keeps connections warm (repeat calls skip the 100-500ms
+# TCP+TLS handshake), but an AsyncClient is bound to the loop it first ran on. AURIX makes model calls from several loops
+# (the server's, worker threads via asyncio.run, the scheduler), and a single process-wide client started failing every call
+# with "Event loop is closed" once its first loop ended (9 times 2026-09-25..28, incl. unanswered Telegram messages).
+_http_clients: Dict[int, Tuple[asyncio.AbstractEventLoop, httpx.AsyncClient]] = {}
 _http_limits = httpx.Limits(max_connections=100, max_keepalive_connections=30, keepalive_expiry=30.0)
 
 def _get_http_client() -> httpx.AsyncClient:
-    """Return process-wide AsyncClient. Per-request timeout is passed at call time."""
-    global _http_client
-    if _http_client is None or _http_client.is_closed:
-        _http_client = httpx.AsyncClient(limits=_http_limits, http2=False)
-    return _http_client
+    """Return the AsyncClient for the running event loop. Per-request timeout is passed at call time."""
+    loop = asyncio.get_running_loop()
+    for key, (other, _) in list(_http_clients.items()):
+        if other.is_closed():
+            _http_clients.pop(key, None)             # its loop is gone; the client cannot be used (or cleanly closed) any more
+    entry = _http_clients.get(id(loop))
+    if entry is None or entry[0] is not loop or entry[1].is_closed:
+        entry = (loop, httpx.AsyncClient(limits=_http_limits, http2=False))
+        _http_clients[id(loop)] = entry
+    return entry[1]
 
 def _get_cached_response(cache_key: str) -> Optional[str]:
     """Get cached response if it exists."""
@@ -815,6 +822,8 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
         }
         if provider not in {"openrouter", "groq"}:
             payload["stream_options"] = {"include_usage": True}
+        elif provider == "openrouter":
+            payload["usage"] = {"include": True}          # OpenRouter's own switch for the final usage chunk (spend ledger)
         if max_tokens and max_tokens > 0:
             tok_key = "max_completion_tokens" if _uses_max_completion_tokens(model) else "max_tokens"
             payload[tok_key] = max_tokens
@@ -995,6 +1004,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
     # can detect thinking-in-progress (some models output </think> but no <think>)
     _thinking_model = _supports_thinking(model)
     _first_content_sent = False
+    _usage_seen = False
 
     def _emit_tool_calls():
         """Build the tool_calls event string if any were accumulated."""
@@ -1033,7 +1043,12 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                                 # Usage chunk (from stream_options)
                                 _choices = j.get("choices") or []
                                 _delta0 = _choices[0].get("delta") if _choices else None
-                                if "usage" in j and _delta0 in (None, {}, {"content": None}):
+                                # A usage chunk carries no text: OpenAI sends it with no choices, OpenRouter beside an empty
+                                # {"role": "assistant", "content": ""} delta. Recorded once per stream.
+                                _no_text = not (isinstance(_delta0, dict) and (_delta0.get("content") or _delta0.get("tool_calls")
+                                                                               or _delta0.get("reasoning_content")))
+                                if isinstance(j.get("usage"), dict) and j["usage"] and _no_text and not _usage_seen:
+                                    _usage_seen = True
                                     u = j["usage"]
                                     spend_ledger.record(target_url, model, provider, u.get("prompt_tokens", 0), u.get("completion_tokens", 0))
                                     yield f'data: {json.dumps({"type": "usage", "data": {"input_tokens": u.get("prompt_tokens", 0), "output_tokens": u.get("completion_tokens", 0)}})}\n\n'
@@ -1100,6 +1115,9 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
         yield f'event: error\ndata: {json.dumps({"error": str(e), "status": 502})}\n\n'
 
 
+FALLBACK_FIRST_OUTPUT_SECONDS = float(os.environ.get("AURIX_FALLBACK_FIRST_OUTPUT_SECONDS", "120"))
+
+
 async def stream_llm_with_fallback(candidates, messages, **kwargs):
     """Wrap stream_llm with an ordered fallback chain.
 
@@ -1123,7 +1141,22 @@ async def stream_llm_with_fallback(candidates, messages, **kwargs):
         is_last = (i == len(cands) - 1)
         emitted = False
         retried = False
-        async for chunk in stream_llm(url, model, messages, headers=headers, **kwargs):
+        gen = stream_llm(url, model, messages, headers=headers, **kwargs).__aiter__()
+        while True:
+            try:
+                if i > 0 and not emitted:
+                    # A FALLBACK must show signs of life quickly. The 7070's CPU model once sat 10 minutes on an agent prompt and
+                    # returned nothing (2026-09-28): fail it fast and say so, instead of a long silence and an empty answer.
+                    chunk = await asyncio.wait_for(gen.__anext__(), timeout=FALLBACK_FIRST_OUTPUT_SECONDS)
+                else:
+                    chunk = await gen.__anext__()
+            except StopAsyncIteration:
+                break
+            except asyncio.TimeoutError:
+                await gen.aclose()
+                msg = f"fallback model {model} produced no output within {FALLBACK_FIRST_OUTPUT_SECONDS:.0f} s"
+                logger.warning(f"[fallback] {msg}")
+                chunk = f'event: error\ndata: {json.dumps({"error": msg, "status": 504})}\n\n'
             if chunk.startswith("event: error"):
                 if not emitted and not is_last:
                     # Pre-content failure with fallbacks left — swallow and

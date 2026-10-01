@@ -59,7 +59,7 @@ for spec in "POST /api/pull" "POST /api/delete" "POST /api/create" "DELETE /api/
   else fail "NOT blocked: $1 $2 -> $r"; fi
 done
 if r=$(probe GET /v1/models 200); then pass "allowed: GET /v1/models (model server reachable)"
-else warn "GET /v1/models -> $r  (gateway is up; the model server itself is unreachable - fine while the GPU box is off)"; fi
+else warn "GET /v1/models -> $r  (gateway is up; the model server itself is unreachable - fine while the 3431 is off)"; fi
 
 echo
 if [ "$fails" -eq 0 ]; then

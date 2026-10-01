@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # aurix_backup.sh - nightly, versioned backup of AURIX's own state to the NAS (/mnt/hearthnode/aurix-backup).
 #
-# Written 2026-09-19 after Timeshift was removed from the host: nothing versioned protected AURIX's live state any more.
+# Written 2026-09-19 after Timeshift was removed from the 7070: nothing versioned protected AURIX's live state any more.
 #
 # Safe by design:
 #   * It REFUSES to run unless the NAS is really mounted. Otherwise it would write into the empty local mount point
-#     and quietly fill the host's own disk. (The NFS line in fstab is `nofail`, so a Pi that is off must not be fatal.)
+#     and quietly fill the 7070's own disk. (The NFS line in fstab is `nofail`, so a Pi that is off must not be fatal.)
 #   * It refuses if the marker folder <NAS>/aurix-backup is missing - creating that folder on the NAS is the opt-in.
 #   * Snapshots are hard-linked to the previous one (rsync --link-dest), so a night with no changes costs almost nothing.
 #     Each snapshot is built as <stamp>.partial and renamed only when complete, so a crash never leaves a half backup

@@ -9,6 +9,7 @@ job scope varies too much to guess a number honestly. `earned <amount> freelance
 """
 from __future__ import annotations
 
+import functools
 import ast
 import html
 import json
@@ -86,7 +87,7 @@ def pending() -> List[dict]:
 def _call_drafter(brief: str, post: teacher.Post = teacher.default_post,
                    local: Optional[Callable[[str, str, int], Tuple[Optional[str], str]]] = None) -> Tuple[Optional[str], str]:
     """Same shape as teacher.call_teacher / upgrades._call_engineer: try the paid frontier model, fall back to the free local one."""
-    local = local or teacher._local_fallback
+    local = local or functools.partial(teacher._local_fallback, purpose="code", json_mode=True, data_class="internal")   # routed; replies are JSON
     err = "no ANTHROPIC_API_KEY is set"
     if os.environ.get("ANTHROPIC_API_KEY", "").strip():
         body = {"model": teacher.config()["model"], "max_tokens": MAX_OUTPUT_TOKENS, "system": DRAFTER_SYSTEM,
