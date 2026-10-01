@@ -97,8 +97,25 @@ if [ ! -d .git ]; then
     say "Adopting $(pwd) as a checkout of $REMOTE_URL ($BRANCH); files on disk are not touched."
     git init -q . || die "git init failed"
 fi
-git config user.name  >/dev/null 2>&1 || git config user.name  "Aurix sync ($(hostname))"
-git config user.email >/dev/null 2>&1 || git config user.email "aurix-sync@$(hostname).local"
+# The repository is public: commits made here carry a fixed identity, never this machine's hostname or your
+# git config's name/email (override with AURIX_SYNC_NAME / AURIX_SYNC_EMAIL).
+# (Set through GIT_AUTHOR_*/GIT_COMMITTER_*, which win over every git config and any already-exported values.)
+SYNC_NAME="${AURIX_SYNC_NAME:-Aurix sync}"; SYNC_EMAIL="${AURIX_SYNC_EMAIL:-aurix-sync@users.noreply.github.com}"
+git_as_sync() {
+    GIT_AUTHOR_NAME="$SYNC_NAME" GIT_AUTHOR_EMAIL="$SYNC_EMAIL" \
+    GIT_COMMITTER_NAME="$SYNC_NAME" GIT_COMMITTER_EMAIL="$SYNC_EMAIL" git "$@"
+}
+# Run a commit; on failure show git's own reason (hook output, config error) on screen and in the log.
+commit_or_die() {
+    local what="$1"; shift
+    local out
+    if ! out="$(git_as_sync commit -q "$@" 2>&1)"; then
+        [ -n "$out" ] && printf '%s\n' "$out" | tail -20
+        local hook_dir; hook_dir="$(git config core.hooksPath || echo "$(git rev-parse --git-dir)/hooks")"
+        [ -x "$hook_dir/pre-commit" ] && say "(pre-commit hook in use: $hook_dir/pre-commit)"
+        die "$what: $(printf '%s' "$out" | tail -3 | tr '\n' ' ' | cut -c1-300)"
+    fi
+}
 
 # The GitHub remote, found by URL: on a clone of the upstream project `origin` is somebody else's repository.
 REMOTE="${AURIX_SYNC_REMOTE_NAME:-}"
@@ -147,7 +164,7 @@ if [ -f "$(git rev-parse --git-dir)/MERGE_HEAD" ]; then
         say "A merge you resolved is ready to finish; 'sync' will commit it (after the secret guard) and continue."
         exit 0
     fi
-    git commit -q --no-edit || die "could not finish the merge (the secret guard may have blocked it - see above)"
+    commit_or_die "could not finish the merge" --no-edit
     say "Finished the merge you resolved."
 fi
 
@@ -194,7 +211,7 @@ if [ "$DRY" = 1 ]; then
 fi
 
 if [ -n "$staged_files" ]; then
-    git commit -q -m "Sync from $(hostname) $(date '+%Y-%m-%d %H:%M')" || die "commit failed"
+    commit_or_die "commit failed" -m "Sync from ${AURIX_SYNC_LABEL:-the server} $(date '+%Y-%m-%d %H:%M')"
     say "Committed $(printf '%s\n' "$staged_files" | grep -c .) local file(s)."
 fi
 
@@ -206,7 +223,7 @@ if [ -n "$TO_BRANCH" ]; then
 fi
 
 for ref in "$REMOTE/$BRANCH" $(for b in $EXTRA; do echo "$REMOTE/$b"; done); do
-    if ! git merge -q --no-edit "$ref"; then
+    if ! git_as_sync merge -q --no-edit "$ref"; then
         conflicted="$(git diff --name-only --diff-filter=U)"
         say "CONFLICT merging $ref in: $(echo $conflicted)"
         say "Both versions are marked in those files (<<<<<<< / >>>>>>>). Edit them, 'git add' them, then run sync again."

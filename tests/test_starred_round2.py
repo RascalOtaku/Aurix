@@ -1,6 +1,7 @@
 """Round 2 of the starred-repo integrations: spend ledger, agent shield, page index, public API presets, git sync."""
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -211,6 +212,12 @@ class GitSyncScriptTests(unittest.TestCase):
                                   capture_output=True, text=True).stdout
             self.assertIn("gh.py", tree)
             self.assertNotIn("data/app.db", tree)                                # private data never pushed
+            # Public repo: sync commits carry a fixed identity, never this machine's hostname or git identity.
+            meta = subprocess.run(["git", "log", "-2", "--format=%an <%ae> | %cn <%ce> | %s", "main"], cwd=self.remote,
+                                  capture_output=True, text=True).stdout
+            self.assertIn("Aurix sync <aurix-sync@users.noreply.github.com>", meta)
+            self.assertNotIn("t@t", meta)
+            self.assertNotIn(socket.gethostname(), meta)
 
             (pc / "leak.py").write_text("KEY = 'sk-or-v1-" + "a" * 40 + "'\n")
             r = self.run_sync(pc, "sync")                                          # new file: left out, not published
