@@ -109,6 +109,8 @@ def run_action(name: str, arg: str = "") -> Dict[str, Any]:
                 return {"ok": False, "message": "unknown helper"}
             return {"ok": True, "message": _plain(shards.set_paused(arg, name == "shard_pause"))}
         if name == "gp_arm":
+            if arg and not arg.isdigit():
+                return {"ok": False, "message": "that needs to be a number of minutes."}
             return {"ok": True, "message": _plain(gamepilot.arm(int(arg) if arg.isdigit() else gamepilot.ARM_DEFAULT_MIN))}
         if name == "gp_disarm":
             return {"ok": True, "message": _plain(gamepilot.disarm())}
@@ -146,6 +148,8 @@ def run_action(name: str, arg: str = "") -> Dict[str, Any]:
         if name == "fastlane_off":
             return {"ok": True, "message": _plain(fastlane.set_enabled(False))}
         if name == "teacher_on":
+            if arg and not arg.isdigit():
+                return {"ok": False, "message": "that needs to be a number of calls per day."}
             n = int(arg) if arg.isdigit() else 5
             return {"ok": True, "message": _plain(teacher.set_config(True, n))}
         if name == "teacher_off":
