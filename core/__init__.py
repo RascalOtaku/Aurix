@@ -1,53 +1,23 @@
-# core/__init__.py
-"""
-Chat Core — the essential chat experience.
+"""Aurix core multi-agent framework.
 
-This package contains only what's needed for:
-- Streaming LLM responses
-- Session management
-- Model routing
-- Authentication
+Inspired by:
+- OpenClaw: AI that does things
+- ECC: Agent harness performance optimization
+- munder-difflin: Multi-agent orchestration
+- context-mode: Context window optimization
 """
 
-from src.llm_core import (
-    llm_call,
-    llm_call_async,
-    stream_llm,
-    list_model_ids,
-    normalize_model_id,
-    LLMConfig,
-)
-from .auth import AuthManager
-from .constants import *
-from .middleware import SecurityHeadersMiddleware
-from .exceptions import (
-    SessionNotFoundError,
-    InvalidFileUploadError,
-    LLMServiceError,
-    WebSearchError,
-)
-from .models import Session, ChatMessage
-from .session_manager import SessionManager
+from .agents import Agent, AgentConfig, AgentManager
+from .skills import Skill, SkillRegistry
+from .memory import MemoryStore
+
+__version__ = "2.0.0-alpha"
 
 __all__ = [
-    # LLM
-    "llm_call",
-    "llm_call_async",
-    "stream_llm",
-    "list_model_ids",
-    "normalize_model_id",
-    "LLMConfig",
-    # Auth
-    "AuthManager",
-    # Middleware
-    "SecurityHeadersMiddleware",
-    # Exceptions
-    "SessionNotFoundError",
-    "InvalidFileUploadError",
-    "LLMServiceError",
-    "WebSearchError",
-    # Models
-    "Session",
-    "ChatMessage",
-    "SessionManager",
+    "Agent",
+    "AgentConfig",
+    "AgentManager",
+    "Skill",
+    "SkillRegistry",
+    "MemoryStore",
 ]
