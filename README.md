@@ -23,6 +23,31 @@ A self-hosted AI workspace -- meant to be the self-hosted version of the UI expe
   - **Works on mobile** -- looks and runs great on your phone, not just desktop.<br>　<sub>responsive · installable (PWA) · touch gestures</sub>
   - **Extras** -- more to explore, happy if you give it a go!<br>　<sub>image editor · theme editor · file uploads (vision + PDF) · web search · presets · sessions · 2FA</sub>
 
+## The Aurix layer
+
+Everything above is the Odysseus platform. Below is custom, built specifically for one person's daily use —
+approval-gated, sandbox-tested, and audited, not generic AI-agent boilerplate. See [CAPABILITIES.md](CAPABILITIES.md)
+for the file-by-file index; this is the short version.
+
+- **Mission control** — `mission.py`/`runner.py` run an approved mission step by step under real budgets (tool
+  calls, model calls, wall-clock); `standing.py` runs the recurring ones on a schedule with auto-pause on a failure
+  streak; `approval_gate`/`tool_execution`/`tool_security` gate every tool call, fail-closed.
+- **Self-improvement** — `forge.py` drafts a skill + its own tests, sandbox-proves it, owner approves it, hash-pins
+  it. `evolve.py` is a general PBT/GA search engine: any domain evolves against a *real measured* fitness (never
+  self-reported), a winner only goes live after approval. `upgrades.py` is the parallel lane for AURIX proposing
+  small, signed edits to its own code, with automatic rollback if a deploy doesn't come up healthy.
+- **Status, on demand or on a schedule** — `command_center.py` is the live dashboard snapshot; `heartbeat.py` builds
+  what needs a yes/no right now, a once-daily digest, and a pulse update every couple hours; `audit.py` keeps a
+  tamper-evident, hash-chained log.
+- **Money & research, paper-only** — LandPilot (`land/`) researches property and never signs or pays. A paper-only
+  Alpaca trading agent whose own strategy is evolved and gated behind a real 30-day live-paper probation before
+  promotion. A strategy lab backtests 11 textbook strategies honestly against SPY. Plus freelance/content/learning/
+  subscriptions/earnings/transcription workstreams, each draft-then-you-decide.
+- **Gaming** — drive the gaming PC from a Fire TV Stick or any browser; diagnose Steam crashes/mods with yes/no
+  fixes; Wake-on-LAN for it.
+- **Everything else** — a Worker Registry routes model calls to the right subordinate (private data never reaching
+  cloud); a review-ticket system flags any change to a protected component for review before the owner signs off.
+
 ## Demo
 A full, hover-to-play tour lives on the landing page (`docs/index.html`). A few looks:
 

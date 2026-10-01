@@ -4,6 +4,9 @@ Thanks for helping. The project is moving quickly, so the best contributions are
 
 ## Before You Start
 
+- Read [CAPABILITIES.md](CAPABILITIES.md) and grep src/foundation/ before proposing a new module for
+  orchestration, skills, self-improvement, or status reporting - Aurix almost certainly already has a
+  specific, safety-checked version of it, and a parallel duplicate will be reverted.
 - Search existing issues and pull requests before opening a new one.
 - Prefer one bug fix or feature per pull request.
 - Avoid broad rewrites, formatting-only changes, or moving many files unless the issue is specifically about structure.

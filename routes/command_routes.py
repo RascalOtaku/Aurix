@@ -74,8 +74,9 @@ def setup_command_routes() -> APIRouter:
 
     @router.get("/api/command", dependencies=[Depends(require_admin)])
     async def api(request: Request):
+        mode = getattr(request.app.state, "resource_mode", "")
         return await asyncio.to_thread(command_center.snapshot, None, None, None, _godseye_url(request), _kuma_url(request),
-                                       _extras_links(request))
+                                       None, mode)
 
     @router.post("/api/command/action")
     async def action(request: Request):

@@ -335,7 +335,7 @@ def default_probes() -> Dict[str, Callable[[], Any]]:
 def snapshot(system_probes: Optional[Dict[str, Callable[[], Any]]] = None,
              extra_probes: Optional[Dict[str, Callable[[], Any]]] = None, now: Optional[float] = None,
              godseye_url: str = "", kuma_url: str = "",
-             service_check: Optional[Callable[[str, int], bool]] = None) -> Dict[str, Any]:
+             service_check: Optional[Callable[[str, int], bool]] = None, resource_mode: str = "") -> Dict[str, Any]:
     now = now or time.time()
     raw: Dict[str, Any] = {}                                  # the probe results behind the organs (services + running-now)
     base = sysview.snapshot(system_probes, now=now, raw=raw)
@@ -376,7 +376,7 @@ def snapshot(system_probes: Optional[Dict[str, Callable[[], Any]]] = None,
         elif o["status"] == "warn" and worst != "bad":
             worst = "warn"
     return {
-        "ts": now, "local_time": base["local_time"],
+        "ts": now, "local_time": base["local_time"], "resource_mode": resource_mode,
         "xp": state.as_dict() if state is not None else None,
         "health": {"overall": worst, "organs": organs, "audit_ok": base["audit"]["ok"], "stop": base["stop"]},
         "approvals": base["approvals"], "missions": base["missions"], "active": base["active"],

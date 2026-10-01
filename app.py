@@ -745,6 +745,12 @@ async def runtime_info() -> Dict[str, object]:
 async def startup_event():
     global upload_cleanup_task
     logger.info("Application starting up...")
+    try:
+        from src.startup_optimizer import detect_resource_mode
+        app.state.resource_mode = await asyncio.to_thread(detect_resource_mode)
+    except Exception as e:
+        logger.warning(f"Resource mode detection failed (non-critical): {type(e).__name__}: {e}")
+        app.state.resource_mode = "normal"
     webhook_manager.set_loop(asyncio.get_running_loop())
     # Wipe any leftover incognito sessions from previous process — they're
     # ephemeral by design and must not survive a restart.
@@ -799,6 +805,9 @@ async def startup_event():
     # (showing up as a big `tool_selection` time). Doing it here makes the
     # first turn as fast as subsequent ones (warm embed ≈ a few ms).
     async def _warmup_tool_index():
+        if app.state.resource_mode == "ultra-low":
+            logger.info("[startup] Skipping tool-index warmup (ultra-low resource mode)")
+            return
         try:
             from src.tool_index import get_tool_index
             idx = await asyncio.to_thread(get_tool_index)
