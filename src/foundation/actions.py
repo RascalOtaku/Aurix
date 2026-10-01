@@ -28,6 +28,7 @@ FID = re.compile(r"f-[0-9a-f]{6}")
 CID = re.compile(r"c-[0-9a-f]{6}")
 NID = re.compile(r"n-[0-9a-f]{6}")
 AID = re.compile(r"a-[0-9a-f]{6}")
+EVID = re.compile(r"e-[0-9a-f]{6}")
 
 
 def _plain(t: Any) -> str:
@@ -77,6 +78,7 @@ def run_action(name: str, arg: str = "") -> Dict[str, Any]:
     from src.foundation import announce, audit, content, fastlane, forge, freelance, gamepilot, gaming, learning, money, repos, shards, teacher, upgrades
     from src.foundation.land import hub as land
     from src.foundation import memory as fmemory
+    from src.foundation import evolve
     arg = (arg or "").strip()
     simple = {
         "fix_yes": (GID, gaming.approve), "fix_no": (GID, gaming.decline), "fix_undo": (GID, gaming.undo),
@@ -90,6 +92,7 @@ def run_action(name: str, arg: str = "") -> Dict[str, Any]:
         "learn_yes": (NID, learning.approve), "learn_no": (NID, learning.decline),
         "approve_skill": (forge.NAME_RE, forge.approve), "deny_skill": (forge.NAME_RE, forge.deny),
         "land_yes": (AID, land.approve), "land_no": (AID, land.decline),
+        "evolve_yes": (EVID, evolve.approve_any), "evolve_no": (EVID, evolve.decline_any),
     }
     try:
         if name in simple:
@@ -106,8 +109,6 @@ def run_action(name: str, arg: str = "") -> Dict[str, Any]:
                 return {"ok": False, "message": "unknown helper"}
             return {"ok": True, "message": _plain(shards.set_paused(arg, name == "shard_pause"))}
         if name == "gp_arm":
-            if arg and not arg.isdigit():
-                return {"ok": False, "message": "Minutes must be a number."}
             return {"ok": True, "message": _plain(gamepilot.arm(int(arg) if arg.isdigit() else gamepilot.ARM_DEFAULT_MIN))}
         if name == "gp_disarm":
             return {"ok": True, "message": _plain(gamepilot.disarm())}
@@ -145,8 +146,6 @@ def run_action(name: str, arg: str = "") -> Dict[str, Any]:
         if name == "fastlane_off":
             return {"ok": True, "message": _plain(fastlane.set_enabled(False))}
         if name == "teacher_on":
-            if arg and not arg.isdigit():
-                return {"ok": False, "message": "Count must be a number."}
             n = int(arg) if arg.isdigit() else 5
             return {"ok": True, "message": _plain(teacher.set_config(True, n))}
         if name == "teacher_off":
@@ -174,7 +173,7 @@ ACTION_NAMES = ("fix_yes", "fix_no", "fix_undo", "lesson_approve", "lesson_deny"
                 "teacher_off", "games_refresh", "ack", "evals_plan", "evals_all", "teach", "repo_add", "repo_yes", "repo_no", "mem_yes", "mem_no", "mem_forget", "mem_pin", "mem_unpin", "mem_add", "mem_unforget",
                 "upg_yes", "upg_no", "upg_undo", "upg_add", "upg_on", "upg_off", "upg_now", "money_set", "gp_arm", "gp_disarm", "gp_unpair", "gp_pair", "shard_pause", "shard_resume", "night_now",
                 "freelance_yes", "freelance_no", "content_yes", "content_no", "learn_yes", "learn_no", "approve_skill", "deny_skill",
-                "land_yes", "land_no")
+                "land_yes", "land_no", "evolve_yes", "evolve_no")
 
 
 def decisions() -> List[Dict[str, Any]]:
@@ -182,6 +181,7 @@ def decisions() -> List[Dict[str, Any]]:
     from src.foundation import content, forge, freelance, gaming, learning, repos, teacher, upgrades
     from src.foundation.land import hub as land
     from src.foundation import memory as fmemory
+    from src.foundation import evolve
     out: List[Dict[str, Any]] = []
     for u in [x for x in upgrades.all_proposals() if x["status"] == "review"]:
         v = u.get("verify", {})
@@ -236,4 +236,9 @@ def decisions() -> List[Dict[str, Any]]:
                     "lines": [_plain(c.get("action", "")), f"Maximum TRUE exposure: ${c.get('max_usd', 0):,.0f} · dossier {c.get('dossier_version', '')[:12]}"],
                     "risk": "records only your go-ahead within that maximum; you sign and pay, AURIX does neither",
                     "buttons": [{"label": "Approve", "action": "land_yes", "arg": c["id"], "style": "approve"}, {"label": "Reject", "action": "land_no", "arg": c["id"], "style": "deny"}]})
+    for c in evolve.all_pending():
+        out.append({"kind": "evolve", "id": c["id"], "icon": "🧬", "title": f"Evolved {c['domain']}: fitness {c['fitness']:.3f}",
+                    "lines": [_plain(c.get("description", "")), f"generation {c.get('generation', '?')}"],
+                    "risk": "a sandboxed/backtested result only; approving makes it the live default for that domain",
+                    "buttons": [{"label": "Approve", "action": "evolve_yes", "arg": c["id"], "style": "approve"}, {"label": "Reject", "action": "evolve_no", "arg": c["id"], "style": "deny"}]})
     return out

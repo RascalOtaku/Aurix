@@ -231,9 +231,9 @@ def probe_services(raw: Dict[str, Any], check: Optional[Callable[[str, int], boo
 
 # Other homelab dashboards/services worth one click from here. The retired Linux install's "Homepage" dashboard (port 3000 in the
 # Homelab Ecosystem Plan) is gone - nothing listens there any more. Override with AURIX_HOMELAB_LINKS="Name|http://host:port;Name 2|http://host2:port".
-HOMELAB_DEFAULT = ("GPU box (Windows PC, Ollama)|http://100.64.0.10:11434|quiet;"
+HOMELAB_DEFAULT = ("3431 GPU (Ollama)|http://100.64.0.10:11434|quiet;"
                    "Jellyfin (Pi)|http://10.0.0.75:8096;Pi-hole (Pi)|http://10.0.0.75/admin;"
-                   "Vaultwarden (server)|http://100.64.0.20:8080;Uptime Kuma (server)|http://100.64.0.20:3001")
+                   "Vaultwarden (7070)|http://100.64.0.11:8080;Uptime Kuma (7070)|http://100.64.0.11:3001")
 # The Pi is on the LAN only (not on Tailscale), so its links open at home; the reachability check runs from
 # wherever the app itself is hosted, on the same LAN. "quiet" = shown and checked, but never messaged about:
 # a machine that sleeps at night (the 3431 gaming PC) must not page anyone.
@@ -335,7 +335,6 @@ def default_probes() -> Dict[str, Callable[[], Any]]:
 def snapshot(system_probes: Optional[Dict[str, Callable[[], Any]]] = None,
              extra_probes: Optional[Dict[str, Callable[[], Any]]] = None, now: Optional[float] = None,
              godseye_url: str = "", kuma_url: str = "",
-             extra_links: Optional[Dict[str, str]] = None,
              service_check: Optional[Callable[[str, int], bool]] = None) -> Dict[str, Any]:
     now = now or time.time()
     raw: Dict[str, Any] = {}                                  # the probe results behind the organs (services + running-now)
@@ -361,6 +360,8 @@ def snapshot(system_probes: Optional[Dict[str, Callable[[], Any]]] = None,
     from src.foundation import freelance
     from src.foundation.land import hub as land
     from src.foundation import workers as fworkers
+    from src.foundation import evolve
+    from src.foundation import evolve_domains  # noqa: F401 - import-time side effect: registers the "forge_guidance" domain
     from src.foundation import content
     from src.foundation import learning
     from src.foundation import subscriptions
@@ -406,24 +407,19 @@ def snapshot(system_probes: Optional[Dict[str, Callable[[], Any]]] = None,
         "earnings": safe("earnings", earnings.panel, {}),
         "freelance": safe("freelance", freelance.panel, {}),
         "land": safe("land", land.panel, {"dossiers": [], "pending": []}),
+        "evolve": safe("evolve", evolve.panel, {"domains": [], "pending": []}),
         "workers": safe("workers", fworkers.panel, {"workers": [], "routes": {}}),
         "content": safe("content", content.panel, {}),
         "library": safe("library", learning.panel, {}),
         "subscriptions": safe("subscriptions", subscriptions.panel, {}),
-        "spend": safe("spend", _spend_panel, {}),
         "trading": safe("trading", panels.trading, {"have": False}),
         "lessons": safe("lessons", panels.lessons, []),
         "checks": safe("checks", panels.checks, {"have": False}),
         "monitors": safe("monitors", lambda: addons.probe_monitors(organs, homelab_rows, addon_list), []),
         "server": safe("server", lambda: server_stats(raw), {}),
         "running": safe("running", lambda: running_now(base, raw), {"mission": None, "models": [], "in_flight": 0, "standing_active": 0}),
-        "links": {"godseye": godseye_url, "systems": "/systems", "chat": "/", "kuma": kuma_url, **(extra_links or {})},
+        "links": {"godseye": godseye_url, "systems": "/systems", "chat": "/", "kuma": kuma_url},
     }
-
-
-def _spend_panel() -> Dict[str, Any]:
-    from src import spend_ledger
-    return spend_ledger.panel()
 
 
 _NO_SKILLS = {"total": 0, "active": 0, "pending": 0, "items": []}

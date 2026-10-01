@@ -5,6 +5,7 @@ import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -51,9 +52,21 @@ class ParseTests(unittest.TestCase):
 class _Base(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.env = mock.patch.dict(os.environ, {"AURIX_PROJECT_ROOT": self.tmp.name, "AURIX_TZ_OFFSET_MINUTES": "0", "AURIX_WATCHDOG_MINUTES": "0"})
+        # AURIX_GAMING_DIR included: without it, gaming.tick()/gaming.pending() read whatever the REAL machine's
+        # gaming data mount has (a container with real data gets a real, genuinely-new-looking crash proposal
+        # mid-test) instead of this test's own empty tempdir - a pre-existing gap in this file specifically
+        # (test_foundation_evolution.py's _Base already isolates this correctly) that intermittently failed
+        # DigestTests/PulseTests depending on what the surrounding machine's real gaming data happened to hold.
+        self.env = mock.patch.dict(os.environ, {"AURIX_PROJECT_ROOT": self.tmp.name, "AURIX_TZ_OFFSET_MINUTES": "0", "AURIX_WATCHDOG_MINUTES": "0",
+                                                 "AURIX_GAMING_DIR": str(Path(self.tmp.name) / "gaming")})
         self.env.start()
         os.environ.pop("AURIX_DIGEST_AT", None)
+        # A real deployment sets AURIX_PULSE_EVERY_MINUTES/AURIX_PULSE_QUIET_HOURS in its own .env - mock.patch.dict
+        # without clear=True leaves that ambient value in place, so running these tests INSIDE that container (not
+        # a clean dev-box shell) leaked a real pulse into tests that never touch pulse settings. Same off-by-default
+        # treatment as AURIX_DIGEST_AT above, for the same reason.
+        os.environ.pop("AURIX_PULSE_EVERY_MINUTES", None)
+        os.environ.pop("AURIX_PULSE_QUIET_HOURS", None)
         ag.reset_state()
         self.said, self.prompts = [], []
 
@@ -169,6 +182,82 @@ class DigestTests(_Base):
         with mock.patch.dict(os.environ, {"AURIX_DIGEST_AT": "seven"}):
             await self.f.tick_standing(now=ts(2026, 9, 20, 8, 0))
         self.assertEqual(self.said, [])
+
+
+class PulseTests(_Base):
+    async def test_off_by_default(self):
+        await self.f.tick_standing(now=ts(2026, 9, 20, 12, 0))
+        self.assertEqual(self.said, [])
+
+    async def test_fires_once_per_interval_during_waking_hours(self):
+        with mock.patch.dict(os.environ, {"AURIX_PULSE_EVERY_MINUTES": "120"}):
+            await self.f.tick_standing(now=ts(2026, 9, 20, 12, 0))
+            self.assertEqual(sum("AURIX pulse" in s for s in self.said), 1)
+            await self.f.tick_standing(now=ts(2026, 9, 20, 13, 0))                 # only 60 min later: no second one
+            self.assertEqual(sum("AURIX pulse" in s for s in self.said), 1)
+            await self.f.tick_standing(now=ts(2026, 9, 20, 14, 1))                 # 121 min after the first: fires again
+            self.assertEqual(sum("AURIX pulse" in s for s in self.said), 2)
+
+    async def test_never_fires_during_the_default_quiet_hours(self):
+        with mock.patch.dict(os.environ, {"AURIX_PULSE_EVERY_MINUTES": "1"}):
+            await self.f.tick_standing(now=ts(2026, 9, 20, 23, 30))                # 23:30, inside 23:00-07:00
+            self.assertEqual(self.said, [])
+            await self.f.tick_standing(now=ts(2026, 9, 21, 3, 0))                  # 03:00, still inside (wraps midnight)
+            self.assertEqual(self.said, [])
+            await self.f.tick_standing(now=ts(2026, 9, 21, 7, 1))                  # just past the window: fires
+            self.assertEqual(sum("AURIX pulse" in s for s in self.said), 1)
+
+    async def test_a_custom_quiet_window_is_respected(self):
+        with mock.patch.dict(os.environ, {"AURIX_PULSE_EVERY_MINUTES": "1", "AURIX_PULSE_QUIET_HOURS": "01:00-05:00"}):
+            await self.f.tick_standing(now=ts(2026, 9, 20, 23, 30))                # outside the custom window now
+            self.assertEqual(sum("AURIX pulse" in s for s in self.said), 1)
+            await self.f.tick_standing(now=ts(2026, 9, 21, 2, 0))                  # inside the custom window
+            self.assertEqual(sum("AURIX pulse" in s for s in self.said), 1)
+
+    async def test_bad_interval_setting_is_ignored(self):
+        with mock.patch.dict(os.environ, {"AURIX_PULSE_EVERY_MINUTES": "soon"}):
+            await self.f.tick_standing(now=ts(2026, 9, 20, 12, 0))
+        self.assertEqual(self.said, [])
+
+    async def test_unparseable_quiet_window_never_goes_permanently_quiet(self):
+        with mock.patch.dict(os.environ, {"AURIX_PULSE_EVERY_MINUTES": "1", "AURIX_PULSE_QUIET_HOURS": "garbage"}):
+            await self.f.tick_standing(now=ts(2026, 9, 20, 2, 0))                  # would be "quiet" under the default window
+            self.assertEqual(sum("AURIX pulse" in s for s in self.said), 1)
+
+
+class QuietHoursTests(unittest.TestCase):
+    def test_default_window_wraps_past_midnight(self):
+        from datetime import datetime
+        quiet = lambda h, m=0: commands._in_quiet_hours(datetime(2026, 9, 20, h, m))  # noqa: E731
+        self.assertTrue(quiet(23, 30))
+        self.assertTrue(quiet(0, 0))
+        self.assertTrue(quiet(6, 59))
+        self.assertFalse(quiet(7, 0))
+        self.assertFalse(quiet(12, 0))
+        self.assertFalse(quiet(22, 59))
+
+    def test_a_same_day_window_does_not_wrap(self):
+        from datetime import datetime
+        with mock.patch.dict(os.environ, {"AURIX_PULSE_QUIET_HOURS": "13:00-14:00"}):
+            self.assertFalse(commands._in_quiet_hours(datetime(2026, 9, 20, 12, 59)))
+            self.assertTrue(commands._in_quiet_hours(datetime(2026, 9, 20, 13, 30)))
+            self.assertFalse(commands._in_quiet_hours(datetime(2026, 9, 20, 14, 0)))
+
+
+class PulseDigestContentTests(unittest.TestCase):
+    def test_includes_self_improve_skills_landpilot_sections(self):
+        text = heartbeat.pulse_digest()
+        self.assertIn("AURIX pulse", text)
+        self.assertIn("forge_guidance", text)          # the registered self-improve domain's own status line
+        self.assertIn("Skill requests", text)
+        self.assertIn("LandPilot", text)
+
+    def test_a_broken_section_reports_unavailable_rather_than_crashing_the_whole_pulse(self):
+        from src.foundation import forge
+        with mock.patch.object(forge, "pending", side_effect=RuntimeError("boom")):
+            text = heartbeat.pulse_digest()
+        self.assertIn("Skill requests: unavailable right now", text)
+        self.assertIn("AURIX pulse", text)                             # the rest of the pulse still renders
 
 
 class HeartbeatTests(_Base):

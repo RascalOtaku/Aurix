@@ -60,6 +60,7 @@ def waiting_for_you(limit: int = 6) -> str:
             pass
     from src.foundation import content, forge, freelance, gaming, learning, memory, repos, teacher, upgrades
     from src.foundation.land import hub as land
+    from src.foundation import evolve
     add(gaming.pending, lambda p: f"🎮 {e(p['title'][:70])} - <code>yes {p['id']}</code> / <code>no {p['id']}</code>")
     add(lambda: [u for u in upgrades.all_proposals() if u["status"] == "review"], lambda u: f"🛠️ Upgrade: {e(u['title'][:60])} - <code>yes {u['id']}</code> / <code>no {u['id']}</code>")
     add(repos.pending, lambda r: f"📥 {e(r['owner'])}/{e(r['repo'])} - <code>yes {r['id']}</code> / <code>no {r['id']}</code>")
@@ -70,6 +71,7 @@ def waiting_for_you(limit: int = 6) -> str:
     add(learning.pending, lambda r: f"📚 {e(r['title'][:60])} - <code>yes {r['id']}</code> / <code>no {r['id']}</code>")
     add(forge.pending, lambda s: f"🛠️ Skill: {e(s['name'])} - <code>approve skill {s['name']}</code> / <code>deny skill {s['name']}</code>")
     add(land.pending, lambda c: f"🏞️ Land: {e(c.get('label', c.get('property', ''))[:60])} - <code>yes land {c['id']}</code> / <code>no land {c['id']}</code>")
+    add(evolve.all_pending, lambda c: f"🧬 Evolved {e(c['domain'])} (fitness {c['fitness']:.3f}) - <code>yes evolve {c['id']}</code> / <code>no evolve {c['id']}</code>")
     try:
         from src.foundation import shards as _shards
         for r in _shards.stale():
@@ -111,6 +113,53 @@ def overnight_digest(store: Optional[ms.MissionStore] = None) -> str:
         waiting = ""
     return ("☀️ <b>AURIX morning digest</b>\n" + (waiting + "\n\n" if waiting else "") + activity_summary(24) + "\n\n" + self_report(store)
             + (("\n\n" + yours) if yours else ""))
+
+
+def pulse_digest() -> str:
+    """A lighter, more frequent companion to overnight_digest() (see commands.Foundation._maybe_pulse, default
+    every 2 hours, never during quiet hours): self-improve/evolve progress, skill requests, LandPilot activity,
+    project updates, and anything waiting on you - each section reported honestly as "unavailable" rather than
+    silently dropped if its module errors, so a pulse never looks emptier than it should."""
+    e = html.escape
+    parts = ["🔁 <b>AURIX pulse</b> " + time.strftime("%a %H:%M")]
+
+    try:
+        from src.foundation import evolve, evolve_domains  # noqa: F401 - registers forge_guidance
+        names = evolve.domains()
+        parts.append(evolve.overview_text() if names else "🧬 Self-improve: no domains registered.")
+    except Exception:
+        parts.append("🧬 Self-improve: unavailable right now.")
+
+    try:
+        from src.foundation import forge
+        skills = forge.pending()
+        parts.append(f"🛠️ Skill requests: {len(skills)} waiting" + (" - " + ", ".join(s["name"] for s in skills[:3]) if skills else ""))
+    except Exception:
+        parts.append("🛠️ Skill requests: unavailable right now.")
+
+    try:
+        from src.foundation.land import hub as land
+        lp = land.panel()
+        parts.append(f"🏞️ LandPilot: {len(lp.get('dossiers', []))} dossier(s), {len(lp.get('pending', []))} pending")
+    except Exception:
+        parts.append("🏞️ LandPilot: unavailable right now.")
+
+    try:
+        from src.foundation import projects
+        yours = projects.Registry().digest_line()
+        if yours:
+            parts.append(yours)
+    except Exception:
+        pass
+
+    try:
+        waiting = waiting_for_you()
+        if "Nothing is waiting" not in waiting:
+            parts.append(waiting)
+    except Exception:
+        pass
+
+    return "\n\n".join(parts)
 
 
 def _bar(done: int, total: int, width: int = 10) -> str:

@@ -33,6 +33,8 @@ from src.foundation import transcription
 from src.foundation import earnings
 from src.foundation import freelance
 from src.foundation.land import hub as land
+from src.foundation import evolve
+from src.foundation import evolve_domains  # noqa: F401 - import-time side effect: registers the "forge_guidance" domain
 from src.foundation import workers as fworkers
 from src.foundation import integrate
 from src.foundation import versions
@@ -180,6 +182,7 @@ _PATTERNS = [
     ("deny_lesson", re.compile(r"^\s*/?deny\s+lesson\s+(l-[0-9a-f]{6})\s*$", re.I)),
     ("retire_lesson", re.compile(r"^\s*/?retire\s+lesson\s+(l-[0-9a-f]{6})\s*$", re.I)),
     ("trades", re.compile(r"^\s*/?(?:trades|paper\s+trad(?:es|ing)|trading)\s*[?]*\s*$", re.I)),
+    ("pulse", re.compile(r"^\s*/?pulse\s*\??\s*$", re.I)),
     # skill forge: AURIX drafts + tests a small tool in the sandbox; only `approve skill` makes it usable
     ("forge", re.compile(r"^\s*/?forge\s*[:\-]\s*(\S.*)$", re.I | re.S)),
     ("skills", re.compile(r"^\s*/?skills\s*$", re.I)),
@@ -204,6 +207,12 @@ _PATTERNS = [
     ("land_propose", re.compile(r"^\s*/?land\s+propose\s+(\S{2,60})\s*$", re.I)),
     ("land_show", re.compile(r"^\s*/?land\s+show\s+(\S{2,60})\s*$", re.I)),
     ("land", re.compile(r"^\s*/?(?:land|land\s*pilot|parcels?)\s*\??\s*$", re.I)),
+    # evolve (src/foundation/evolve.py): GA/PBT search over a domain's genome; a candidate only ever goes live via `yes evolve e-xxxxxx`
+    ("evolve_yes", re.compile(r"^\s*/?(?:yes|approve)\s+evolve\s+(e-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
+    ("evolve_no", re.compile(r"^\s*/?(?:no|deny|decline)\s+evolve\s+(e-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
+    ("evolve_run", re.compile(r"^\s*/?evolve\s+run(?:\s+([a-z_][a-z0-9_]{1,40}))?\s*$", re.I)),
+    ("evolve_propose", re.compile(r"^\s*/?evolve\s+propose(?:\s+([a-z_][a-z0-9_]{1,40}))?\s*$", re.I)),
+    ("evolve", re.compile(r"^\s*/?evolve\s*\??\s*$", re.I)),
     ("integ_adopt", re.compile(r"^\s*/?(?:adopt|yes\s+adopt)\s+(i-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
     ("integ_skip", re.compile(r"^\s*/?skip\s+(i-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
     ("version", re.compile(r"^\s*/?(?:version|versions|aurix\s+version|changelog)\s*\??\s*$", re.I)),
@@ -284,7 +293,7 @@ def parse(text: str) -> Optional[Tuple[str, str]]:
             lowered = ("approve_mission", "deny_mission", "revoke", "approve_standing", "deny_standing",
                        "pause_standing", "resume_standing", "retire_standing", "show", "files", "send_files",
                        "todo_done", "skill_show", "approve_skill", "deny_skill", "retire_skill",
-                       "teacher", "lesson_show", "approve_lesson", "deny_lesson", "retire_lesson", "fix_yes", "fix_no", "fix_undo", "repo_yes", "repo_no", "mem_yes", "mem_no", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrades_cfg", "money_set", "shard_pause", "shard_resume", "freelance_yes", "freelance_no", "content_yes", "content_no", "learn_yes", "learn_no", "land_yes", "land_no", "integ_adopt", "integ_skip")
+                       "teacher", "lesson_show", "approve_lesson", "deny_lesson", "retire_lesson", "fix_yes", "fix_no", "fix_undo", "repo_yes", "repo_no", "mem_yes", "mem_no", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrades_cfg", "money_set", "shard_pause", "shard_resume", "freelance_yes", "freelance_no", "content_yes", "content_no", "learn_yes", "learn_no", "land_yes", "land_no", "integ_adopt", "integ_skip", "evolve_yes", "evolve_no", "evolve_run", "evolve_propose")
             return kind, (arg.lower() if kind in lowered else arg)
     bare = _bare_skill_decision(text) or _bare_fix_decision(text) or _bare_ack(text) or _bare_repo_link(text)
     if bare:
@@ -312,6 +321,22 @@ def _bare_skill_decision(text: str) -> Optional[Tuple[str, str]]:
     if s is None or s.get("status") not in ("pending", "draft"):
         return None
     return f"{verb}_skill", name
+
+
+def _in_quiet_hours(ln) -> bool:
+    """AURIX_PULSE_QUIET_HOURS (default "23:00-07:00", local time, wraps past midnight). An unparseable window
+    is treated as "never quiet" rather than silently going quiet forever on a typo."""
+    window = os.environ.get("AURIX_PULSE_QUIET_HOURS", "23:00-07:00").strip()
+    try:
+        start_s, end_s = window.split("-")
+        sh, sm = (int(x) for x in start_s.split(":"))
+        eh, em = (int(x) for x in end_s.split(":"))
+    except ValueError:
+        return False
+    now_mins, start_mins, end_mins = ln.hour * 60 + ln.minute, sh * 60 + sm, eh * 60 + em
+    if start_mins <= end_mins:
+        return start_mins <= now_mins < end_mins
+    return now_mins >= start_mins or now_mins < end_mins
 
 
 class Foundation:
@@ -424,6 +449,10 @@ class Foundation:
                                          now=(lambda: now) if now else time.time, **(await self._presence()))
             actions = await sched.tick()
         await self._maybe_digest(now or time.time())
+        try:                                    # a more frequent, lighter update must never break scheduling either
+            await self._maybe_pulse(now or time.time())
+        except Exception:
+            pass
         await self._maybe_nightshift(now or time.time())
         try:                                    # the nightly self-check must never break scheduling either
             await self._maybe_nightly_evals(now or time.time())
@@ -619,6 +648,35 @@ class Foundation:
             await self.notify_ui(await asyncio.to_thread(nightshift.unwrap, None, True, False), "unwrap")
         await self.notify_ui(heartbeat.overnight_digest(self.store), "digest")
 
+    async def _maybe_pulse(self, now_ts: float) -> None:
+        """Opt-in, same convention as _maybe_digest: AURIX_PULSE_EVERY_MINUTES=120 ("every couple of hours",
+        owner's explicit ask 2026-10-01) sends a lighter, more frequent companion to the once-a-day digest -
+        self-improve/evolve progress, skill requests, LandPilot activity, project updates. Unset or 0 = off (no
+        code-level default - a default here would silently add a notification to every other test file in this
+        project that calls tick_standing without expecting one; this owner's deployment sets the env var itself).
+        Never fires during AURIX_PULSE_QUIET_HOURS (default 23:00-07:00, local time): the owner is asleep while
+        AURIX keeps ruminating/testing/reviewing in the background, not waiting on a ping every two hours."""
+        try:
+            minutes = int(os.environ.get("AURIX_PULSE_EVERY_MINUTES", "0").strip() or "0")
+        except ValueError:
+            return
+        if minutes <= 0:
+            return
+        ln = st.local_now(now_ts)
+        if _in_quiet_hours(ln):
+            return
+        state = self.standing.dir / "_pulse.json"
+        try:
+            last = json.loads(state.read_text(encoding="utf-8")).get("ts", 0)
+        except (OSError, ValueError):
+            last = 0
+        if now_ts - last < minutes * 60:
+            return
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text(json.dumps({"ts": now_ts}), encoding="utf-8")
+        audit.append("pulse_sent", minutes=minutes)
+        await self.notify_ui(heartbeat.pulse_digest(), "pulse")
+
     # -- dispatch -----------------------------------------------------------
     async def handle(self, kind: str, arg: str = "") -> str:
         from src import approval_gate as ag
@@ -713,6 +771,8 @@ class Foundation:
             return await asyncio.to_thread(qol.homelab_text)
         if kind == "trades":
             return await asyncio.to_thread(qol.trades_text)
+        if kind == "pulse":
+            return await asyncio.to_thread(heartbeat.pulse_digest)
         if kind == "evals":
             return await self._evals((arg or "all").lower())
         if kind == "teacher":
@@ -825,6 +885,23 @@ class Foundation:
             return await asyncio.to_thread(land.approve, arg)
         if kind == "land_no":
             return await asyncio.to_thread(land.decline, arg)
+        if kind == "evolve":
+            return await asyncio.to_thread(evolve.overview_text)
+        if kind == "evolve_run":
+            name = arg or (evolve.domains()[0] if len(evolve.domains()) == 1 else "")
+            if not name:
+                return "Which domain? " + ", ".join(evolve.domains())
+            await evolve.advance(name, self.llm)
+            return await asyncio.to_thread(evolve.status_text, name)
+        if kind == "evolve_propose":
+            name = arg or (evolve.domains()[0] if len(evolve.domains()) == 1 else "")
+            if not name:
+                return "Which domain? " + ", ".join(evolve.domains())
+            return await asyncio.to_thread(evolve.propose_promotion, name)
+        if kind == "evolve_yes":
+            return await asyncio.to_thread(evolve.approve_any, arg)
+        if kind == "evolve_no":
+            return await asyncio.to_thread(evolve.decline_any, arg)
         if kind == "freelance_find":
             return await asyncio.to_thread(freelance.find_lead)
         if kind == "content":

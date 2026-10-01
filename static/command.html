@@ -238,6 +238,9 @@
     <div class="dim small" style="margin-bottom:8px">Research only. <code>land propose &lt;property&gt;</code> makes an acquisition card once the dossier is ELIGIBLE; you sign and pay, AURIX does neither.</div>
     <div id="land-pending"></div>
     <h2 style="margin-top:10px">Dossiers <span class="small" id="land-dossiers-n"></span></h2><div id="land-dossiers"></div></section>
+  <section class="card c12"><h2>Evolution <span class="small" id="evo-n"></span></h2>
+    <div class="dim small" style="margin-bottom:8px">A GA/PBT search over each domain's genome, scored by a real measured result (sandbox test pass rate, a backtest) - never self-reported. A winning candidate only ever goes live after your yes.</div>
+    <div id="evo-domains"></div></section>
   <section class="card c12"><h2>Freelance drafts <span class="small" id="fl-n"></span></h2>
     <div class="dim small" style="margin-bottom:8px">Send AURIX a job brief with <code>freelance: &lt;brief&gt;</code> and it drafts a working script. You review, keep or discard, and deliver it yourself.</div>
     <div id="freelance"></div></section>
@@ -247,9 +250,6 @@
   <section class="card c12"><h2>Reading library <span class="small" id="lib-n"></span></h2>
     <div class="dim small" style="margin-bottom:8px">Send AURIX a link or pasted text with <code>learn: &lt;link or text&gt;</code> and it fetches/reads it, summarizes it, and flags the single best takeaway. Video links are tracked by title only - no transcription yet. You review, keep or discard.</div>
     <div id="library"></div></section>
-  <section class="card c12"><h2>Model spend <span class="small" id="spend-n"></span></h2>
-    <div class="dim small" style="margin-bottom:8px">Tokens sent to hosted, non-free models this month. Local and free models are never counted. Set <code>AURIX_MONTHLY_PAID_TOKEN_CAP</code> and paid calls stop at the cap while local/free models keep working.</div>
-    <div id="spend"></div></section>
   <section class="card c12"><h2>Subscriptions <span class="small" id="sub-n"></span></h2>
     <div class="dim small" style="margin-bottom:8px">List what you pay for with <code>subscriptions: &lt;one per line&gt;</code> (e.g. "Netflix $15.49 monthly renews 15th") and AURIX tracks a running total, flags duplicates, and adds a to-do near each renewal. Reviewing statements and cancelling stay yours.</div>
     <div id="subscriptions"></div></section>
@@ -756,16 +756,6 @@ $("gp-disarm").addEventListener("click", () => act("gp_disarm", "", $("gp-disarm
 $("gp-unpair").addEventListener("click", () => { if (confirm("Unpair every screen? Each TV has to pair again.")) act("gp_unpair", "", $("gp-unpair")); });
 $("gp-pair").addEventListener("click", async () => { const i = $("gp-code"), v = i.value.trim(); if (!/^\d{6}$/.test(v)) { toast("Type the 6 digits shown on the TV"); return; } await act("gp_pair", v, $("gp-pair")); i.value = ""; });
 
-function drawSpend(s) {
-  s = s || {}; const box = $("spend"); box.replaceChildren();
-  const tok = Number(s.tokens || 0);
-  $("spend-n").textContent = (s.month || "") + " - " + tok.toLocaleString() + " tokens" + (s.cap ? " of " + Number(s.cap).toLocaleString() + " (" + s.pct + "%)" : " - no cap") + (s.tripped ? " - CAP REACHED" : "");
-  (s.top || []).forEach((r) => { const row = el("div", { class: "grow " + (s.tripped ? "bad" : "ok") }); row.appendChild(el("i"));
-    const mid = el("div", { style: "flex:1;min-width:0" }); mid.appendChild(el("b", { style: "display:block;white-space:normal" }, r.model));
-    mid.appendChild(el("div", { class: "small" }, Number(r.tokens).toLocaleString() + " tokens - " + r.calls + " calls")); row.appendChild(mid); box.appendChild(row); });
-  if (!(s.top || []).length) empty(box, "No paid model calls this month.");
-}
-
 function drawSubscriptions(s) {
   s = s || {}; const box = $("subscriptions"); box.replaceChildren();
   const items = s.items || [];
@@ -814,6 +804,21 @@ function drawLand(l) {
     const mid = el("div", { style: "flex:1;min-width:0" }); mid.appendChild(el("b", { style: "display:block;white-space:normal" }, d.label || d.key));
     mid.appendChild(el("div", { class: "small" }, (d.verdict || "") + (d.unknowns ? " · " + d.unknowns + " unknown(s)" : "") + " · " + d.mode)); row.appendChild(mid); box.appendChild(row); });
   if (!dossiers.length) box.appendChild(el("div", { class: "dim small" }, "None yet. Try: land build <name>, then land propose <name>."));
+}
+
+function drawEvolve(v) {
+  v = v || {}; const box = $("evo-domains"); box.replaceChildren();
+  const doms = v.domains || [], pending = v.pending || [];
+  $("evo-n").textContent = doms.length ? doms.length + " domain(s)" + (pending.length ? " - " + pending.length + " waiting" : "") : "";
+  doms.forEach((d) => {
+    const row = el("div", { class: "grow" + (d.pending_proposal ? " warn" : "") }); row.appendChild(el("i"));
+    const mid = el("div", { style: "flex:1;min-width:0" });
+    mid.appendChild(el("b", { style: "display:block;white-space:normal" }, d.domain + " - generation " + d.generation));
+    const fitness = d.best_fitness === null || d.best_fitness === undefined ? "no genomes evaluated yet" : "best fitness " + Number(d.best_fitness).toFixed(3);
+    mid.appendChild(el("div", { class: "small" }, fitness + (d.best_description ? " - " + d.best_description : "")));
+    row.appendChild(mid); box.appendChild(row);
+  });
+  if (!doms.length) box.appendChild(el("div", { class: "dim small" }, "No evolve domains registered."));
 }
 
 function drawFreelance(f) {
@@ -1025,8 +1030,6 @@ function drawApps(links, homelab) {
   APPS.forEach((x) => add(x[0], x[1], x[2], x[3], false));
   add("🌍", "God's Eye", "world view", (links || {}).godseye, true);
   add("📈", "Uptime Kuma", "service history", (links || {}).kuma, true);
-  if ((links || {}).files) add("🗂️", "Files", "browse the brain", links.files, true);        // compose profile "extras"
-  if ((links || {}).reclip) add("🎞️", "ReClip", "save a video", links.reclip, true);
   (homelab || []).forEach((h) => { if (h.url) add(h.ok ? "🟢" : "🔴", h.name, h.ok ? "answering" : "not answering", h.url, true); });
 }
 
@@ -1108,10 +1111,10 @@ function render() {
   if (changed("transcription", state.transcription)) drawTranscripts(state.transcription || {});
   if (changed("earnings", state.earnings)) drawEarnings(state.earnings || {});
   if (changed("land", state.land)) drawLand(state.land || {});
+  if (changed("evolve", state.evolve)) drawEvolve(state.evolve || {});
   if (changed("freelance", state.freelance)) drawFreelance(state.freelance || {});
   if (changed("content", state.content)) drawContent(state.content || {});
   if (changed("subscriptions", state.subscriptions)) drawSubscriptions(state.subscriptions || {});
-  if (changed("spend", state.spend)) drawSpend(state.spend || {});
   if (changed("alive", [state.alive, state.background])) drawAlive(state.alive || [], state.background || {});
   if (changed("feed", state.feed)) drawFeed(state.feed || []);
   if (changed("growth", [state.growth, state.timeline])) drawGrowth(state.growth, state.timeline || []);

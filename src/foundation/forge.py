@@ -375,7 +375,14 @@ async def propose(description: str, llm: Optional[LLM], run: Optional[Runner] = 
             try:                                            # owner-approved lessons from the teacher (advisory text)
                 lessons = teacher.relevant_text(description)
                 if lessons:
-                    system = FORGE_SYSTEM + "\n\nLessons from a stronger model (advisory):\n" + lessons
+                    system = system + "\n\nLessons from a stronger model (advisory):\n" + lessons
+            except Exception:
+                pass
+            try:                                            # owner-approved guidance evolved by evolve.py (see evolve_domains.py)
+                from src.foundation import evolve_domains
+                guidance = evolve_domains.live_guidance()
+                if guidance:
+                    system = system + "\n\nExtra guidance:\n" + guidance
             except Exception:
                 pass
             reply = await llm(system, prompt)
