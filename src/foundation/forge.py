@@ -496,6 +496,41 @@ def find_repeated_gap(min_repeats: int = AUTONOMY_MIN_REPEATS, lookback: int = A
             "reasons": [r for r in best["reasons"] if r][-3:]}
 
 
+async def find_backlog_gap(llm: Optional[LLM]) -> Optional[Dict[str, Any]]:
+    """The second autonomous source (2026-10-01, owner's finding that LandPilot/skills sat idle between real
+    mission failures): the open to-do list almost always has at least a few items that are purely the owner's
+    own action (approve a mission, run a script on the 7070, review a bill) - this never proposes for those.
+    It only returns a to-do a cheap classification call judges a small sandboxed tool could plausibly help
+    with, and even then forge's own real draft+test is still the only thing that can reach `pending` - the
+    classification is advisory, never a substitute for the real sandbox proof. Tried at most once per to-do,
+    ever (no cooldown re-try the way a repeated mission gap gets one, since a to-do does not repeat)."""
+    if llm is None:
+        return None
+    from src.foundation import projects
+    reg = projects.Registry()
+    todos = [t for t in reg.load()["todos"] if not t.done]
+    state = _load_autonomy_state()
+    for t in todos:
+        if not t.text or _already_covered(t.text):
+            continue
+        state_key = f"todo:{_norm(t.text)}"
+        if state_key in state:
+            continue
+        try:
+            verdict = await llm(
+                "Reply with exactly one word, YES or NO, then a colon and a one-sentence reason. Nothing else.",
+                "Could a small, self-contained Python command-line tool meaningfully help someone complete this "
+                "to-do, WITHOUT needing an account/credentials only a human has, a real-world physical action, "
+                f"or a subjective personal judgment call?\n\nTo-do: {t.text}")
+        except Exception:
+            continue
+        state[state_key] = {"ts": time.time(), "verdict": verdict[:200]}
+        _save_autonomy_state(state)
+        if verdict.strip().upper().startswith("YES"):
+            return {"id": t.id, "text": t.text}
+    return None
+
+
 def _already_covered(objective: str) -> bool:
     """True when a skill - in ANY status, including denied/retired - was already drafted for
     essentially this same gap, so autonomy should not keep re-proposing something already tried."""
@@ -505,30 +540,37 @@ def _already_covered(objective: str) -> bool:
 async def check_autonomous_trigger(llm: Optional[LLM], run: Optional[Runner] = None,
                                    now: Optional[float] = None,
                                    available: Optional[Callable[[], bool]] = None) -> Optional[str]:
-    """The only autonomous entry point into the forge: notices a REAL repeated gap (the same kind of
-    mission objective genuinely blocked more than once) and drafts a candidate skill for it exactly as
-    if the owner had typed `forge: <idea>`. Returns the forge result text to tell the owner about, or
-    None when there is nothing new to say - no repeated gap, the gap is already covered by an existing
-    skill, or this exact gap was already tried within the cooldown window. Forging itself never became
+    """The autonomous entry points into the forge - at most ONE draft per call, repeated-mission-gap checked
+    first since it is grounded in a REAL failure, the open to-do backlog only as a fallback when that finds
+    nothing: notices a REAL repeated gap (the same kind of mission objective genuinely blocked more than
+    once), or a to-do a cheap classification judged forge-shaped (see find_backlog_gap), and drafts a
+    candidate skill for it exactly as if the owner had typed `forge: <idea>`. Returns the forge result text
+    to tell the owner about, or None when there is nothing new to say. Forging itself never became
     autonomous here, only the NOTICING did: the result still only ever reaches `pending`, awaiting
     `approve skill <name>` like any other draft."""
     now = now or time.time()
     gap = find_repeated_gap()
-    if gap is None or _already_covered(gap["objective"]):
-        return None
-    key = _norm(gap["objective"])
-    state = _load_autonomy_state()
-    last = state.get(key)
-    if last and (now - float(last.get("ts", 0))) < AUTONOMY_COOLDOWN_DAYS * 86400:
-        return None
-    state[key] = {"ts": now, "objective": gap["objective"], "count": gap["count"]}
-    _save_autonomy_state(state)
-    description = (f"AURIX has tried and failed to complete this kind of mission {gap['count']} separate times: "
-                   f"\"{gap['objective'][:300]}\". Recent blockers: {' | '.join(gap['reasons'])[:300]}. "
-                   "Draft a small tool that would help get past this specific kind of blocker.")
-    audit.append("forge_autonomy_triggered", objective=gap["objective"][:200], count=gap["count"])
-    result = await propose(description, llm, run, available=available)
-    return "🔧 <b>Noticed a repeated gap on its own</b>\n" + result
+    if gap is not None and not _already_covered(gap["objective"]):
+        key = _norm(gap["objective"])
+        state = _load_autonomy_state()
+        last = state.get(key)
+        if not last or (now - float(last.get("ts", 0))) >= AUTONOMY_COOLDOWN_DAYS * 86400:
+            state[key] = {"ts": now, "objective": gap["objective"], "count": gap["count"]}
+            _save_autonomy_state(state)
+            description = (f"AURIX has tried and failed to complete this kind of mission {gap['count']} separate times: "
+                           f"\"{gap['objective'][:300]}\". Recent blockers: {' | '.join(gap['reasons'])[:300]}. "
+                           "Draft a small tool that would help get past this specific kind of blocker.")
+            audit.append("forge_autonomy_triggered", objective=gap["objective"][:200], count=gap["count"], source="mission_gap")
+            result = await propose(description, llm, run, available=available)
+            return "🔧 <b>Noticed a repeated gap on its own</b>\n" + result
+
+    todo = await find_backlog_gap(llm)
+    if todo is not None:
+        description = f"From the open to-do list: \"{todo['text'][:400]}\". Draft a small tool that would meaningfully help with this."
+        audit.append("forge_autonomy_triggered", todo=todo["id"], source="backlog")
+        result = await propose(description, llm, run, available=available)
+        return f"🔧 <b>Picked up an open to-do on its own (<code>{todo['id']}</code>)</b>\n" + result
+    return None
 
 
 def approve(name: str) -> str:

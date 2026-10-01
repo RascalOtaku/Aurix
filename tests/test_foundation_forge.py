@@ -718,6 +718,69 @@ class AutonomousTriggerTests(Base):
     def test_similar_is_a_crude_normalized_containment_check(self):
         self.assertTrue(forge._similar("transcribe the meeting recording",
                                        "transcribe the meeting recording into text"))
+
+
+class BacklogAutonomyTests(Base):
+    """2026-10-01: find_repeated_gap alone left skills (and, separately, LandPilot) sitting idle between real
+    mission failures - the owner's own open to-dos were never even looked at. find_backlog_gap is the second,
+    fallback source: a cheap classification call judges fit, forge's own real draft+test is still the only
+    real gate."""
+
+    def setUp(self):
+        super().setUp()
+        from src.foundation import projects
+        self.reg = projects.Registry()
+
+    async def test_no_todos_is_no_gap(self):
+        self.assertIsNone(await forge.find_backlog_gap(FakeLLM("YES: sure")))
+
+    async def test_no_llm_is_no_gap(self):
+        self.reg.add_todo("write a script that converts CSV to JSON")
+        self.assertIsNone(await forge.find_backlog_gap(None))
+
+    async def test_a_forge_shaped_todo_is_picked_up(self):
+        self.reg.add_todo("write a script that converts CSV to JSON")
+        gap = await forge.find_backlog_gap(FakeLLM("YES: a small script can do this"))
+        self.assertIsNotNone(gap)
+        self.assertIn("CSV", gap["text"])
+
+    async def test_a_human_only_todo_is_skipped(self):
+        self.reg.add_todo("review and cancel the Netflix subscription")
+        gap = await forge.find_backlog_gap(FakeLLM("NO: this needs the owner's own account access"))
+        self.assertIsNone(gap)
+
+    async def test_the_same_todo_is_never_classified_twice(self):
+        self.reg.add_todo("write a script that converts CSV to JSON")
+        llm = FakeLLM("NO: not sure")
+        await forge.find_backlog_gap(llm)
+        await forge.find_backlog_gap(llm)
+        self.assertEqual(len(llm.prompts), 1)
+
+    async def test_an_already_forged_skill_for_the_same_text_blocks_a_repeat_classification(self):
+        await forge.propose("convert CSV to JSON", FakeLLM(GOOD), run=local_runner, available=lambda: True)
+        self.reg.add_todo("convert CSV to JSON")
+        self.assertIsNone(await forge.find_backlog_gap(FakeLLM("YES: sure")))
+
+    async def test_check_autonomous_trigger_falls_back_to_the_backlog_when_no_mission_gap(self):
+        self.reg.add_todo("write a script that converts CSV to JSON")
+        result = await forge.check_autonomous_trigger(FakeLLM("YES: a small script can do this", GOOD),
+                                                       run=local_runner, available=lambda: True)
+        self.assertIsNotNone(result)
+        self.assertIn("Picked up an open to-do on its own", result)
+        self.assertIn("forge_autonomy_triggered", self.events())
+
+    async def test_check_autonomous_trigger_prefers_a_real_mission_gap_over_the_backlog(self):
+        from src.foundation import mission as ms
+        store = ms.MissionStore()
+        for _ in range(2):
+            m = ms.MissionContract(id=ms.new_mission_id(), objective="turn a list of dates into weekday names",
+                                   steps=[ms.Step("s1", "Step 1", "do the thing", ["bash"], "done")])
+            store.propose(m)
+            store.activate(m.id)
+            audit.append("mission_blocked", mission=m.id, step="s1", reason="stuck")
+        self.reg.add_todo("write a script that converts CSV to JSON")
+        result = await forge.check_autonomous_trigger(FakeLLM(GOOD), run=local_runner, available=lambda: True)
+        self.assertIn("Noticed a repeated gap", result)
         self.assertFalse(forge._similar("transcribe the meeting recording", "convert a CT scan to STL"))
         self.assertFalse(forge._similar("", "anything"))
 
