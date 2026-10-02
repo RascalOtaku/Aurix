@@ -468,6 +468,10 @@ class Foundation:
             await self._maybe_land_research(now or time.time())
         except Exception:
             pass
+        try:                                    # freelance checking its own job feed must never break scheduling either
+            await self._maybe_freelance_search(now or time.time())
+        except Exception:
+            pass
         try:                                    # the learning flywheel + "what's new" (both read-only on existing records)
             experience.harvest()
             for text in announce.tick(now or time.time()):
@@ -644,6 +648,31 @@ class Foundation:
             return
         if result:
             await self.notify_ui(result, "land")   # same bug as forge autonomy above - plain notify() never attaches the tap-to-approve buttons
+
+    async def _maybe_freelance_search(self, now_ts: float) -> None:
+        """2026-10-01, owner: "why aren't these running since approved" about the Money panel's active ideas -
+        freelance.find_lead() already does the real work (checks a real public job feed, drafts a solution,
+        never bids/messages/pays anyone) but was only ever triggered by a typed `freelance find` - nothing
+        called it on its own. Once a day, same cooldown shape as forge/land autonomy above."""
+        if self.running():
+            return
+        today = st.local_now(now_ts).strftime("%Y-%m-%d")
+        state_path = freelance._data() / "autonomy_check.json"
+        try:
+            last = json.loads(state_path.read_text(encoding="utf-8")).get("date", "")
+        except (OSError, ValueError):
+            last = ""
+        if last == today:
+            return
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+        state_path.write_text(json.dumps({"date": today}), encoding="utf-8")
+        try:
+            result = await asyncio.to_thread(freelance.find_lead)
+        except Exception as e:
+            audit.append("freelance_autonomy_failed", why=repr(e)[:200])
+            return
+        if result and not result.startswith("Checked a real remote-jobs feed - nothing new"):
+            await self.notify_ui(result, "freelance")
 
     async def _maybe_digest(self, now_ts: float) -> None:
         """Opt-in: AURIX_DIGEST_AT=07:00 sends one owner digest per local day."""

@@ -11,7 +11,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src import approval_gate as ag  # noqa: E402
-from src.foundation import audit, commands, forge, heartbeat, mission as ms, standing as st  # noqa: E402
+from src.foundation import audit, commands, forge, freelance, heartbeat, mission as ms, standing as st  # noqa: E402
 from src.foundation.land import hub as land  # noqa: E402
 
 GRANTED = dict(env={}, which=lambda b: None, find_spec=lambda m: None, probe=lambda h, p: False,
@@ -311,6 +311,27 @@ class AutonomyNotificationTests(_Base):
             await self.f._maybe_land_research(ts(2026, 9, 20, 8, 0))
         nui.assert_awaited_once_with("approve mission m-abcdef", "land")
         plain.assert_not_awaited()
+
+    async def test_freelance_search_uses_notify_ui_not_plain_notify(self):
+        with mock.patch.object(freelance, "find_lead", return_value="🧰 found one"), \
+             mock.patch.object(self.f, "notify_ui", new=mock.AsyncMock()) as nui, \
+             mock.patch.object(self.f, "notify", new=mock.AsyncMock()) as plain:
+            await self.f._maybe_freelance_search(ts(2026, 9, 20, 8, 0))
+        nui.assert_awaited_once_with("🧰 found one", "freelance")
+        plain.assert_not_awaited()
+
+    async def test_freelance_search_stays_quiet_when_nothing_new(self):
+        with mock.patch.object(freelance, "find_lead", return_value="Checked a real remote-jobs feed - nothing new and small enough to draft right now."), \
+             mock.patch.object(self.f, "notify_ui", new=mock.AsyncMock()) as nui:
+            await self.f._maybe_freelance_search(ts(2026, 9, 20, 8, 0))
+        nui.assert_not_awaited()
+
+    async def test_freelance_search_runs_at_most_once_a_day(self):
+        with mock.patch.object(freelance, "find_lead", return_value="🧰 found one") as fl, \
+             mock.patch.object(self.f, "notify_ui", new=mock.AsyncMock()):
+            await self.f._maybe_freelance_search(ts(2026, 9, 20, 8, 0))
+            await self.f._maybe_freelance_search(ts(2026, 9, 20, 14, 0))
+        fl.assert_called_once()
 
     async def test_a_real_forge_autonomy_message_actually_gets_a_tappable_button(self):
         """End to end, through the real buttons.for_reply - not mocked - so a regression here fails loudly."""
