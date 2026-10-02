@@ -16,6 +16,7 @@ import spinnerModule from './spinner.js';
 import { openLibrary, closeLibrary, isLibraryOpen, initLibrary } from './documentLibrary.js';
 import signatureModule from './signature.js';
 import * as Modals from './modalManager.js';
+import { get, post, put, patch, del, apiRaw, ApiError } from './api.js';
 
   let API_BASE = '';
   let isOpen = false;
@@ -74,9 +75,7 @@ import * as Modals from './modalManager.js';
     const now = Date.now();
     if (_emailAccountsCache && (now - _emailAccountsCacheAt) < 30000) return _emailAccountsCache;
     try {
-      const res = await fetch(`${API_BASE}/api/email/accounts`, { credentials: 'same-origin' });
-      if (!res.ok) throw new Error('accounts failed');
-      const data = await res.json();
+      const data = await get(`${API_BASE}/api/email/accounts`);
       _emailAccountsCache = Array.isArray(data.accounts) ? data.accounts : [];
     } catch (_) {
       _emailAccountsCache = [];
@@ -588,11 +587,7 @@ import * as Modals from './modalManager.js';
     _dismissDocKb();   // export shouldn't leave the keyboard up
     await _saveActiveDocBeforeExport();
     try {
-      const r = await fetch(`${API_BASE}/api/document/${activeDocId}/export-pdf`);
-      if (!r.ok) {
-        const t = await r.text();
-        throw new Error(t || r.statusText);
-      }
+      const r = await apiRaw(`${API_BASE}/api/document/${activeDocId}/export-pdf`);
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -628,11 +623,7 @@ import * as Modals from './modalManager.js';
     const live = ta.value;
     if (live === doc.content) return;
     try {
-      await fetch(`${API_BASE}/api/document/${activeDocId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: live }),
-      });
+      await put(`${API_BASE}/api/document/${activeDocId}`, { content: live });
       doc.content = live;
     } catch (e) {
       console.warn('Pre-export save failed:', e);
@@ -672,12 +663,7 @@ import * as Modals from './modalManager.js';
 
     let fields = [];
     try {
-      const res = await fetch(`${API_BASE}/api/document/${activeDocId}/export-pdf/preview`, { method: 'POST' });
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(err || res.statusText);
-      }
-      const data = await res.json();
+      const data = await post(`${API_BASE}/api/document/${activeDocId}/export-pdf/preview`);
       fields = data.fields || [];
 
       const filledNow = data.filled || 0;
@@ -868,15 +854,10 @@ import * as Modals from './modalManager.js';
         downloadBtn.disabled = true;
         overlay.querySelector('#pdf-export-status').textContent = 'Building PDF…';
         try {
-          const r = await fetch(`${API_BASE}/api/document/${activeDocId}/export-pdf`, {
+          const r = await apiRaw(`${API_BASE}/api/document/${activeDocId}/export-pdf`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ values, signatures }),
+            body: { values, signatures },
           });
-          if (!r.ok) {
-            const t = await r.text();
-            throw new Error(t || r.statusText);
-          }
           const blob = await r.blob();
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -1023,12 +1004,7 @@ import * as Modals from './modalManager.js';
     if (ta) ta.value = prev;
     _setPdfSaveStatus('saving');
     try {
-      const res = await fetch(`${API_BASE}/api/document/${docId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: prev }),
-      });
-      if (!res.ok) throw new Error(res.statusText || String(res.status));
+      await put(`${API_BASE}/api/document/${docId}`, { content: prev });
       _setPdfSaveStatus('saved');
       _renderPdfPane();
       return true;
@@ -1117,9 +1093,7 @@ import * as Modals from './modalManager.js';
     if (savedPill) pane.appendChild(savedPill);
     let data;
     try {
-      const res = await fetch(`${API_BASE}/api/document/${docId}/render-pages`);
-      if (!res.ok) throw new Error(await res.text());
-      data = await res.json();
+      data = await get(`${API_BASE}/api/document/${docId}/render-pages`);
     } catch (e) {
       pane.innerHTML = `<div style="color:#fbb;padding:40px;text-align:center;">Failed to load PDF view: ${_escHtml(e.message || String(e))}</div>`;
       if (savedPill) pane.appendChild(savedPill);
@@ -1191,8 +1165,7 @@ import * as Modals from './modalManager.js';
               // Look up the signature data URL via the saved-list cache or fetch
               try {
                 if (!_sigCache.has(sigId)) {
-                  const r = await fetch(`${API_BASE}/api/signatures`);
-                  const data = await r.json();
+                  const data = await get(`${API_BASE}/api/signatures`);
                   for (const s of data.signatures || []) _sigCache.set(s.id, s.data_url);
                 }
                 const dataUrl = _sigCache.get(sigId);
@@ -1461,8 +1434,7 @@ import * as Modals from './modalManager.js';
         input.dataset.signatureId = sigId;
         try {
           if (!_sigCache.has(sigId)) {
-            const r = await fetch(`${API_BASE}/api/signatures`);
-            const data = await r.json();
+            const data = await get(`${API_BASE}/api/signatures`);
             for (const s of data.signatures || []) _sigCache.set(s.id, s.data_url);
           }
           const dataUrl = _sigCache.get(sigId);
@@ -1748,16 +1720,7 @@ import * as Modals from './modalManager.js';
     const btn = document.getElementById('doc-pdf-ai-fill-btn');
     if (btn) { btn.disabled = true; btn.textContent = 'Thinking…'; }
     try {
-      const res = await fetch(`${API_BASE}/api/document/${docId}/ai-fill-annotations`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instruction: instruction.trim() }),
-      });
-      if (!res.ok) {
-        const t = await res.text().catch(() => res.statusText);
-        throw new Error(t || res.statusText);
-      }
-      const data = await res.json();
+      const data = await post(`${API_BASE}/api/document/${docId}/ai-fill-annotations`, { instruction: instruction.trim() });
       const proposed = (data && data.annotations) || [];
       if (!proposed.length) {
         _setPdfSaveStatus('idle');
@@ -1783,15 +1746,7 @@ import * as Modals from './modalManager.js';
       doc.content = newMd;
       const ta = document.getElementById('doc-editor-textarea');
       if (ta) ta.value = newMd;
-      const r2 = await fetch(`${API_BASE}/api/document/${docId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: newMd }),
-      });
-      if (!r2.ok) {
-        const t = await r2.text().catch(() => r2.statusText);
-        throw new Error(t || r2.statusText);
-      }
+      await put(`${API_BASE}/api/document/${docId}`, { content: newMd });
       _setPdfSaveStatus('saved');
       if (uiModule && uiModule.showToast) uiModule.showToast(`AI added ${proposed.length} annotations`);
       _renderPdfPane();
@@ -1902,16 +1857,12 @@ import * as Modals from './modalManager.js';
     if (ta) ta.value = md;
     _setPdfSaveStatus('saving');
     try {
-      const res = await fetch(`${API_BASE}/api/document/${docId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: md }),
-        keepalive: !!opts.keepalive,
-      });
-      if (!res.ok) {
-        const t = await res.text().catch(() => res.statusText);
-        _setPdfSaveStatus('error', `Save failed: ${res.status}`);
-        console.warn('PDF-pane save HTTP error:', res.status, t);
+      try {
+        await put(`${API_BASE}/api/document/${docId}`, { content: md }, { keepalive: !!opts.keepalive });
+      } catch (e) {
+        const status = e instanceof ApiError ? e.status : '?';
+        _setPdfSaveStatus('error', `Save failed: ${status}`);
+        console.warn('PDF-pane save HTTP error:', status, e.message);
         return false;
       }
       _setPdfSaveStatus('saved');
@@ -2407,8 +2358,7 @@ import * as Modals from './modalManager.js';
             chip.addEventListener('click', () => _withSpinner(chip, async () => {
               try {
                 const folderQs = encodeURIComponent(fields.sourceFolder || 'INBOX');
-                const res = await fetch(`${API_BASE}/api/email/attachment-as-doc/${encodeURIComponent(fields.sourceUid)}/${att.index}?folder=${folderQs}`, { method: 'POST' });
-                const data = await res.json();
+                const data = await post(`${API_BASE}/api/email/attachment-as-doc/${encodeURIComponent(fields.sourceUid)}/${att.index}?folder=${folderQs}`);
                 if (data.doc_id) {
                   await loadDocument(data.doc_id);
                 } else if (uiModule) {
@@ -2434,8 +2384,7 @@ import * as Modals from './modalManager.js';
             chip.addEventListener('click', () => _withSpinner(chip, async () => {
               try {
                 const folderQs = encodeURIComponent(fields.sourceFolder || 'INBOX');
-                const res = await fetch(`${API_BASE}/api/email/attachment/${encodeURIComponent(fields.sourceUid)}/${att.index}?folder=${folderQs}`);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const res = await apiRaw(`${API_BASE}/api/email/attachment/${encodeURIComponent(fields.sourceUid)}/${att.index}?folder=${folderQs}`);
                 const blob = await res.blob();
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -2508,11 +2457,7 @@ import * as Modals from './modalManager.js';
       try {
         const fd = new FormData();
         fd.append('file', file);
-        const res = await fetch(`${API_BASE}/api/email/compose-upload`, {
-          method: 'POST',
-          body: fd,
-        });
-        const data = await res.json();
+        const data = await post(`${API_BASE}/api/email/compose-upload`, fd);
         if (data.success) {
           doc._composeAtts.push({
             token: data.token,
@@ -2560,7 +2505,7 @@ import * as Modals from './modalManager.js';
       chip.querySelector('.compose-chip-remove').addEventListener('click', async (e) => {
         e.stopPropagation();
         try {
-          await fetch(`${API_BASE}/api/email/compose-upload/${encodeURIComponent(att.token)}`, { method: 'DELETE' });
+          await del(`${API_BASE}/api/email/compose-upload/${encodeURIComponent(att.token)}`);
         } catch (_) {}
         const d = docs.get(activeDocId);
         if (d) d._composeAtts = d._composeAtts.filter(a => a.token !== att.token);
@@ -2608,8 +2553,7 @@ import * as Modals from './modalManager.js';
     const { fragment } = _splitRecipientsAndFragment(input.value);
     if (!fragment || fragment.length < 1) { sugg.style.display = 'none'; return; }
     try {
-      const res = await fetch(`${API_BASE}/api/contacts/search?q=${encodeURIComponent(fragment)}`);
-      const data = await res.json();
+      const data = await get(`${API_BASE}/api/contacts/search?q=${encodeURIComponent(fragment)}`);
       if (!data.results || data.results.length === 0) {
         sugg.style.display = 'none';
         return;
@@ -2854,18 +2798,13 @@ import * as Modals from './modalManager.js';
       if (uiModule) uiModule.showToast('Sending...', 2000);
 
       const activeAccountId = await _resolveComposeSendAccountId();
-      const res = await fetch(`${API_BASE}/api/email/send`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await post(`${API_BASE}/api/email/send`, {
           to, cc: cc || null, bcc: bcc || null, subject, body, body_html: bodyHtml,
           in_reply_to: inReplyTo || null, references: references || null,
           attachments: attachments.length > 0 ? attachments : null,
           account_id: activeAccountId,
           wait_for_delivery: true,
-        }),
-      });
-      const data = await res.json();
+        });
       if (data.success) {
         if (uiModule) {
           uiModule.showToast('Message sent', {
@@ -2896,16 +2835,11 @@ import * as Modals from './modalManager.js';
           const key = email.toLowerCase();
           if (_seenContacts.has(key)) continue;
           _seenContacts.add(key);
-          fetch(`${API_BASE}/api/contacts/add`, {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, email }),
-          }).catch(() => {});
+          post(`${API_BASE}/api/contacts/add`, { name, email }).catch(() => {});
         }
         // Mark the source email as answered if this was a reply
         if (sourceUid) {
-          fetch(`${API_BASE}/api/email/mark-answered/${sourceUid}?folder=${encodeURIComponent(sourceFolder)}`, { method: 'POST' }).catch(() => {});
+          post(`${API_BASE}/api/email/mark-answered/${sourceUid}?folder=${encodeURIComponent(sourceFolder)}`).catch(() => {});
           // Tell the inbox to refresh so the answered state shows
           window.dispatchEvent(new CustomEvent('email-answered', { detail: { uid: sourceUid } }));
         }
@@ -2913,7 +2847,7 @@ import * as Modals from './modalManager.js';
         // already detached from the visible tabs so sending can finish in the
         // background while the user continues in the next tab.
         if (sendDocId) {
-          fetch(`${API_BASE}/api/document/${sendDocId}`, { method: 'DELETE' }).catch(() => {});
+          del(`${API_BASE}/api/document/${sendDocId}`).catch(() => {});
           const wasActiveSentDoc = activeDocId === sendDocId;
           docs.delete(sendDocId);
           if (wasActiveSentDoc) {
@@ -2959,11 +2893,7 @@ import * as Modals from './modalManager.js';
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 18000);
     try {
-      const res = await fetch(`${API_BASE}/api/email/draft`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-        body: JSON.stringify({
+      const data = await post(`${API_BASE}/api/email/draft`, {
           to: to || '',
           cc: cc || null,
           bcc: bcc || null,
@@ -2973,9 +2903,7 @@ import * as Modals from './modalManager.js';
           in_reply_to: inReplyTo || null,
           references: references || null,
           account_id: window.__aurixActiveEmailAccount || null,
-        }),
-      });
-      const data = await res.json();
+        });
       if (data.success) {
         if (uiModule) uiModule.showToast('Draft saved to mailbox');
       } else {
@@ -3041,7 +2969,7 @@ import * as Modals from './modalManager.js';
   function _closeWithoutDeleting(deleteDoc = false) {
     if (!activeDocId) return;
     if (deleteDoc) {
-      fetch(`${API_BASE}/api/document/${activeDocId}`, { method: 'DELETE' }).catch(() => {});
+      del(`${API_BASE}/api/document/${activeDocId}`).catch(() => {});
     }
     // Save the current state to the doc first so it persists in the library
     saveCurrentToMap();
@@ -3077,18 +3005,13 @@ import * as Modals from './modalManager.js';
     if (btn) { btn.disabled = true; btn.innerHTML = '<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px;margin-right:3px"><path d="M12 0L14.59 8.41L23 12L14.59 15.59L12 24L9.41 15.59L1 12L9.41 8.41Z"/></svg>Drafting...'; }
 
     try {
-      const res = await fetch(`${API_BASE}/api/email/ai-reply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const data = await post(`${API_BASE}/api/email/ai-reply`, {
           to: to,
           subject: subject,
           original_body: currentBody,
           model: currentModel,
           session_id: currentSessionId,
-        }),
-      });
-      const data = await res.json();
+        });
       if (data.success && data.reply) {
         const lines = currentBody.split('\n');
         const quoteIdx = lines.findIndex(l => l.startsWith('On ') && l.includes(' wrote:'));
@@ -3220,19 +3143,14 @@ import * as Modals from './modalManager.js';
       const utcIso = new Date(localDt).toISOString();
       try {
         const activeAccountId = await _resolveComposeSendAccountId();
-        const res = await fetch(`${API_BASE}/api/email/schedule`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        const data = await post(`${API_BASE}/api/email/schedule`, {
             to, cc: cc || null, bcc: bcc || null, subject, body,
             in_reply_to: inReplyTo || null,
             references: references || null,
             attachments: attachments.length > 0 ? attachments : null,
             send_at: utcIso,
             account_id: activeAccountId,
-          }),
-        });
-        const data = await res.json();
+          });
         if (data.success) {
           if (uiModule) uiModule.showToast(`Scheduled for ${new Date(localDt).toLocaleString()}`);
           cleanup();
@@ -3252,7 +3170,7 @@ import * as Modals from './modalManager.js';
     const sourceFolder = document.getElementById('doc-email-source-folder')?.value || 'INBOX';
     if (sourceUid) {
       try {
-        await fetch(`${API_BASE}/api/email/mark-unread/${sourceUid}?folder=${encodeURIComponent(sourceFolder)}`, { method: 'POST' });
+        await post(`${API_BASE}/api/email/mark-unread/${sourceUid}?folder=${encodeURIComponent(sourceFolder)}`);
       } catch (e) { console.error('Failed to mark unread:', e); }
     }
     _discardEmail();
@@ -3271,7 +3189,7 @@ import * as Modals from './modalManager.js';
     if (prevId && prevId !== docId && docs.has(prevId)) {
       const prev = docs.get(prevId);
       if (!(prev.content || '').trim() && !(prev.title || '').trim()) {
-        fetch(`${API_BASE}/api/document/${prevId}`, { method: 'DELETE' }).catch(() => {});
+        del(`${API_BASE}/api/document/${prevId}`).catch(() => {});
         docs.delete(prevId);
         _syncDocIndicator();
       }
@@ -3324,20 +3242,17 @@ import * as Modals from './modalManager.js';
       doc._ocrTriggered = true;
       (async () => {
         try {
-          const r = await fetch(`${API_BASE}/api/document/${docId}/extract-pdf-text`, { method: 'POST', credentials: 'same-origin' });
-          if (!r.ok) return;
-          const j = await r.json().catch(() => ({}));
+          const j = await post(`${API_BASE}/api/document/${docId}/extract-pdf-text`).catch(() => ({}));
           if (j && j.extracted) {
             // Pull the fresh content into the local cache so subsequent AI
             // turns and the source view both reflect the extraction.
-            const dr = await fetch(`${API_BASE}/api/document/${docId}`, { credentials: 'same-origin' });
-            if (dr.ok) {
-              const full = await dr.json();
+            try {
+              const full = await get(`${API_BASE}/api/document/${docId}`);
               const cached = docs.get(docId);
               if (cached && full && full.current_content) {
                 cached.content = full.current_content;
               }
-            }
+            } catch (_) {}
           }
         } catch (_) {}
       })();
@@ -3405,15 +3320,11 @@ import * as Modals from './modalManager.js';
     const doc = docs.get(docId);
     const hasContent = doc && doc.content && doc.content.trim().length > 0;
     if (hasContent) {
-      fetch(`${API_BASE}/api/document/${docId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: '' }),
-      }).then(() => {
+      patch(`${API_BASE}/api/document/${docId}`, { session_id: '' }).then(() => {
         if (toast && uiModule) uiModule.showToast('Document unlinked from session');
       }).catch(() => {});
     } else {
-      fetch(`${API_BASE}/api/document/${docId}`, { method: 'DELETE' }).catch(() => {});
+      del(`${API_BASE}/api/document/${docId}`).catch(() => {});
     }
     docs.delete(docId);
     _syncDocIndicator();
@@ -3460,12 +3371,7 @@ import * as Modals from './modalManager.js';
       if (!sessionId) {
         sessionId = await _autoCreateSession();
       }
-      const res = await fetch(`${API_BASE}/api/document`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId, title: '', content }),
-      });
-      const doc = await res.json();
+      const doc = await post(`${API_BASE}/api/document`, { session_id: sessionId, title: '', content });
       addDocToTabs(doc, sessionId);
       // Set the content into the map so switchToDoc preserves it
       const d = docs.get(doc.id);
@@ -4397,9 +4303,7 @@ import * as Modals from './modalManager.js';
 
       // Fetch version history and compare against previous version
       try {
-        const res = await fetch(`${API_BASE}/api/document/${activeDocId}/versions`);
-        if (!res.ok) throw new Error('Failed');
-        const versions = await res.json();
+        const versions = await get(`${API_BASE}/api/document/${activeDocId}/versions`);
         if (versions.length < 2) {
           if (uiModule) uiModule.showToast('No previous version to compare');
           return;
@@ -5606,17 +5510,12 @@ import * as Modals from './modalManager.js';
     // instead of letting switchToDoc blank it.
     const wasEmpty = !activeDocId;
     try {
-      const res = await fetch(`${API_BASE}/api/document`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const doc = await post(`${API_BASE}/api/document`, {
           session_id: sessionId,
           title: '',
           content: '',
           language: 'markdown',
-        }),
-      });
-      const doc = await res.json();
+        });
       addDocToTabs(doc, sessionId);
       if (!isOpen) openPanel();
       // Re-enable editor if it was in empty state
@@ -5689,9 +5588,7 @@ import * as Modals from './modalManager.js';
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/api/document/${docId}`);
-      if (!res.ok) throw new Error('Not found');
-      const doc = await res.json();
+      const doc = await get(`${API_BASE}/api/document/${docId}`);
       addDocToTabs(doc, doc.session_id);
       _ensureDocPaneMounted();
       switchToDoc(doc.id);
@@ -5736,9 +5633,7 @@ import * as Modals from './modalManager.js';
       fd.append('model', match.model);
       if (match.endpoint_id) fd.append('endpoint_id', match.endpoint_id);
     }
-    const res = await fetch(`${API_BASE}/api/session`, { method: 'POST', body: fd });
-    if (!res.ok) throw new Error('Session create failed');
-    const payload = await res.json();
+    const payload = await post(`${API_BASE}/api/session`, fd);
     const sessionId = payload.id;
     _lastSessionId = sessionId;
     // Tell sessions module so chat uses the same session
@@ -5766,8 +5661,7 @@ import * as Modals from './modalManager.js';
     if (isOpen) _showLoadingOverlay();
 
     try {
-      const res = await fetch(`${API_BASE}/api/documents/${sessionId}`);
-      const allDocs = await res.json();
+      const allDocs = await get(`${API_BASE}/api/documents/${sessionId}`);
       _hideLoadingOverlay();
       // Only load active docs
       const activeDocs = allDocs.filter(d => d.is_active);
@@ -7590,19 +7484,16 @@ import * as Modals from './modalManager.js';
     if (uiModule) uiModule.showToast('Preparing signed reply…');
     let result;
     try {
-      const res = await fetch(`${API_BASE}/api/document/${encodeURIComponent(docId)}/prepare-signed-reply`, {
-        method: 'POST',
-        credentials: 'same-origin',
-      });
-      result = await res.json().catch(() => ({}));
-      if (!res.ok || !result.ok) {
-        const msg = (result && result.error) || `HTTP ${res.status}`;
+      result = await post(`${API_BASE}/api/document/${encodeURIComponent(docId)}/prepare-signed-reply`);
+      if (!result.ok) {
+        const msg = (result && result.error) || 'Request failed';
         if (uiModule) uiModule.showError(`Couldn't prepare signed reply: ${msg}`);
         return;
       }
     } catch (e) {
       console.error('prepare-signed-reply failed:', e);
-      if (uiModule) uiModule.showError("Couldn't prepare signed reply");
+      const msg = e instanceof ApiError ? (e.detail || `HTTP ${e.status}`) : e.message;
+      if (uiModule) uiModule.showError(`Couldn't prepare signed reply: ${typeof msg === 'string' ? msg : 'request failed'}`);
       return;
     }
 
@@ -7641,18 +7532,12 @@ import * as Modals from './modalManager.js';
       if (!sessionId) {
         try { sessionId = await _autoCreateSession(); } catch (_) {}
       }
-      const cRes = await fetch(`${API_BASE}/api/document`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'same-origin',
-        body: JSON.stringify({
+      const created = await post(`${API_BASE}/api/document`, {
           session_id: sessionId,
           title: reply.subject || 'Signed reply',
           language: 'email',
           content,
-        }),
-      });
-      const created = await cRes.json();
+        });
       draftId = created && (created.id || created.doc_id);
       if (!draftId) throw new Error('No draft id returned');
     } catch (e) {
@@ -7689,12 +7574,7 @@ import * as Modals from './modalManager.js';
     if (!textarea) return;
 
     try {
-      const res = await fetch(`${API_BASE}/api/document/${activeDocId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content: textarea.value }),
-      });
-      const doc = await res.json();
+      const doc = await put(`${API_BASE}/api/document/${activeDocId}`, { content: textarea.value });
       const badge = document.getElementById('doc-version-badge');
       if (badge) { const _v = doc.version_count || 1; badge.textContent = `v${_v}`; badge.style.display = _v > 1 ? '' : 'none'; }
       // Update map
@@ -7813,9 +7693,7 @@ import * as Modals from './modalManager.js';
           fd.append('file', file);
           const sid = (sessionModule && sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId()) || _lastSessionId || '';
           if (sid) fd.append('session_id', sid);
-          const r = await fetch(`${API_BASE}/api/documents/import-pdf`, { method: 'POST', body: fd, credentials: 'same-origin' });
-          if (!r.ok) throw new Error('PDF import failed');
-          const j = await r.json();
+          const j = await post(`${API_BASE}/api/documents/import-pdf`, fd);
           docId = j.doc_id || j.id;
         } else {
           const content = await new Promise((res, rej) => {
@@ -7828,22 +7706,14 @@ import * as Modals from './modalManager.js';
           const sid = (sessionModule && sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId()) || _lastSessionId || '';
           const body = { title: baseTitle, language: lang, content };
           if (sid) body.session_id = sid;
-          const r = await fetch(`${API_BASE}/api/document`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify(body),
-          });
-          if (!r.ok) throw new Error('Import failed');
-          const j = await r.json();
+          const j = await post(`${API_BASE}/api/document`, body);
           docId = j.id || j.doc_id;
         }
         if (docId) {
           // Fetch the full doc so addDocToTabs has the proper content +
           // language fields (it's used downstream by switchToDoc).
           try {
-            const dr = await fetch(`${API_BASE}/api/document/${docId}`, { credentials: 'same-origin' });
-            const full = dr.ok ? await dr.json() : { id: docId, title: baseTitle };
+            const full = await get(`${API_BASE}/api/document/${docId}`).catch(() => ({ id: docId, title: baseTitle }));
             const sid = (sessionModule && sessionModule.getCurrentSessionId && sessionModule.getCurrentSessionId()) || _lastSessionId || '';
             addDocToTabs(full, full.session_id || sid);
             switchToDoc(full.id || docId);
@@ -8069,8 +7939,7 @@ import * as Modals from './modalManager.js';
       : confirm(`Delete "${name}"?`);
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/api/document/${activeDocId}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Delete failed');
+      await del(`${API_BASE}/api/document/${activeDocId}`);
       // Remove tab
       const tab = document.querySelector(`.doc-tab[data-doc-id="${activeDocId}"]`);
       if (tab) tab.remove();
@@ -9060,8 +8929,7 @@ import * as Modals from './modalManager.js';
     if (!list) return;
 
     try {
-      const res = await fetch(`${API_BASE}/api/document/${activeDocId}/versions`);
-      const versions = await res.json();
+      const versions = await get(`${API_BASE}/api/document/${activeDocId}/versions`);
 
       // Build diff summaries between consecutive versions
       const diffs = [];
@@ -9112,8 +8980,7 @@ import * as Modals from './modalManager.js';
   async function previewVersion(num) {
     if (!activeDocId) return;
     try {
-      const res = await fetch(`${API_BASE}/api/document/${activeDocId}/version/${num}`);
-      const ver = await res.json();
+      const ver = await get(`${API_BASE}/api/document/${activeDocId}/version/${num}`);
       const textarea = document.getElementById('doc-editor-textarea');
       if (textarea) textarea.value = ver.content || '';
       syncHighlighting();
@@ -9126,10 +8993,7 @@ import * as Modals from './modalManager.js';
   async function restoreVersion(num) {
     if (!activeDocId) return;
     try {
-      const res = await fetch(`${API_BASE}/api/document/${activeDocId}/restore/${num}`, {
-        method: 'POST',
-      });
-      const doc = await res.json();
+      const doc = await post(`${API_BASE}/api/document/${activeDocId}/restore/${num}`);
       populateEditor(doc);
       // Clear stash — restored content IS the new latest
       _versionSavedContent = null;
@@ -9154,11 +9018,7 @@ import * as Modals from './modalManager.js';
     const title = overrideTitle || document.getElementById('doc-title-input')?.value;
     if (!title) return;
     try {
-      await fetch(`${API_BASE}/api/document/${docId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title }),
-      });
+      await patch(`${API_BASE}/api/document/${docId}`, { title });
       if (docs.has(docId)) {
         docs.get(docId).title = title;
         renderTabs();
@@ -9221,11 +9081,7 @@ import * as Modals from './modalManager.js';
     const select = document.getElementById('doc-language-select');
     if (!select) return;
     try {
-      await fetch(`${API_BASE}/api/document/${activeDocId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ language: select.value }),
-      });
+      await patch(`${API_BASE}/api/document/${activeDocId}`, { language: select.value });
       if (docs.has(activeDocId)) {
         docs.get(activeDocId).language = select.value;
         renderTabs();

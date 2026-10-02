@@ -5,6 +5,7 @@ import uiModule from './ui.js';
 import settingsModule from './settings.js';
 import { providerLogo } from './providers.js';
 import { sortModelObjects } from './modelSort.js';
+import { get, post, put, patch, del, apiRaw, ApiError } from './api.js';
 
 let initialized = false;
 let modalEl = null;
@@ -32,9 +33,14 @@ const PRIV_LABELS = {
 async function loadUsers() {
   const list = el('adm-userList');
   try {
-    const res = await fetch('/api/auth/users', { credentials: 'same-origin' });
-    if (res.status === 401 || res.status === 403) { list.innerHTML = '<div class="admin-empty">Access denied</div>'; return; }
-    const data = await res.json();
+    const data = await get('/api/auth/users', { redirectOnAuth: false }).catch(e => {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        list.innerHTML = '<div class="admin-empty">Access denied</div>';
+        return null;
+      }
+      throw e;
+    });
+    if (!data) return;
     if (!data.users || data.users.length === 0) { list.innerHTML = '<div class="admin-empty">No users found</div>'; return; }
     list.innerHTML = '';
     data.users.forEach(u => {
@@ -133,11 +139,7 @@ async function loadUsers() {
             else if (input.type === 'number') value = parseInt(input.value) || 0;
             else value = input.value;
             try {
-              await fetch(`/api/auth/users/${encodeURIComponent(username)}/privileges`, {
-                method: 'PUT', credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ [key]: value }),
-              });
+              await put(`/api/auth/users/${encodeURIComponent(username)}/privileges`, { [key]: value });
             } catch (e) { uiModule.showError('Failed to update privilege'); }
           };
           if (input.type === 'checkbox') input.addEventListener('change', handler);
@@ -159,15 +161,11 @@ async function loadUsers() {
           const username = (next || '').trim();
           if (!username || username === oldUsername) return;
           try {
-            const res = await fetch(`/api/auth/users/${encodeURIComponent(oldUsername)}/rename`, {
-              method: 'PUT',
-              credentials: 'same-origin',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ username }),
-            });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-              uiModule.showError(data.detail || 'Failed to rename user');
+            let data = {};
+            try {
+              data = (await put(`/api/auth/users/${encodeURIComponent(oldUsername)}/rename`, { username })) || {};
+            } catch (e) {
+              uiModule.showError((e instanceof ApiError && e.detail) || 'Failed to rename user');
               return;
             }
             if (data.renamed_self) {
@@ -188,9 +186,10 @@ async function loadUsers() {
           e.stopPropagation();
           const username = delBtn.dataset.admDelUser;
           if (!await uiModule.styledConfirm(`Remove user "${username}"?`, { confirmText: 'Remove', danger: true })) return;
-          const res = await fetch('/api/auth/users', { method: 'DELETE', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username }) });
-          if (res.ok) loadUsers();
-          else uiModule.showError('Failed to delete user');
+          try {
+            await del('/api/auth/users', { body: { username } });
+            loadUsers();
+          } catch (e) { uiModule.showError('Failed to delete user'); }
         });
       }
 
@@ -203,8 +202,7 @@ async function _loadModelsForUser(username, allowedSet, privPanel) {
   const listEl = privPanel.querySelector(`.priv-models-list[data-user="${username}"]`);
   if (!listEl) return;
   try {
-    const res = await fetch('/api/models', { credentials: 'same-origin' });
-    const data = await res.json();
+    const data = await get('/api/models');
     const allModels = [];
     (data.items || []).forEach(item => {
       if (item.offline) return;
@@ -236,11 +234,7 @@ async function _loadModelsForUser(username, allowedSet, privPanel) {
       const value = checked.length === allModels.length ? [] : checked;
       const hint = privPanel.querySelector('.priv-models-list[data-user]')?.previousElementSibling?.querySelector('div[style*="opacity"]');
       if (hint) hint.textContent = value.length === 0 ? 'All models allowed (no restrictions)' : value.length + ' model(s) allowed';
-      fetch(`/api/auth/users/${encodeURIComponent(username)}/privileges`, {
-        method: 'PUT', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ allowed_models: value }),
-      }).catch(() => {});
+      put(`/api/auth/users/${encodeURIComponent(username)}/privileges`, { allowed_models: value }).catch(() => {});
     }
     listEl.querySelectorAll('.priv-model-cb').forEach(cb => cb.addEventListener('change', _saveModels));
 
@@ -262,14 +256,12 @@ async function _loadModelsForUser(username, allowedSet, privPanel) {
 
 function initSignupToggle() {
   const toggle = el('adm-signupToggle');
-  fetch('/api/auth/status', { credentials: 'same-origin' })
-    .then(r => r.json())
+  get('/api/auth/status')
     .then(d => { toggle.checked = !!d.signup_enabled; })
     .catch(e => console.warn('Auth status fetch failed:', e));
   toggle.addEventListener('change', async () => {
     try {
-      const res = await fetch('/api/auth/signup-toggle', { method: 'POST', credentials: 'same-origin' });
-      const data = await res.json();
+      const data = await post('/api/auth/signup-toggle');
       toggle.checked = data.signup_enabled;
     } catch (e) { toggle.checked = !toggle.checked; }
   });
@@ -286,11 +278,9 @@ function initAddUser() {
     if (password.length < 8) { msg.textContent = 'Password must be at least 8 characters'; msg.className = 'admin-error'; return; }
     el('adm-addBtn').disabled = true;
     try {
-      const res = await fetch('/api/auth/users', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password, is_admin }) });
-      const data = await res.json();
-      if (res.ok) { msg.textContent = 'User created'; msg.className = 'admin-success'; el('adm-newUsername').value = ''; el('adm-newPassword').value = ''; el('adm-newIsAdmin').checked = false; loadUsers(); }
-      else { msg.textContent = data.detail || 'Failed'; msg.className = 'admin-error'; }
-    } catch (e) { msg.textContent = 'Request failed'; msg.className = 'admin-error'; }
+      await post('/api/auth/users', { username, password, is_admin });
+      msg.textContent = 'User created'; msg.className = 'admin-success'; el('adm-newUsername').value = ''; el('adm-newPassword').value = ''; el('adm-newIsAdmin').checked = false; loadUsers();
+    } catch (e) { msg.textContent = (e instanceof ApiError && e.detail) || 'Request failed'; msg.className = 'admin-error'; }
     el('adm-addBtn').disabled = false;
   });
 }
@@ -382,15 +372,12 @@ async function loadEndpoints() {
     settingsModule.refreshAiModelEndpoints();
   }
   try {
-    const res = await fetch('/api/model-endpoints', { credentials: 'same-origin' });
     // Treat a non-OK response (e.g. 401/403 for non-admins, or backend
     // returning an error envelope) the same as "no endpoints yet": show the
     // empty state, not "Failed to load". The user just installed the app —
     // there's literally nothing to load, so the error read as broken UI.
     let data = [];
-    if (res.ok) {
-      try { data = await res.json(); } catch { data = []; }
-    }
+    try { data = await get('/api/model-endpoints'); } catch { data = []; }
     if (!Array.isArray(data) || data.length === 0) {
       const empty = '<div class="admin-empty">None</div>';
       if (listLocal) listLocal.innerHTML = empty;
@@ -464,7 +451,7 @@ async function loadEndpoints() {
       return out;
     };
     queryAll('[data-adm-toggle-ep]').forEach(btn => {
-      btn.addEventListener('click', async (e) => { e.stopPropagation(); await fetch(`/api/model-endpoints/${btn.dataset.admToggleEp}`, { method: 'PATCH' }); loadEndpoints(); });
+      btn.addEventListener('click', async (e) => { e.stopPropagation(); await patch(`/api/model-endpoints/${btn.dataset.admToggleEp}`); loadEndpoints(); });
     });
     queryAll('[data-adm-copy-url]').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -492,8 +479,7 @@ async function loadEndpoints() {
         if (!isOffline) {
           var deps = [];
           try {
-            var depRes = await fetch('/api/model-endpoints/' + epId + '/dependents', { credentials: 'same-origin' });
-            var depData = await depRes.json();
+            var depData = await get('/api/model-endpoints/' + epId + '/dependents');
             deps = depData.dependents || [];
           } catch (e) { /* proceed without warning */ }
           var msg = 'Delete this endpoint?';
@@ -505,7 +491,7 @@ async function loadEndpoints() {
         // Optimistic: remove from UI immediately
         const row = btn.closest('[data-adm-ep-id]');
         if (row) row.remove();
-        fetch('/api/model-endpoints/' + epId, { method: 'DELETE' })
+        del('/api/model-endpoints/' + epId)
           .then(() => _refreshAfterEndpointChange(epId))
           .then(() => loadEndpoints())
           .catch(() => loadEndpoints());
@@ -553,8 +539,7 @@ async function loadEndpoints() {
           panel.appendChild(_ld);
           const _stopSpin = () => { try { _modelsSpin && _modelsSpin.stop(); } catch (_) {} };
           try {
-            const res = await fetch(`/api/model-endpoints/${epId}/models`, { credentials: 'same-origin' });
-            const models = await res.json();
+            const models = await get(`/api/model-endpoints/${epId}/models`);
             _stopSpin();
             const sortedModels = sortModelObjects(models);
             if (!sortedModels.length) { panel.innerHTML = '<span style="opacity:0.5;font-size:11px;">No models</span>'; return; }
@@ -615,12 +600,7 @@ async function _saveEpModelState(epId, panel) {
   });
   const total = panel.querySelectorAll('input[type=checkbox]').length;
   try {
-    await fetch(`/api/model-endpoints/${epId}/models`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ hidden }),
-    });
+    await patch(`/api/model-endpoints/${epId}/models`, { hidden });
     const countLabel = panel.querySelector('.mcp-tools-count');
     if (countLabel) countLabel.textContent = `${total - hidden.length}/${total} enabled`;
     const row = panel.closest('[data-adm-ep-id]');
@@ -735,22 +715,19 @@ function initEndpointForm() {
 
   async function _defaultOllamaUrl() {
     try {
-      const res = await fetch('/api/runtime', { credentials: 'same-origin' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.ollama_base_url) return data.ollama_base_url;
-      }
+      const data = await get('/api/runtime');
+      if (data && data.ollama_base_url) return data.ollama_base_url;
     } catch (_) {}
     return 'http://127.0.0.1:11434/v1';
   }
 
-  function _renderEndpointTestResult(msg, res, d) {
-    if (res.ok && d.status === 'empty') {
+  function _renderEndpointTestResult(msg, ok, d) {
+    if (ok && d.status === 'empty') {
       msg.textContent = 'Online — no models found';
       msg.className = 'admin-success';
       return;
     }
-    if (res.ok && d.online) {
+    if (ok && d.online) {
       const models = d.models || [];
       const preview = models.slice(0, 3).map(m => esc(String(m).split('/').pop())).join(', ');
       msg.innerHTML = `Online — found ${models.length} model${models.length !== 1 ? 's' : ''}${preview ? `: ${preview}${models.length > 3 ? ', …' : ''}` : ''}`;
@@ -785,16 +762,10 @@ function initEndpointForm() {
         const fd = new FormData();
         fd.append('base_url', url);
         if (apiKey) fd.append('api_key', apiKey);
-        const res = await fetch('/api/model-endpoints/test', {
-          method: 'POST',
-          body: fd,
-          credentials: 'same-origin',
-          signal: apiTestController.signal,
-        });
-        const d = await res.json();
-        _renderEndpointTestResult(msg, res, d);
+        const d = await post('/api/model-endpoints/test', fd, { signal: apiTestController.signal });
+        _renderEndpointTestResult(msg, true, d);
       } catch (e) {
-        if (e && e.name === 'AbortError') {
+        if (apiTestController && apiTestController.signal.aborted) {
           msg.textContent = 'Test canceled';
           msg.className = '';
         } else {
@@ -836,9 +807,8 @@ function initEndpointForm() {
       if (epType) fd.append('model_type', epType.value);
       if (provider.value && /openrouter\.ai|ollama\.com/i.test(provider.value)) fd.append('require_models', 'true');
       else fd.append('skip_probe', 'false');
-      const res = await fetch('/api/model-endpoints', { method: 'POST', body: fd, credentials: 'same-origin' });
-      const d = await res.json();
-      if (res.ok) {
+      try {
+        const d = await post('/api/model-endpoints', fd);
         const count = d.models ? d.models.length : 0;
         urlInput.value = ''; urlInput.style.display = '';
         el('adm-epApiKey').value = ''; provider.value = '';
@@ -856,8 +826,10 @@ function initEndpointForm() {
           msg.textContent = `Added — found ${count} model${count !== 1 ? 's' : ''}`;
           msg.className = 'admin-success';
         }
-      } else { msg.textContent = d.detail || 'Failed'; msg.className = 'admin-error'; }
-    } catch (e) { msg.textContent = 'Request failed'; msg.className = 'admin-error'; }
+      } catch (e) {
+        msg.textContent = (e instanceof ApiError && e.detail) || 'Request failed';
+        msg.className = 'admin-error';
+      }
     btn.disabled = false; btn.textContent = 'Add';
   });
 
@@ -876,9 +848,8 @@ function initEndpointForm() {
       try {
         const fd = new FormData();
         fd.append('base_url', url);
-        const res = await fetch('/api/model-endpoints/test', { method: 'POST', body: fd, credentials: 'same-origin' });
-        const d = await res.json();
-        _renderEndpointTestResult(msg, res, d);
+        const d = await post('/api/model-endpoints/test', fd);
+        _renderEndpointTestResult(msg, true, d);
       } catch (e) {
         msg.textContent = 'Test failed: ' + (e && e.message ? e.message : 'request failed');
         msg.className = 'admin-error';
@@ -901,9 +872,8 @@ function initEndpointForm() {
         const lt = el('adm-epLocalType');
         if (lt) fd.append('model_type', lt.value);
         fd.append('skip_probe', 'false');
-        const res = await fetch('/api/model-endpoints', { method: 'POST', body: fd, credentials: 'same-origin' });
-        const d = await res.json();
-        if (res.ok) {
+        try {
+          const d = await post('/api/model-endpoints', fd);
           el('adm-epLocalUrl').value = '';
           if (lt) lt.value = 'llm';
           if (d.id) _recentlyAddedEpId = String(d.id);
@@ -916,8 +886,10 @@ function initEndpointForm() {
             ? `Added — found ${count} model${count !== 1 ? 's' : ''}`
             : 'Added (offline — will retry on next load)';
           msg.className = d.online ? 'admin-success' : 'admin-error';
-        } else { msg.textContent = d.detail || 'Failed'; msg.className = 'admin-error'; }
-      } catch (e) { msg.textContent = 'Request failed'; msg.className = 'admin-error'; }
+        } catch (e) {
+          msg.textContent = (e instanceof ApiError && e.detail) || 'Request failed';
+          msg.className = 'admin-error';
+        }
       localAddBtn.disabled = false; localAddBtn.textContent = 'Add';
     });
   }
@@ -964,8 +936,7 @@ function initEndpointForm() {
         discoverBtn._wp = wp;
       } catch(e) { msg.textContent = 'Scanning...'; }
       try {
-        const res = await fetch('/api/discover');
-        const data = await res.json();
+        const data = await get('/api/discover');
         const items = data.items || [];
         if (!items.length) {
           msg.textContent = 'No model servers found. Make sure vLLM, llama.cpp, SGLang, or Ollama is running. Docker users may need OLLAMA_HOST=0.0.0.0:11434.';
@@ -980,13 +951,14 @@ function initEndpointForm() {
             const fd = new FormData();
             fd.append('base_url', base);
             fd.append('skip_probe', 'false');
-            const r = await fetch('/api/model-endpoints', { method: 'POST', body: fd });
-            if (r.ok) {
-              try {
-                const dd = await r.json();
-                if (dd && dd.existing) { skipped++; }
-                else { added++; if (dd && dd.id) _recentlyAddedEpId = String(dd.id); }
-              } catch (_) { added++; }
+            try {
+              const dd = await post('/api/model-endpoints', fd);
+              if (dd && dd.existing) { skipped++; }
+              else { added++; if (dd && dd.id) _recentlyAddedEpId = String(dd.id); }
+            } catch (e) {
+              // HTTP error: skip silently (matches old `if (r.ok)` guard);
+              // network/parse failure: count as attempted.
+              if (!(e instanceof ApiError) || !e.status) added++;
             }
           }
           const totalModels = items.reduce((n, i) => n + (i.models ? i.models.length : 0), 0);
@@ -1176,8 +1148,7 @@ async function loadBuiltinTools() {
   const list = el('adm-builtin-tools-list');
   if (!list) return;
   try {
-    const res = await fetch('/api/tools', { credentials: 'same-origin' });
-    const data = await res.json();
+    const data = await get('/api/tools');
     const tools = data.tools || [];
     if (!tools.length) { list.innerHTML = '<div class="admin-empty">No tools found</div>'; return; }
 
@@ -1256,12 +1227,7 @@ async function loadBuiltinTools() {
       const allChecks = list.querySelectorAll('input[data-tool-id]');
       const disabled = [];
       allChecks.forEach(c => { if (!c.checked) disabled.push(c.dataset.toolId); });
-      await fetch('/api/tools', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ disabled }),
-        credentials: 'same-origin',
-      });
+      await post('/api/tools', { disabled });
     }
     function _updateCatCounter(catEl) {
       if (!catEl) return;
@@ -1302,8 +1268,7 @@ async function loadMcpServers() {
   const list = el('adm-mcpList');
   if (!list) return;  // MCP section not visible / not yet rendered
   try {
-    const res = await fetch('/api/mcp/servers', { credentials: 'same-origin' });
-    const servers = await res.json();
+    const servers = await get('/api/mcp/servers');
     if (!servers.length) { list.innerHTML = '<div class="admin-empty">No MCP servers configured</div>'; return; }
     list.innerHTML = servers.map(s => {
       const statusColor = s.needs_oauth ? '#e5a33a' : s.status === 'connected' ? 'var(--fg)' : s.status === 'error' ? 'var(--red)' : 'color-mix(in srgb, var(--fg) 50%, transparent)';
@@ -1332,8 +1297,7 @@ async function loadMcpServers() {
       btn.addEventListener('click', async () => {
         const msg = el('adm-mcpMsg'); msg.textContent = 'Reconnecting...'; msg.className = '';
         try {
-          const res = await fetch(`/api/mcp/servers/${btn.dataset.admMcpReconnect}/reconnect`, { method: 'POST', credentials: 'same-origin' });
-          const data = await res.json();
+          const data = await post(`/api/mcp/servers/${btn.dataset.admMcpReconnect}/reconnect`);
           msg.textContent = data.connected ? `Reconnected (${data.tool_count} tools)` : `Failed: ${data.error || 'unknown'}`;
           msg.className = data.connected ? 'admin-success' : 'admin-error';
           loadMcpServers();
@@ -1343,14 +1307,14 @@ async function loadMcpServers() {
     list.querySelectorAll('[data-adm-mcp-toggle]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const fd = new FormData(); fd.append('is_enabled', btn.dataset.admMcpEnable);
-        await fetch(`/api/mcp/servers/${btn.dataset.admMcpToggle}`, { method: 'PATCH', body: fd, credentials: 'same-origin' });
+        await patch(`/api/mcp/servers/${btn.dataset.admMcpToggle}`, fd);
         loadMcpServers();
       });
     });
     list.querySelectorAll('[data-adm-mcp-delete]').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!await uiModule.styledConfirm('Delete this MCP server?', { confirmText: 'Delete', danger: true })) return;
-        await fetch(`/api/mcp/servers/${btn.dataset.admMcpDelete}`, { method: 'DELETE', credentials: 'same-origin' });
+        await del(`/api/mcp/servers/${btn.dataset.admMcpDelete}`);
         loadMcpServers();
       });
     });
@@ -1376,8 +1340,7 @@ async function loadMcpServers() {
           _toolsLoaded = true;
           panel.innerHTML = '<span style="opacity:0.5;font-size:11px;">Loading tools...</span>';
           try {
-            const res = await fetch(`/api/mcp/servers/${sid}/tools`, { credentials: 'same-origin' });
-            const tools = await res.json();
+            const tools = await get(`/api/mcp/servers/${sid}/tools`);
             if (!tools.length) { panel.innerHTML = '<span style="opacity:0.5;font-size:11px;">No tools</span>'; return; }
             const disabled = new Set(tools.filter(t => t.is_disabled).map(t => t.name));
             panel.innerHTML = `<div class="mcp-tools-header">
@@ -1420,12 +1383,7 @@ async function _saveMcpToolState(serverId, panel) {
   });
   const total = panel.querySelectorAll('input[type=checkbox]').length;
   try {
-    await fetch(`/api/mcp/servers/${serverId}/tools`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify({ disabled }),
-    });
+    await patch(`/api/mcp/servers/${serverId}/tools`, { disabled });
     // Update the count label in the panel
     const countLabel = panel.querySelector('.mcp-tools-count');
     if (countLabel) countLabel.textContent = `${total - disabled.length}/${total} enabled`;
@@ -1619,8 +1577,7 @@ function initMcpForm() {
     }
     msg.textContent = 'Adding...'; msg.className = '';
     try {
-      const res = await fetch('/api/mcp/servers', { method: 'POST', body: fd, credentials: 'same-origin' });
-      const data = await res.json();
+      const data = await post('/api/mcp/servers', fd);
       if (data.needs_oauth) {
         msg.innerHTML = `Added ${esc(name)} — <a href="/api/mcp/oauth/authorize/${data.id}" target="_blank" style="color:var(--red);font-weight:600;">Authorize with Google</a> to connect`;
         msg.className = 'admin-success';
@@ -1643,8 +1600,7 @@ function initMcpForm() {
 /* ── RAG ── */
 async function loadRag() {
   try {
-    const res = await fetch('/api/personal');
-    const data = await res.json();
+    const data = await get('/api/personal');
     const dirList = el('adm-ragDirList');
     const dirs = data.directories || [];
     if (dirs.length === 0) { dirList.innerHTML = '<div class="admin-empty">No directories indexed</div>'; }
@@ -1655,10 +1611,9 @@ async function loadRag() {
           if (!await uiModule.styledConfirm(`Remove directory "${btn.dataset.admRagDir}" from RAG?`, { confirmText: 'Remove', danger: true })) return;
           btn.disabled = true; btn.textContent = '...';
           try {
-            const res = await fetch('/api/personal/remove_directory?directory=' + encodeURIComponent(btn.dataset.admRagDir), { method: 'DELETE' });
-            if (res.ok) { ragMsg('Directory removed'); loadRag(); }
-            else { const e = await res.json(); ragMsg(e.detail || 'Failed', true); }
-          } catch (e) { ragMsg('Error: ' + e.message, true); }
+            await del('/api/personal/remove_directory?directory=' + encodeURIComponent(btn.dataset.admRagDir));
+            ragMsg('Directory removed'); loadRag();
+          } catch (e) { ragMsg(e instanceof ApiError ? (e.detail || 'Failed') : 'Error: ' + e.message, true); }
         });
       });
     }
@@ -1675,10 +1630,9 @@ async function loadRag() {
           if (!await uiModule.styledConfirm(`Delete "${btn.dataset.admRagFile}" from RAG?`, { confirmText: 'Delete', danger: true })) return;
           btn.disabled = true; btn.textContent = '...';
           try {
-            const res = await fetch('/api/personal/file?filepath=' + encodeURIComponent(btn.dataset.admRagFile), { method: 'DELETE' });
-            if (res.ok) { ragMsg('File removed'); loadRag(); }
-            else { const e = await res.json(); ragMsg(e.detail || 'Failed', true); }
-          } catch (e) { ragMsg('Error: ' + e.message, true); }
+            await del('/api/personal/file?filepath=' + encodeURIComponent(btn.dataset.admRagFile));
+            ragMsg('File removed'); loadRag();
+          } catch (e) { ragMsg(e instanceof ApiError ? (e.detail || 'Failed') : 'Error: ' + e.message, true); }
         });
       });
     }
@@ -1702,8 +1656,7 @@ async function ragUpload(files) {
   const fd = new FormData();
   for (const f of files) fd.append('files', f);
   try {
-    const res = await fetch('/api/personal/upload', { method: 'POST', body: fd });
-    const data = await res.json();
+    const data = await post('/api/personal/upload', fd);
     if (data.success) { ragMsg(`Uploaded ${data.uploaded.length} file(s), ${data.indexed_count} chunks indexed`); loadRag(); }
     else ragMsg(data.detail || 'Upload failed', true);
   } catch (e) { ragMsg('Upload error: ' + e.message, true); }
@@ -1723,8 +1676,7 @@ function initRag() {
     const btn = el('adm-ragAddDirBtn');
     btn.disabled = true; btn.textContent = 'Indexing...';
     try {
-      const res = await fetch('/api/personal/add_directory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ directory: dir }) });
-      const data = await res.json();
+      const data = await post('/api/personal/add_directory', { directory: dir });
       if (data.success) { ragMsg(`Indexed ${data.indexed_count} chunks from directory`); el('adm-ragDirInput').value = ''; loadRag(); }
       else ragMsg(data.detail || data.message || 'Failed', true);
     } catch (e) { ragMsg('Error: ' + e.message, true); }
@@ -1734,8 +1686,7 @@ function initRag() {
     const btn = el('adm-ragReloadBtn');
     btn.disabled = true; btn.textContent = 'Reloading...';
     try {
-      const res = await fetch('/api/personal/reload', { method: 'POST' });
-      const data = await res.json();
+      const data = await post('/api/personal/reload');
       ragMsg(`Index reloaded: ${data.count} documents`);
       loadRag();
     } catch (e) { ragMsg('Reload failed: ' + e.message, true); }
@@ -1749,8 +1700,7 @@ function initRag() {
 async function loadTokens() {
   const list = el('adm-tokenList');
   try {
-    const res = await fetch('/api/tokens', { credentials: 'same-origin' });
-    const tokens = await res.json();
+    const tokens = await get('/api/tokens');
     if (!tokens.length) { list.innerHTML = '<div class="admin-empty">No API tokens</div>'; return; }
     list.innerHTML = tokens.map(t => `
       <div class="admin-user-row">
@@ -1766,7 +1716,7 @@ async function loadTokens() {
     list.querySelectorAll('[data-adm-del-token]').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!await uiModule.styledConfirm('Revoke this API token? External integrations using it will stop working.', { confirmText: 'Revoke', danger: true })) return;
-        await fetch(`/api/tokens/${btn.dataset.admDelToken}`, { method: 'DELETE', credentials: 'same-origin' });
+        await del(`/api/tokens/${btn.dataset.admDelToken}`);
         loadTokens();
       });
     });
@@ -1782,11 +1732,9 @@ function initTokenForm() {
     if (!name) { msg.textContent = 'Token name is required'; msg.className = 'admin-error'; return; }
     const fd = new FormData(); fd.append('name', name);
     try {
-      const res = await fetch('/api/tokens', { method: 'POST', body: fd, credentials: 'same-origin' });
-      const data = await res.json();
-      if (res.ok) { el('adm-tokenValue').textContent = data.token; reveal.style.display = ''; el('adm-tokenName').value = ''; loadTokens(); }
-      else { msg.textContent = data.detail || 'Failed'; msg.className = 'admin-error'; }
-    } catch (e) { msg.textContent = 'Request failed'; msg.className = 'admin-error'; }
+      const data = await post('/api/tokens', fd);
+      el('adm-tokenValue').textContent = data.token; reveal.style.display = ''; el('adm-tokenName').value = ''; loadTokens();
+    } catch (e) { msg.textContent = (e instanceof ApiError && e.detail) || 'Request failed'; msg.className = 'admin-error'; }
   });
   el('adm-tokenCopyBtn').addEventListener('click', () => {
     const val = el('adm-tokenValue').textContent;
@@ -1801,8 +1749,7 @@ function initTokenForm() {
 async function loadWebhooks() {
   const list = el('adm-whList');
   try {
-    const res = await fetch('/api/webhooks', { credentials: 'same-origin' });
-    const hooks = await res.json();
+    const hooks = await get('/api/webhooks');
     if (!hooks.length) { list.innerHTML = '<div class="admin-empty">No webhooks configured</div>'; return; }
     list.innerHTML = hooks.map(w => {
       const events = (w.events || []).map(e => `<span class="admin-badge">${esc(e)}</span>`).join(' ');
@@ -1831,19 +1778,19 @@ async function loadWebhooks() {
       btn.addEventListener('click', async () => {
         const msg = el('adm-whMsg'); msg.textContent = 'Sending test...'; msg.className = '';
         try {
-          const res = await fetch(`/api/webhooks/${btn.dataset.admWhTest}/test`, { method: 'POST', credentials: 'same-origin' });
-          msg.textContent = res.ok ? 'Test sent!' : 'Test failed'; msg.className = res.ok ? 'admin-success' : 'admin-error';
+          await post(`/api/webhooks/${btn.dataset.admWhTest}/test`);
+          msg.textContent = 'Test sent!'; msg.className = 'admin-success';
           setTimeout(() => loadWebhooks(), 1000);
         } catch (e) { msg.textContent = 'Failed: ' + e.message; msg.className = 'admin-error'; }
       });
     });
     list.querySelectorAll('[data-adm-wh-toggle]').forEach(btn => {
-      btn.addEventListener('click', async () => { await fetch(`/api/webhooks/${btn.dataset.admWhToggle}`, { method: 'PATCH', credentials: 'same-origin' }); loadWebhooks(); });
+      btn.addEventListener('click', async () => { await patch(`/api/webhooks/${btn.dataset.admWhToggle}`); loadWebhooks(); });
     });
     list.querySelectorAll('[data-adm-wh-delete]').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!await uiModule.styledConfirm('Delete this webhook?', { confirmText: 'Delete', danger: true })) return;
-        await fetch(`/api/webhooks/${btn.dataset.admWhDelete}`, { method: 'DELETE', credentials: 'same-origin' }); loadWebhooks();
+        await del(`/api/webhooks/${btn.dataset.admWhDelete}`); loadWebhooks();
       });
     });
   } catch (e) { list.innerHTML = '<div class="admin-error">Failed to load webhooks</div>'; }
@@ -1863,10 +1810,9 @@ function initWebhookForm() {
     const fd = new FormData();
     fd.append('name', name); fd.append('url', url); fd.append('secret', secret); fd.append('events', events);
     try {
-      const res = await fetch('/api/webhooks', { method: 'POST', body: fd, credentials: 'same-origin' });
-      if (res.ok) { msg.textContent = 'Webhook added'; msg.className = 'admin-success'; el('adm-whName').value = ''; el('adm-whUrl').value = ''; el('adm-whSecret').value = ''; loadWebhooks(); }
-      else { const d = await res.json(); msg.textContent = d.detail || 'Failed'; msg.className = 'admin-error'; }
-    } catch (e) { msg.textContent = 'Failed: ' + e.message; msg.className = 'admin-error'; }
+      await post('/api/webhooks', fd);
+      msg.textContent = 'Webhook added'; msg.className = 'admin-success'; el('adm-whName').value = ''; el('adm-whUrl').value = ''; el('adm-whSecret').value = ''; loadWebhooks();
+    } catch (e) { msg.textContent = (e instanceof ApiError && e.detail) ? e.detail : 'Failed: ' + e.message; msg.className = 'admin-error'; }
   });
 }
 
@@ -1880,8 +1826,7 @@ const featureLabels = {
 async function loadFeatures() {
   const container = el('adm-featureToggles');
   try {
-    const res = await fetch('/api/auth/features', { credentials: 'same-origin' });
-    const features = await res.json();
+    const features = await get('/api/auth/features');
     container.innerHTML = Object.entries(featureLabels).map(([key, label]) => `
       <div class="admin-toggle-row" style="padding:0.4rem 0;border-bottom:1px solid var(--border);">
         <div class="admin-toggle-label">${label}</div>
@@ -1890,7 +1835,7 @@ async function loadFeatures() {
     container.querySelectorAll('input[data-adm-feature]').forEach(toggle => {
       toggle.addEventListener('change', async () => {
         const body = {}; body[toggle.dataset.admFeature] = toggle.checked;
-        await fetch('/api/auth/features', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        await post('/api/auth/features', body);
       });
     });
   } catch (e) { container.innerHTML = '<div class="admin-error">Failed to load features</div>'; }
@@ -1907,8 +1852,7 @@ function initCalDAV() {
   if (!urlIn || !saveBtn) return;
 
   // Load current config
-  fetch(`${API_BASE}/api/calendar/config`, { credentials: 'same-origin' })
-    .then(r => r.json()).then(d => {
+  get(`${API_BASE}/api/calendar/config`).then(d => {
       urlIn.value = d.caldav_url || '';
       userIn.value = d.caldav_username || '';
       passIn.value = d.caldav_password || '';
@@ -1917,12 +1861,7 @@ function initCalDAV() {
   saveBtn.addEventListener('click', async () => {
     status.textContent = 'Saving...';
     try {
-      const res = await fetch(`${API_BASE}/api/calendar/config`, {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ caldav_url: urlIn.value, caldav_username: userIn.value, caldav_password: passIn.value }),
-      });
-      const d = await res.json();
+      const d = await post(`${API_BASE}/api/calendar/config`, { caldav_url: urlIn.value, caldav_username: userIn.value, caldav_password: passIn.value });
       status.textContent = d.ok ? 'Saved' : 'Error';
       status.style.color = d.ok ? 'var(--green)' : 'var(--red)';
     } catch (e) { status.textContent = 'Error'; status.style.color = 'var(--red)'; }
@@ -1933,13 +1872,8 @@ function initCalDAV() {
     status.textContent = 'Testing...';
     try {
       // Save first
-      await fetch(`${API_BASE}/api/calendar/config`, {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ caldav_url: urlIn.value, caldav_username: userIn.value, caldav_password: passIn.value }),
-      });
-      const res = await fetch(`${API_BASE}/api/calendar/test`, { method: 'POST', credentials: 'same-origin' });
-      const d = await res.json();
+      await post(`${API_BASE}/api/calendar/config`, { caldav_url: urlIn.value, caldav_username: userIn.value, caldav_password: passIn.value });
+      const d = await post(`${API_BASE}/api/calendar/test`);
       status.textContent = d.ok ? `Connected (${d.calendars} calendars)` : `Failed: ${d.error}`;
       status.style.color = d.ok ? 'var(--green)' : 'var(--red)';
     } catch (e) { status.textContent = 'Error'; status.style.color = 'var(--red)'; }
@@ -1954,8 +1888,7 @@ function initBackup() {
     const msg = el('adm-backupMsg');
     btn.disabled = true; btn.textContent = 'Exporting...'; msg.textContent = '';
     try {
-      const res = await fetch('/api/export', { credentials: 'same-origin' });
-      if (!res.ok) throw new Error('Export failed');
+      const res = await apiRaw('/api/export');
       const blob = await res.blob();
       const disposition = res.headers.get('Content-Disposition') || '';
       const match = disposition.match(/filename=(.+)/);
@@ -1981,13 +1914,8 @@ function initBackup() {
     try {
       const text = await file.text();
       const data = JSON.parse(text);
-      const res = await fetch('/api/import', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      const result = await res.json();
-      if (res.ok && result.ok) {
+      const result = await post('/api/import', data);
+      if (result.ok) {
         msg.textContent = result.message || 'Import successful.'; msg.className = 'admin-success';
       } else {
         msg.textContent = result.message || result.detail || 'Import failed'; msg.className = 'admin-error';
@@ -2017,15 +1945,10 @@ function initDangerZone() {
       btn.disabled = true; const prev = btn.textContent; btn.textContent = 'Wiping…';
       if (_wipeMsg) { _wipeMsg.textContent = ''; _wipeMsg.className = ''; }
       try {
-        const res = await fetch(`/api/admin/wipe/${kind}`, { method: 'DELETE', credentials: 'same-origin' });
-        const data = await res.json().catch(() => ({}));
-        if (res.ok) {
-          if (_wipeMsg) { _wipeMsg.textContent = `Wiped ${data.count ?? 0} ${label}.`; _wipeMsg.className = 'admin-success'; }
-        } else {
-          if (_wipeMsg) { _wipeMsg.textContent = data.detail || 'Failed'; _wipeMsg.className = 'admin-error'; }
-        }
+        const data = (await del(`/api/admin/wipe/${kind}`)) || {};
+        if (_wipeMsg) { _wipeMsg.textContent = `Wiped ${data.count ?? 0} ${label}.`; _wipeMsg.className = 'admin-success'; }
       } catch (e) {
-        if (_wipeMsg) { _wipeMsg.textContent = 'Request failed: ' + e.message; _wipeMsg.className = 'admin-error'; }
+        if (_wipeMsg) { _wipeMsg.textContent = (e instanceof ApiError && e.detail) ? e.detail : 'Request failed: ' + e.message; _wipeMsg.className = 'admin-error'; }
       }
       btn.disabled = false; btn.textContent = prev;
     });

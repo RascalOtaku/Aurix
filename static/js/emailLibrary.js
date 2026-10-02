@@ -22,6 +22,7 @@ import {
   _tryFoldHintSig, _foldSignature, _SIG_ICON, _QUOTE_ICON,
 } from './emailLibrary/signatureFold.js';
 import { state } from './emailLibrary/state.js';
+import { get, post, del, apiRaw, ApiError } from './api.js';
 
 const API_BASE = window.location.origin;
 let _emailUnreadChipClickWired = false;
@@ -126,8 +127,7 @@ function _syncEmailReminderBellVisibility(enabled) {
 
 async function _loadEmailReminderBellVisibility() {
   try {
-    const res = await fetch('/api/auth/settings', { credentials: 'same-origin' });
-    const settings = await res.json();
+    const settings = await get('/api/auth/settings');
     _syncEmailReminderBellVisibility(settings.reminder_channel === 'email');
   } catch (_) {
     _syncEmailReminderBellVisibility(false);
@@ -301,7 +301,7 @@ async function _deleteEmailAndAdvance(em, card, opts = {}) {
     : null;
   const nextUid = sibling ? sibling.dataset.uid : null;
   try {
-    await fetch(`${API_BASE}/api/email/delete/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'DELETE' });
+    await del(`${API_BASE}/api/email/delete/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
   } catch (err) {
     console.error('Failed to delete email:', err);
     showToast('Failed to delete email');
@@ -458,19 +458,12 @@ async function _prewarmDefaultEmailView() {
   // Then the list request warms both the client cache and the backend IMAP/read
   // cache. Failure stays silent: no configured mail should not nag on app boot.
   try {
-    const accountsRes = await fetch(`${API_BASE}/api/email/accounts`, { credentials: 'same-origin' });
-    if (accountsRes.ok) {
-      const accountsData = await accountsRes.json().catch(() => ({}));
-      if (Array.isArray(accountsData.accounts)) state._libAccounts = accountsData.accounts;
-    }
+    const accountsData = await get(`${API_BASE}/api/email/accounts`);
+    if (Array.isArray(accountsData.accounts)) state._libAccounts = accountsData.accounts;
   } catch (_) {}
 
   const accountQS = accountId ? `&account_id=${encodeURIComponent(accountId)}` : '';
-  const res = await fetch(`${API_BASE}/api/email/list?folder=${encodeURIComponent(folder)}${accountQS}&limit=100&offset=0&filter=${filter}`, {
-    credentials: 'same-origin',
-  });
-  if (!res.ok) return;
-  const data = await res.json().catch(() => null);
+  const data = await get(`${API_BASE}/api/email/list?folder=${encodeURIComponent(folder)}${accountQS}&limit=100&offset=0&filter=${filter}`);
   if (!data || data.error) return;
   _libCachePut(ck, { emails: data.emails || [], total: data.total || 0 });
 }
@@ -765,11 +758,7 @@ export function openEmailLibrary(opts = {}) {
     });
     if (!ok) return;
     try {
-      const res = await fetch(`${API_BASE}/api/email/odysseus/reminders?permanent=1${_acct()}`, {
-        method: 'DELETE',
-        credentials: 'same-origin',
-      });
-      const data = await res.json().catch(() => ({}));
+      const data = await del(`${API_BASE}/api/email/odysseus/reminders?permanent=1${_acct()}`);
       showToast(`Deleted ${data.deleted || 0} reminder email${(data.deleted || 0) === 1 ? '' : 's'}`);
       if ((data.deleted || 0) > 0) {
         const visibleUids = Array.from(document.querySelectorAll('#email-lib-grid .doclib-card[data-uid]'))
@@ -1060,9 +1049,7 @@ export function openEmailLibrary(opts = {}) {
 
 async function _loadAccounts() {
   try {
-    const r = await fetch(`${API_BASE}/api/email/accounts`);
-    if (!r.ok) return;
-    const d = await r.json();
+    const d = await get(`${API_BASE}/api/email/accounts`);
     state._libAccounts = d.accounts || [];
   } catch (_) { state._libAccounts = []; }
   _renderAccountsStrip();
@@ -1203,8 +1190,7 @@ async function _loadFolders({ resetMissing = false } = {}) {
   const seq = ++_libFolderSeq;
   const accountAtStart = state._libAccountId || '';
   try {
-    const res = await fetch(`${API_BASE}/api/email/folders?_=${Date.now()}${_acct()}`);
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/email/folders?_=${Date.now()}${_acct()}`);
     if (seq !== _libFolderSeq || accountAtStart !== (state._libAccountId || '')) return;
     const sel = document.getElementById('email-lib-folder');
     if (!sel || !data.folders) return;
@@ -1293,8 +1279,7 @@ async function _doSearch() {
   grid.appendChild(sp.element);
 
   try {
-    const res = await fetch(`${API_BASE}/api/email/search?folder=${encodeURIComponent(state._libFolder)}${_acct()}&q=${encodeURIComponent(q)}&limit=100`);
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/email/search?folder=${encodeURIComponent(state._libFolder)}${_acct()}&q=${encodeURIComponent(q)}&limit=100`);
     sp.destroy();
 
     const results = data.emails || [];
@@ -1321,15 +1306,13 @@ async function _refreshUnreadBadge() {
   try {
     const folder = state._libFolder || 'INBOX';
     if (folder === '__scheduled__') { badge.style.display = 'none'; return; }
-    const res = await fetch(`${API_BASE}/api/email/list?folder=${encodeURIComponent(folder)}${_acct()}&limit=1&filter=unread`);
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/email/list?folder=${encodeURIComponent(folder)}${_acct()}&limit=1&filter=unread`);
     const n = data.total || 0;
     _syncUnreadTabBadge(n);
     if (state._libFilter === 'unread') {
       // Currently viewing unread — show what the click will take you to.
       try {
-        const allRes = await fetch(`${API_BASE}/api/email/list?folder=${encodeURIComponent(folder)}${_acct()}&limit=1&filter=all`);
-        const allData = await allRes.json();
+        const allData = await get(`${API_BASE}/api/email/list?folder=${encodeURIComponent(folder)}${_acct()}&limit=1&filter=all`);
         const t = allData.total || 0;
         badge.textContent = `${t} all`;
         badge.title = 'Show all emails';
@@ -1408,8 +1391,7 @@ async function _loadEmails({ force = false } = {}) {
       // opens omit it so rapid close/reopen returns instantly; the
       // Refresh button passes `force: true` to add it back.
       const buster = force ? `&_=${Date.now()}` : '';
-      const res = await fetch(`${API_BASE}/api/email/list?folder=${encodeURIComponent(folderAtStart)}${accountQS}&limit=100&offset=${offsetAtStart}&filter=${filterAtStart}${attQS}${buster}`);
-      const data = await res.json();
+      const data = await get(`${API_BASE}/api/email/list?folder=${encodeURIComponent(folderAtStart)}${accountQS}&limit=100&offset=${offsetAtStart}&filter=${filterAtStart}${attQS}${buster}`);
       if (seq !== _libLoadSeq || accountAtStart !== (state._libAccountId || '')) return;
       if (data.error) throw new Error(data.error);
       state._libEmails = data.emails || [];
@@ -1437,8 +1419,7 @@ async function _loadEmails({ force = false } = {}) {
 }
 
 async function _loadScheduled(grid, sp) {
-  const res = await fetch(`${API_BASE}/api/email/scheduled`);
-  const data = await res.json();
+  const data = await get(`${API_BASE}/api/email/scheduled`);
   sp.destroy();
   const items = data.scheduled || [];
   grid.innerHTML = '';
@@ -1487,7 +1468,7 @@ async function _loadScheduled(grid, sp) {
       const ok = await styledConfirm(`Cancel scheduled email "${subject}"?`, { confirmText: 'Cancel Send', cancelText: 'Keep', danger: true });
       if (!ok) return;
       try {
-        await fetch(`${API_BASE}/api/email/scheduled/${it.id}`, { method: 'DELETE' });
+        await del(`${API_BASE}/api/email/scheduled/${it.id}`);
         _loadEmails();
       } catch (err) { console.error(err); }
     });
@@ -1685,10 +1666,10 @@ function _createCard(em) {
       }
       try {
         if (newState) {
-          await fetch(`${API_BASE}/api/email/mark-answered/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
-          await fetch(`${API_BASE}/api/email/mark-read/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
+          await post(`${API_BASE}/api/email/mark-answered/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
+          await post(`${API_BASE}/api/email/mark-read/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
         } else {
-          await fetch(`${API_BASE}/api/email/clear-answered/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
+          await post(`${API_BASE}/api/email/clear-answered/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
         }
       } catch (err) { console.error(err); }
     };
@@ -1865,7 +1846,7 @@ function _prefetchAdjacentEmails(card, count = 3) {
     const key = `${state._libAccountId || ''}|${state._libFolder}|${uid}`;
     if (_emailReadPrefetching.has(key)) continue;
     _emailReadPrefetching.add(key);
-    fetch(`${API_BASE}/api/email/read/${encodeURIComponent(uid)}?folder=${encodeURIComponent(state._libFolder)}${_acct()}&mark_seen=false`)
+    get(`${API_BASE}/api/email/read/${encodeURIComponent(uid)}?folder=${encodeURIComponent(state._libFolder)}${_acct()}&mark_seen=false`)
       .catch(() => {})
       .finally(() => _emailReadPrefetching.delete(key));
   }
@@ -1912,7 +1893,7 @@ async function _toggleCardPreview(card, em) {
   card.style.minHeight = `${Math.round(stableOpenHeight)}px`;
   if (!em.is_read) {
     _syncEmailReadState(em.uid, true);
-    fetch(`${API_BASE}/api/email/mark-read/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' })
+    post(`${API_BASE}/api/email/mark-read/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`)
       .catch(err => console.error('Failed to mark email read:', err));
   }
   // Class hook on the modal so the header-hide / padding rules work on
@@ -1935,8 +1916,7 @@ async function _toggleCardPreview(card, em) {
   card.appendChild(reader);
 
   try {
-    const res = await fetch(`${API_BASE}/api/email/read/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/email/read/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
     if (data.error) {
       reader.innerHTML = `<div style="padding:20px;color:var(--red,#e55)">Error: ${_esc(data.error)}</div>`;
       return;
@@ -2971,8 +2951,7 @@ async function _toggleFromSenderPanel(reader, data, btn) {
     });
     const acct = _acct();
     const acctSuffix = acct ? acct.replace(/^&?/, '&') : '';
-    const res = await fetch(`${API_BASE}/api/email/search?${params.toString()}${acctSuffix}`);
-    const j = await res.json();
+    const j = await get(`${API_BASE}/api/email/search?${params.toString()}${acctSuffix}`);
     let raw = Array.isArray(j.emails) ? j.emails : [];
     const target = fromAddr.toLowerCase();
     raw = raw.filter(e => String(e.from_address || '').toLowerCase() === target);
@@ -3011,8 +2990,7 @@ async function _toggleFromSenderPanel(reader, data, btn) {
       listEl.querySelector('.from-sender-loading')?.appendChild(sp.element);
       const results = await Promise.all(folders.map(async (f) => {
         const params = new URLSearchParams({ folder: f, limit: '40', offset: '0', filter: 'all' });
-        const res = await fetch(`${API_BASE}/api/email/list?${params.toString()}${acctSuffix}`);
-        const j = await res.json();
+        const j = await get(`${API_BASE}/api/email/list?${params.toString()}${acctSuffix}`);
         return (j.emails || []).map(em => ({ ...em, _folder: f }));
       }));
       if (myToken !== _recentToken) return;
@@ -3064,8 +3042,7 @@ async function _toggleFromSenderPanel(reader, data, btn) {
       try {
         const results = await Promise.all(folders.map(async (f) => {
           const params = new URLSearchParams({ q, folder: f, limit: '15' });
-          const res = await fetch(`${API_BASE}/api/email/search?${params.toString()}${acctSuffix}`);
-          const j = await res.json();
+          const j = await get(`${API_BASE}/api/email/search?${params.toString()}${acctSuffix}`);
           return (j.emails || []).map(em => ({ ...em, _folder: f }));
         }));
         if (myToken !== searchToken) return;
@@ -3132,8 +3109,7 @@ async function _toggleFromSenderPanel(reader, data, btn) {
         // Use the same contact source as the email composer's To/Cc fields
         // (/api/contacts/search → {results: [{name, emails:[...]}]}). Flatten
         // to {name, address} pairs and drop any already-tagged address.
-        const res = await fetch(`${API_BASE}/api/contacts/search?q=${encodeURIComponent(q)}`);
-        const j = await res.json();
+        const j = await get(`${API_BASE}/api/contacts/search?q=${encodeURIComponent(q)}`);
         if (myToken !== suggestToken) return;
         const tagged = new Set(panel._tags.map(t => String(t.address).toLowerCase()));
         const items = [];
@@ -3281,13 +3257,16 @@ function _wireAttachmentHandlers(reader, folder) {
       openBtn.style.opacity = '0.4';
       try {
         const folderQs = encodeURIComponent(useFolder);
-        const res = await fetch(
-          `${API_BASE}/api/email/attachment-as-doc/${encodeURIComponent(uid)}/${encodeURIComponent(index)}?folder=${folderQs}${_acct()}`,
-          { method: 'POST', credentials: 'same-origin' }
-        );
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok || !json.doc_id) {
-          const msg = (json && json.error) || `HTTP ${res.status}`;
+        let json;
+        try {
+          json = await post(
+            `${API_BASE}/api/email/attachment-as-doc/${encodeURIComponent(uid)}/${encodeURIComponent(index)}?folder=${folderQs}${_acct()}`
+          );
+        } catch (e) {
+          json = { error: (e instanceof ApiError && (typeof e.detail === 'string' ? e.detail : e.message)) || 'Request failed' };
+        }
+        if (!json.doc_id) {
+          const msg = (json && json.error) || 'Unknown error';
           try { const { showError } = await import('./ui.js'); showError(`Couldn't open ${name}: ${msg}`); } catch (_) { alert(`Couldn't open ${name}: ${msg}`); }
           return;
         }
@@ -3343,9 +3322,11 @@ function _wireAttachmentHandlers(reader, folder) {
       const orig = chip.style.opacity;
       chip.style.opacity = '0.6';
       try {
-        const res = await fetch(url, { credentials: 'same-origin' });
-        if (!res.ok) {
-          console.error('attachment download failed', res.status, await res.text().catch(() => ''));
+        let res;
+        try {
+          res = await apiRaw(url);
+        } catch (e) {
+          console.error('attachment download failed', e instanceof ApiError ? e.status : e);
           location.href = url;
           return;
         }
@@ -3649,8 +3630,7 @@ async function _openEmailAsTab(em, folder) {
   const loading = modal.querySelector('.email-reader-tab-loading');
   if (loading) loading.appendChild(sp.element);
   try {
-    const res = await fetch(`${API_BASE}/api/email/read/${em.uid}?folder=${encodeURIComponent(useFolder)}${_acct()}`);
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/email/read/${em.uid}?folder=${encodeURIComponent(useFolder)}${_acct()}`);
     if (data.error) {
       reader.innerHTML = `<div style="padding:20px;color:var(--red,#e55)">Error: ${_esc(data.error)}</div>`;
       return;
@@ -3795,8 +3775,7 @@ async function _openEmailWindow(em, folder) {
   try {
     const sp = spinnerModule.createWhirlpool(24);
     loading.appendChild(sp.element);
-    const res = await fetch(`${API_BASE}/api/email/read/${em.uid}?folder=${encodeURIComponent(useFolder)}${_acct()}`);
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/email/read/${em.uid}?folder=${encodeURIComponent(useFolder)}${_acct()}`);
     if (data.error) {
       bodyEl.innerHTML = `<div style="color:var(--red,#e55);padding:16px;">${_esc(data.error)}</div>`;
       return;
@@ -3911,8 +3890,7 @@ async function _swapReaderToUid(reader, uid, folder) {
   body.appendChild(wrap);
   const useFolder = folder || state._libFolder;
   try {
-    const res = await fetch(`${API_BASE}/api/email/read/${uid}?folder=${encodeURIComponent(useFolder)}${_acct()}`);
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/email/read/${uid}?folder=${encodeURIComponent(useFolder)}${_acct()}`);
     if (data.error) {
       body.innerHTML = `<div style="padding:20px;color:var(--red,#e55)">${_esc(data.error)}</div>`;
       return;
@@ -4061,10 +4039,7 @@ async function _generateSummary(reader, data, btn) {
 
   if (btn) btn.disabled = true;
   try {
-    const res = await fetch(`${API_BASE}/api/email/summarize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    const result = await post(`${API_BASE}/api/email/summarize`, {
         body: data.body,
         subject: data.subject,
         from: `${data.from_name} <${data.from_address}>`,
@@ -4074,9 +4049,7 @@ async function _generateSummary(reader, data, btn) {
         folder: state._libFolder || 'INBOX',
         message_id: data.message_id || '',
         account_id: data.account_id || '',
-      }),
-    });
-    const result = await res.json();
+      });
     sp.destroy();
     content.innerHTML = '';
     if (result.success && result.summary) {
@@ -4210,12 +4183,7 @@ function _showReaderMoreMenu(em, card, reader, anchor) {
         }
         const name = (em.from_name || '').trim() || email.split('@')[0];
         try {
-          const r = await fetch(`${API_BASE}/api/contacts/add`, {
-            method: 'POST', credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, email }),
-          });
-          const d = await r.json();
+          const d = await post(`${API_BASE}/api/contacts/add`, { name, email });
           import('./ui.js').then(m => {
             if (!m.showToast) return;
             if (d.success && d.message === 'Already exists') m.showToast('Already in contacts');
@@ -4238,9 +4206,9 @@ function _showReaderMoreMenu(em, card, reader, anchor) {
         _syncEmailReadState(em.uid, newRead);
         try {
           if (newRead) {
-            await fetch(`${API_BASE}/api/email/mark-read/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
+            await post(`${API_BASE}/api/email/mark-read/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
           } else {
-            await fetch(`${API_BASE}/api/email/mark-unread/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
+            await post(`${API_BASE}/api/email/mark-unread/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
           }
         } catch (e) { console.error(e); }
         _renderGrid();
@@ -4251,7 +4219,7 @@ function _showReaderMoreMenu(em, card, reader, anchor) {
       icon: _archIcon,
       action: async () => {
         try {
-          await fetch(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
+          await post(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
         } catch (e) { console.error(e); }
         await closeAndRemove();
       },
@@ -4266,7 +4234,7 @@ function _showReaderMoreMenu(em, card, reader, anchor) {
       icon: _spamIcon,
       action: async () => {
         try {
-          await fetch(`${API_BASE}/api/email/move/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}&dest=Junk`, { method: 'POST' });
+          await post(`${API_BASE}/api/email/move/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}&dest=Junk`);
         } catch (e) { console.error(e); }
         await closeAndRemove();
       },
@@ -4276,7 +4244,7 @@ function _showReaderMoreMenu(em, card, reader, anchor) {
       icon: _trashIcon,
       action: async () => {
         try {
-          await fetch(`${API_BASE}/api/email/delete/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'DELETE' });
+          await del(`${API_BASE}/api/email/delete/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
         } catch (e) { console.error(e); }
         await closeAndRemove();
       },
@@ -4293,7 +4261,7 @@ function _showReaderMoreMenu(em, card, reader, anchor) {
         );
         if (!ok) return;
         try {
-          await fetch(`${API_BASE}/api/email/delete-permanent/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'DELETE' });
+          await del(`${API_BASE}/api/email/delete-permanent/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
         } catch (e) { console.error(e); }
         await closeAndRemove();
       },
@@ -4398,10 +4366,10 @@ function _showCardMenu(em, anchor) {
         if (newState) _syncEmailReadState(em.uid, true); // mark-done implies mark-read
         try {
           if (newState) {
-            await fetch(`${API_BASE}/api/email/mark-answered/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
-            await fetch(`${API_BASE}/api/email/mark-read/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
+            await post(`${API_BASE}/api/email/mark-answered/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
+            await post(`${API_BASE}/api/email/mark-read/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
           } else {
-            await fetch(`${API_BASE}/api/email/clear-answered/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
+            await post(`${API_BASE}/api/email/clear-answered/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
           }
         } catch (e) { console.error('Failed to toggle done:', e); }
         if (card) {
@@ -4414,7 +4382,7 @@ function _showCardMenu(em, anchor) {
       label: 'Archive',
       icon: _archIcon,
       action: async () => {
-        await fetch(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
+        await post(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
         await _animateEmailCardRemoval([em.uid]);
         state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
         _renderGrid();
@@ -4426,7 +4394,7 @@ function _showCardMenu(em, anchor) {
       label: 'Archive',
       icon: _archIcon,
       action: async () => {
-        await fetch(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
+        await post(`${API_BASE}/api/email/archive/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
         await _animateEmailCardRemoval([em.uid]);
         state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
         _renderGrid();
@@ -4457,7 +4425,7 @@ function _showCardMenu(em, anchor) {
       const subject = em.subject || '(no subject)';
       const ok = await styledConfirm(`Delete "${subject}"?`, { confirmText: 'Delete', cancelText: 'Cancel', danger: true });
       if (!ok) return;
-      await fetch(`${API_BASE}/api/email/delete/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'DELETE' });
+      await del(`${API_BASE}/api/email/delete/${em.uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
       await _animateEmailCardRemoval([em.uid]);
       state._libEmails = state._libEmails.filter(e => String(e.uid) !== String(em.uid));
       _renderGrid();
@@ -4588,9 +4556,9 @@ async function _bulkAction(action) {
   for (const uid of uids) {
     try {
       if (action === 'archive') {
-        await fetch(`${API_BASE}/api/email/archive/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'POST' });
+        await post(`${API_BASE}/api/email/archive/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
       } else if (action === 'delete') {
-        await fetch(`${API_BASE}/api/email/delete/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`, { method: 'DELETE' });
+        await del(`${API_BASE}/api/email/delete/${uid}?folder=${encodeURIComponent(state._libFolder)}${_acct()}`);
       } else if (action === 'read' || action === 'unread') {
         // Local toggle for now (no backend endpoint yet)
         const em = state._libEmails.find(e => e.uid === uid);
@@ -4729,12 +4697,7 @@ async function _createEmailReplyReminder(em, dueDate) {
     source: 'email',
   };
   try {
-    const res = await fetch(`${API_BASE}/api/notes`, {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error('Failed');
+    await post(`${API_BASE}/api/notes`, payload);
     const { showToast } = await import('./ui.js');
     const fmt = dueDate.toLocaleString([], { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
     showToast(`Todo reminder set for ${fmt}`);

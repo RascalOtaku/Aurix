@@ -10,6 +10,7 @@ import spinnerModule from './spinner.js';
 import markdownModule from './markdown.js';
 import { makeWindowDraggable } from './windowDrag.js';
 import { langIcon } from './langIcons.js';
+import { get, post, del, apiRaw, ApiError } from './api.js';
 
 // ── Injected references from documentModule ──
 let API_BASE = '';
@@ -117,9 +118,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
   // library doesn't need the chat to be loaded in the UI first.
   async function _copyChatById(sessionId) {
     try {
-      const res = await fetch(`${API_BASE}/api/history/${sessionId}`, { credentials: 'same-origin' });
-      if (!res.ok) throw new Error(res.statusText);
-      const data = await res.json();
+      const data = await get(`${API_BASE}/api/history/${sessionId}`);
       const history = Array.isArray(data) ? data : (data.history || []);
       const lines = [];
       for (const m of history) {
@@ -303,9 +302,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     if (_libraryArchivedView) params.set('archived', 'true');
 
     try {
-      const res = await fetch(`${API_BASE}/api/documents/library?${params}`);
-      if (!res.ok) throw new Error(res.statusText);
-      const data = await res.json();
+      const data = await get(`${API_BASE}/api/documents/library?${params}`);
 
       if (append) {
         _libraryDocs = _libraryDocs.concat(data.documents);
@@ -649,9 +646,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       e.stopPropagation();
       dropdown.style.display = 'none';
       try {
-        const res = await fetch(`${API_BASE}/api/document/${doc.id}`);
-        if (!res.ok) throw new Error('Failed');
-        const full = await res.json();
+        const full = await get(`${API_BASE}/api/document/${doc.id}`);
         const extMap = { javascript: '.js', python: '.py', html: '.html', css: '.css', markdown: '.md', json: '.json', yaml: '.yml', bash: '.sh', sql: '.sql', rust: '.rs', go: '.go', java: '.java', c: '.c', cpp: '.cpp', typescript: '.ts', ruby: '.rb', php: '.php', xml: '.xml', toml: '.toml', ini: '.ini' };
         const ext = extMap[full.language] || '.txt';
         const blob = new Blob([full.current_content || ''], { type: 'text/plain' });
@@ -676,8 +671,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       dropdown.style.display = 'none';
       const toArchived = !_libraryArchivedView;
       try {
-        const res = await fetch(`${API_BASE}/api/document/${doc.id}/archive?archived=${toArchived}`, { method: 'POST', credentials: 'same-origin' });
-        if (!res.ok) throw new Error('failed');
+        await post(`${API_BASE}/api/document/${doc.id}/archive?archived=${toArchived}`);
         // Drop it from the current view (it no longer belongs here) and refresh.
         _libraryDocs = _libraryDocs.filter(d => d.id !== doc.id);
         _libraryTotal = Math.max(0, _libraryTotal - 1);
@@ -770,8 +764,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       e.stopPropagation();
       const toArchived = !_libraryArchivedView;
       try {
-        const res = await fetch(`${API_BASE}/api/document/${doc.id}/archive?archived=${toArchived}`, { method: 'POST', credentials: 'same-origin' });
-        if (!res.ok) throw new Error('failed');
+        await post(`${API_BASE}/api/document/${doc.id}/archive?archived=${toArchived}`);
         _libraryDocs = _libraryDocs.filter(d => d.id !== doc.id);
         _libraryTotal = Math.max(0, _libraryTotal - 1);
         libraryRenderGrid();
@@ -864,9 +857,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     const existingPre = preview.querySelector('pre');
 
     try {
-      const res = await fetch(`${API_BASE}/api/document/${doc.id}`);
-      if (!res.ok) throw new Error('Failed');
-      const full = await res.json();
+      const full = await get(`${API_BASE}/api/document/${doc.id}`);
       const content = full.current_content || '';
       const lang = full.language || doc.language || 'text';
 
@@ -965,11 +956,10 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     // Step 2: ensure doc is in tabs
     const docs = _getDocs();
     if (!docs.has(doc.id)) {
-      const res = await fetch(`${API_BASE}/api/document/${doc.id}`);
-      if (res.ok) {
-        const full = await res.json();
+      try {
+        const full = await get(`${API_BASE}/api/document/${doc.id}`);
         _addDocToTabs(full, doc.session_id);
-      }
+      } catch (_) {}
     }
 
     // Step 3: open panel (slide-in is handled by openPanel)
@@ -1008,9 +998,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     }
     try {
       // Fetch full content of the source document
-      const srcRes = await fetch(`${API_BASE}/api/document/${doc.id}`);
-      if (!srcRes.ok) throw new Error('Failed to fetch document');
-      const src = await srcRes.json();
+      const src = await get(`${API_BASE}/api/document/${doc.id}`);
 
       // Deduplicate title — append (2), (3), etc. if name already exists in session
       let baseTitle = src.title || doc.title || 'Untitled';
@@ -1028,20 +1016,13 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       }
 
       // Create a new document copy in the current session
-      const res = await fetch(`${API_BASE}/api/document`, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session_id: sessionId,
-          // Preserve the source's type; default to markdown when unknown
-          // (the backend also sniffs, but this keeps the tab label correct).
-          language: src.language || doc.language || 'markdown',
-          content: src.current_content || '',
-        }),
+      const created = await post(`${API_BASE}/api/document`, {
+        session_id: sessionId,
+        // Preserve the source's type; default to markdown when unknown
+        // (the backend also sniffs, but this keeps the tab label correct).
+        language: src.language || doc.language || 'markdown',
+        content: src.current_content || '',
       });
-      if (!res.ok) throw new Error('Failed to create document');
-      const created = await res.json();
       closeLibrary();
       _addDocToTabs(created, sessionId);
       if (!_isOpenFn()) _openPanel();
@@ -1129,12 +1110,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/api/document/${docId}`, { method: 'DELETE', credentials: 'same-origin' });
-      if (!res.ok) {
-        let detail = `HTTP ${res.status}`;
-        try { const j = await res.json(); if (j?.detail) detail = j.detail; } catch {}
-        throw new Error(detail);
-      }
+      await del(`${API_BASE}/api/document/${docId}`);
       if (card) {
         card.classList.add('doclib-card-deleting');
         card.addEventListener('transitionend', () => card.remove(), { once: true });
@@ -1167,12 +1143,9 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     const deletedIds = [];
     for (const id of _librarySelectedIds) {
       try {
-        const res = await fetch(`${API_BASE}/api/document/${id}`, { method: 'DELETE', credentials: 'same-origin' });
-        if (res.ok) {
-          deleted++;
-          deletedIds.push(id);
-        }
-        else { failed++; console.warn('Delete failed for', id, 'status', res.status); }
+        await del(`${API_BASE}/api/document/${id}`);
+        deleted++;
+        deletedIds.push(id);
       } catch (e) {
         failed++;
         console.error('Failed to delete document:', id, e);
@@ -1201,8 +1174,8 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     let done = 0, failed = 0;
     for (const id of ids) {
       try {
-        const res = await fetch(`${API_BASE}/api/document/${id}/archive?archived=${toArchived}`, { method: 'POST', credentials: 'same-origin' });
-        if (res.ok) done++; else failed++;
+        await post(`${API_BASE}/api/document/${id}/archive?archived=${toArchived}`);
+        done++;
       } catch { failed++; }
     }
     libraryExitSelectMode();
@@ -1246,12 +1219,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       const ids = [..._librarySelectedIds];
       try {
         if (uiModule) uiModule.showToast(`Zipping ${ids.length} documents…`);
-        const res = await fetch(`${API_BASE}/api/documents/export-zip`, {
-          method: 'POST', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids }),
-        });
-        if (!res.ok) throw new Error('zip failed');
+        const res = await apiRaw(`${API_BASE}/api/documents/export-zip`, { method: 'POST', body: { ids } });
         const blob = await res.blob();
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -1277,9 +1245,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
 
     const docs = await Promise.all([..._librarySelectedIds].map(async id => {
       try {
-        const res = await fetch(`${API_BASE}/api/document/${id}`);
-        if (!res.ok) return null;
-        return await res.json();
+        return await get(`${API_BASE}/api/document/${id}`);
       } catch (e) {
         console.error('Failed to export document:', id, e);
         return null;
@@ -1457,13 +1423,13 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
           // view, and plain PDFs get the static page-image viewer.
           const fd = new FormData();
           fd.append('file', file);
-          const res = await fetch(`${API_BASE}/api/documents/import-pdf`, {
-            method: 'POST',
-            body: fd,
-          });
-          if (!res.ok) {
-            let _e = `HTTP ${res.status}`;
-            try { const _j = await res.json(); _e = _j.detail || _j.error || _e; } catch {}
+          try {
+            await post(`${API_BASE}/api/documents/import-pdf`, fd);
+          } catch (e) {
+            let _e = e instanceof ApiError ? `HTTP ${e.status}` : 'request failed';
+            const _d = e instanceof ApiError ? e.detail : null;
+            if (typeof _d === 'string' && _d) _e = _d;
+            else if (_d && typeof _d === 'object') _e = _d.detail || _d.error || _e;
             throw new Error('PDF import failed: ' + _e);
           }
           imported++;
@@ -1480,22 +1446,12 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
             if (!csv.trim()) continue;
             const sheetTitle = wb.SheetNames.length > 1
               ? `${baseTitle} - ${sheetName}` : baseTitle;
-            const res = await fetch(`${API_BASE}/api/document`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ title: sheetTitle, language: 'csv', content: csv }),
-            });
-            if (!res.ok) throw new Error('Server error');
+            await post(`${API_BASE}/api/document`, { title: sheetTitle, language: 'csv', content: csv });
           }
           imported++;
         } else {
           const content = await readFileContent(file);
-          const res = await fetch(`${API_BASE}/api/document`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: baseTitle, language, content }),
-          });
-          if (!res.ok) throw new Error('Server error');
+          await post(`${API_BASE}/api/document`, { title: baseTitle, language, content });
           imported++;
         }
       } catch (e) {
@@ -1807,7 +1763,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       if (!grid) return;
       grid.innerHTML = '';
       grid.appendChild(spinnerModule.createLoadingRow('Loading…'));
-      fetch(API_BASE + '/api/sessions', { credentials: 'same-origin' }).then(r => r.json()).then(data => {
+      get(API_BASE + '/api/sessions').then(data => {
         const raw = Array.isArray(data) ? data : (data.sessions || []);
         _chatsSessions = raw.filter(s => !s.archived);
         _renderChatsGrid();
@@ -1843,9 +1799,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       preview.style.display = 'block';
       preview.innerHTML = '<div style="opacity:0.4;font-size:11px;padding:8px 4px;">Loading…</div>';
       try {
-        const res = await fetch(`${API_BASE}/api/history/${session.id}`, { credentials: 'same-origin' });
-        if (!res.ok) throw new Error('Failed');
-        const data = await res.json();
+        const data = await get(`${API_BASE}/api/history/${session.id}`);
         const history = Array.isArray(data) ? data : (data.history || []);
         const recent = history.filter(m => m.role === 'user' || m.role === 'assistant').slice(-5);
         const sessionModel = (session.model || '').split('/').pop();
@@ -1934,16 +1888,13 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         const archiveBtn = preview.querySelector('.doclib-chat-archive-btn');
         if (archiveBtn) archiveBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          await fetch(API_BASE + '/api/session/' + session.id + '/archive', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-          });
+          await post(API_BASE + '/api/session/' + session.id + '/archive');
           _renderLibChats();
         });
         const restoreBtn = preview.querySelector('.doclib-chat-restore-btn');
         if (restoreBtn) restoreBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          await fetch(API_BASE + '/api/session/' + session.id + '/unarchive', { method: 'POST' });
+          await post(API_BASE + '/api/session/' + session.id + '/unarchive');
           _renderLibArchive();
         });
         const copyBtn = preview.querySelector('.doclib-chat-copy-btn');
@@ -1955,7 +1906,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         if (deleteBtn) deleteBtn.addEventListener('click', async (e) => {
           e.stopPropagation();
           if (!await window.styledConfirm('Delete this chat?', { confirmText: 'Delete', danger: true })) return;
-          await fetch(API_BASE + '/api/session/' + session.id, { method: 'DELETE' });
+          await del(API_BASE + '/api/session/' + session.id);
           card.style.maxHeight = `${Math.max(card.getBoundingClientRect().height, card.scrollHeight)}px`;
           card.classList.add('memory-tidy-removing');
           await new Promise(r => setTimeout(r, 520));
@@ -2028,9 +1979,9 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         card.querySelector('._chat-menu').addEventListener('click', (e) => { e.stopPropagation(); _showLibDropdown(e.currentTarget, [
           { label: 'Open', action: () => { if (window.sessionModule) window.sessionModule.selectSession(s.id); } },
           { label: 'Copy', action: () => _copyChatById(s.id) },
-          { label: 'Archive', action: async () => { await fetch(API_BASE + '/api/session/' + s.id + '/archive', { method: 'POST', headers: {'Content-Type':'application/json'} }); _renderLibChats(); } },
+          { label: 'Archive', action: async () => { await post(API_BASE + '/api/session/' + s.id + '/archive'); _renderLibChats(); } },
           { label: 'Delete', action: async () => {
-            await fetch(API_BASE + '/api/session/' + s.id, { method: 'DELETE' });
+            await del(API_BASE + '/api/session/' + s.id);
             card.style.maxHeight = `${Math.max(card.getBoundingClientRect().height, card.scrollHeight)}px`;
             card.classList.add('memory-tidy-removing');
             await new Promise(r => setTimeout(r, 520));
@@ -2111,8 +2062,8 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       await new Promise(r => setTimeout(r, 250));
       const ids = [..._chatsSelected];
       const results = await Promise.all(
-        ids.map(sid => fetch(API_BASE + '/api/session/' + sid + '/archive', { method: 'POST', headers: {'Content-Type':'application/json'} })
-          .then(r => ({ sid, ok: r.ok }))
+        ids.map(sid => post(API_BASE + '/api/session/' + sid + '/archive')
+          .then(() => ({ sid, ok: true }))
           .catch(() => ({ sid, ok: false }))
         )
       );
@@ -2155,8 +2106,8 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       await new Promise(r => setTimeout(r, 250));
       const ids = [..._chatsSelected];
       const results = await Promise.all(
-        ids.map(sid => fetch(API_BASE + '/api/session/' + sid, { method: 'DELETE' })
-          .then(r => ({ sid, ok: r.ok }))
+        ids.map(sid => del(API_BASE + '/api/session/' + sid)
+          .then(() => ({ sid, ok: true }))
           .catch(() => ({ sid, ok: false }))
         )
       );
@@ -2196,9 +2147,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       tidyBtn.appendChild(el);
       sp.start();
       try {
-        const res = await fetch(API_BASE + '/api/sessions/auto-sort', { method: 'POST', credentials: 'same-origin' });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || 'Tidy failed');
+        const data = await post(API_BASE + '/api/sessions/auto-sort');
         if (data.status === 'ok') {
           if (window.uiModule) window.uiModule.showToast('Sorted ' + data.updated + ' sessions into ' + data.folders.length + ' folders');
           if (window.sessionModule) await window.sessionModule.loadSessions();
@@ -2234,9 +2183,9 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       // Archive tab is the home for ALL archived items — chats, documents, and
       // research — each rendered with its own icon. Load the three in parallel.
       Promise.all([
-        fetch(API_BASE + '/api/sessions/archived?limit=100&sort=recent', { credentials: 'same-origin' }).then(r => r.json()).catch(() => ({})),
-        fetch(API_BASE + '/api/documents/library?archived=true&limit=50', { credentials: 'same-origin' }).then(r => r.json()).catch(() => ({})),
-        fetch('/api/research/library?archived=true', { credentials: 'same-origin' }).then(r => r.json()).catch(() => ({})),
+        get(API_BASE + '/api/sessions/archived?limit=100&sort=recent').catch(() => ({})),
+        get(API_BASE + '/api/documents/library?archived=true&limit=50').catch(() => ({})),
+        get('/api/research/library?archived=true').catch(() => ({})),
       ]).then(([s, d, r]) => {
         // These are all archived by definition — flag them so the expanded
         // chat preview hides its (redundant) "Archive" button.
@@ -2273,9 +2222,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       preview.style.display = 'block';
       preview.innerHTML = '<div style="opacity:0.4;font-size:11px;padding:8px 4px;">Loading…</div>';
       try {
-        const res = await fetch(`${API_BASE}/api/document/${d.id}`, { credentials: 'same-origin' });
-        if (!res.ok) throw new Error('failed');
-        const full = await res.json();
+        const full = await get(`${API_BASE}/api/document/${d.id}`);
         const content = (full.current_content || '').slice(0, 20000);
         const pre = document.createElement('pre');
         pre.style.cssText = 'white-space:pre-wrap;word-break:break-word;font-size:11px;margin:6px 4px;max-height:50vh;overflow:auto;';
@@ -2296,12 +2243,12 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         actions.querySelector('.doclib-chat-delete-btn').addEventListener('click', async (ev) => {
           ev.stopPropagation();
           if (!await window.styledConfirm('Delete this document?', { confirmText: 'Delete', danger: true })) return;
-          await fetch(`${API_BASE}/api/document/${d.id}`, { method: 'DELETE', credentials: 'same-origin' });
+          await del(`${API_BASE}/api/document/${d.id}`);
           _renderLibArchive();
         });
         actions.querySelector('.doclib-chat-restore-btn').addEventListener('click', async (ev) => {
           ev.stopPropagation();
-          await fetch(`${API_BASE}/api/document/${d.id}/archive?archived=false`, { method: 'POST', credentials: 'same-origin' });
+          await post(`${API_BASE}/api/document/${d.id}/archive?archived=false`);
           _renderLibArchive();
         });
         // Open = clone the doc into the active session and surface it in the editor.
@@ -2382,8 +2329,8 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         card.querySelector('._arc-menu').addEventListener('click', (e) => { e.stopPropagation(); _showLibDropdown(e.currentTarget, [
           { label: 'Open', action: () => { if (window.sessionModule) window.sessionModule.selectSession(s.id); } },
           { label: 'Copy', action: () => _copyChatById(s.id) },
-          { label: 'Restore', action: async () => { await fetch(API_BASE + '/api/session/' + s.id + '/unarchive', { method: 'POST' }); _renderLibArchive(); } },
-          { label: 'Delete', action: async () => { await fetch(API_BASE + '/api/session/' + s.id, { method: 'DELETE' }); _renderLibArchive(); }, danger: true },
+          { label: 'Restore', action: async () => { await post(API_BASE + '/api/session/' + s.id + '/unarchive'); _renderLibArchive(); } },
+          { label: 'Delete', action: async () => { await del(API_BASE + '/api/session/' + s.id); _renderLibArchive(); }, danger: true },
         ], { onSelect: () => {
           _arcSelectMode = true;
           _arcSelected.add('chats:' + s.id);
@@ -2425,8 +2372,8 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
           _toggleArcDocPreview(card, d);
         });
         card.querySelector('._arc-doc-menu').addEventListener('click', (e) => { e.stopPropagation(); _showLibDropdown(e.currentTarget, [
-          { label: 'Restore', action: async () => { await fetch(API_BASE + '/api/document/' + d.id + '/archive?archived=false', { method: 'POST', credentials: 'same-origin' }); _renderLibArchive(); } },
-          { label: 'Delete', danger: true, action: async () => { if (!await window.styledConfirm('Delete this document?', { confirmText: 'Delete', danger: true })) return; await fetch(API_BASE + '/api/document/' + d.id, { method: 'DELETE', credentials: 'same-origin' }); _renderLibArchive(); } },
+          { label: 'Restore', action: async () => { await post(API_BASE + '/api/document/' + d.id + '/archive?archived=false'); _renderLibArchive(); } },
+          { label: 'Delete', danger: true, action: async () => { if (!await window.styledConfirm('Delete this document?', { confirmText: 'Delete', danger: true })) return; await del(API_BASE + '/api/document/' + d.id); _renderLibArchive(); } },
         ], { onSelect: () => {
           _arcSelectMode = true;
           _arcSelected.add('documents:' + d.id);
@@ -2463,8 +2410,8 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         });
         card.querySelector('._arc-res-menu').addEventListener('click', (e) => { e.stopPropagation(); _showLibDropdown(e.currentTarget, [
           { label: 'Open', action: () => { const a = document.createElement('a'); a.href = '/api/research/report/' + r.id; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); } },
-          { label: 'Restore', action: async () => { await fetch('/api/research/' + r.id + '/archive?archived=false', { method: 'POST', credentials: 'same-origin' }); _renderLibArchive(); } },
-          { label: 'Delete', danger: true, action: async () => { if (!await window.styledConfirm('Delete this research?', { confirmText: 'Delete', danger: true })) return; await fetch('/api/research/' + r.id, { method: 'DELETE', credentials: 'same-origin' }); _renderLibArchive(); } },
+          { label: 'Restore', action: async () => { await post('/api/research/' + r.id + '/archive?archived=false'); _renderLibArchive(); } },
+          { label: 'Delete', danger: true, action: async () => { if (!await window.styledConfirm('Delete this research?', { confirmText: 'Delete', danger: true })) return; await del('/api/research/' + r.id); _renderLibArchive(); } },
         ], { onSelect: () => {
           _arcSelectMode = true;
           _arcSelected.add('research:' + r.id);
@@ -2533,15 +2480,15 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
     // Route a composite "type:id" key to the right restore / delete endpoint.
     function _arcRestoreOne(key) {
       const i = key.indexOf(':'), type = key.slice(0, i), id = key.slice(i + 1);
-      if (type === 'documents') return fetch(API_BASE + '/api/document/' + id + '/archive?archived=false', { method: 'POST', credentials: 'same-origin' });
-      if (type === 'research') return fetch('/api/research/' + id + '/archive?archived=false', { method: 'POST', credentials: 'same-origin' });
-      return fetch(API_BASE + '/api/session/' + id + '/unarchive', { method: 'POST', credentials: 'same-origin' });
+      if (type === 'documents') return post(API_BASE + '/api/document/' + id + '/archive?archived=false');
+      if (type === 'research') return post('/api/research/' + id + '/archive?archived=false');
+      return post(API_BASE + '/api/session/' + id + '/unarchive');
     }
     function _arcDeleteOne(key) {
       const i = key.indexOf(':'), type = key.slice(0, i), id = key.slice(i + 1);
-      if (type === 'documents') return fetch(API_BASE + '/api/document/' + id, { method: 'DELETE', credentials: 'same-origin' });
-      if (type === 'research') return fetch('/api/research/' + id, { method: 'DELETE', credentials: 'same-origin' });
-      return fetch(API_BASE + '/api/session/' + id, { method: 'DELETE', credentials: 'same-origin' });
+      if (type === 'documents') return del(API_BASE + '/api/document/' + id);
+      if (type === 'research') return del('/api/research/' + id);
+      return del(API_BASE + '/api/session/' + id);
     }
     document.getElementById('doclib-arc-bulk-restore').addEventListener('click', async () => {
       if (!_arcSelected.size) return;
@@ -2592,9 +2539,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         grid.appendChild(_sp.element);
       } catch { grid.innerHTML = '<div class="hwfit-loading">Loading…</div>'; }
       try {
-        const res = await fetch('/api/research/library' + (_researchArchivedView ? '?archived=true' : ''), { credentials: 'same-origin' });
-        if (!res.ok) throw new Error(res.statusText);
-        const data = await res.json();
+        const data = await get('/api/research/library' + (_researchArchivedView ? '?archived=true' : ''));
         _researchItems = data.research || data || [];
       } catch (e) {
         grid.innerHTML = `<div class="hwfit-loading">Failed to load: ${e.message}</div>`;
@@ -2633,8 +2578,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       try {
         // Hit the per-research detail endpoint to pull sources + summary.
         // The library list endpoint only returns lightweight metadata.
-        const res = await fetch(`${API_BASE}/api/research/detail/${item.id}`, { credentials: 'same-origin' });
-        if (res.ok) detail = await res.json();
+        detail = await get(`${API_BASE}/api/research/detail/${item.id}`);
       } catch {}
       const sources = Array.isArray(detail.sources) ? detail.sources : [];
       const sourcesList = sources.slice(0, 12).map((src, i) => {
@@ -2687,9 +2631,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         discussBtn.textContent = 'Creating…';
         try {
           const _sid = detail.session_id || detail.id || item.id;
-          const res = await fetch(`${API_BASE}/api/research/spinoff/${_sid}`, { method: 'POST', credentials: 'same-origin' });
-          if (!res.ok) { let d = ''; try { d = (await res.json()).detail || ''; } catch {} throw new Error(d || ('HTTP ' + res.status)); }
-          const payload = await res.json();
+          const payload = await post(`${API_BASE}/api/research/spinoff/${_sid}`);
           if (window.sessionModule && payload.session_id) {
             await window.sessionModule.loadSessions().catch(() => {});
             await window.sessionModule.selectSession(payload.session_id);
@@ -2720,8 +2662,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
           : window.confirm('Delete this research report?');
         if (!ok) return;
         try {
-          const res = await fetch(`${API_BASE}/api/research/${item.id}`, { method: 'DELETE', credentials: 'same-origin' });
-          if (!res.ok) throw new Error(await res.text());
+          await del(`${API_BASE}/api/research/${item.id}`);
           if (item.archived) {
             _renderLibArchive();
           } else {
@@ -2740,7 +2681,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         const fromArchiveTab = !!item.archived;
         const toArchived = fromArchiveTab ? false : !_researchArchivedView;
         try {
-          await fetch(`${API_BASE}/api/research/${item.id}/archive?archived=${toArchived}`, { method: 'POST', credentials: 'same-origin' });
+          await post(`${API_BASE}/api/research/${item.id}/archive?archived=${toArchived}`);
           if (fromArchiveTab) {
             _renderLibArchive();
           } else {
@@ -2863,7 +2804,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
                 const toArchived = !_researchArchivedView;
                 const card = btn.closest('.doclib-research-card');
                 if (card) { card.style.transition = 'opacity 0.25s, transform 0.25s'; card.style.opacity = '0'; card.style.transform = 'scale(0.95)'; }
-                try { await fetch('/api/research/' + rid + '/archive?archived=' + toArchived, { method: 'POST', credentials: 'same-origin' }); } catch {}
+                try { await post('/api/research/' + rid + '/archive?archived=' + toArchived); } catch {}
                 await new Promise(r => setTimeout(r, 200));
                 _researchItems = _researchItems.filter(r => r.id !== rid);
                 _renderResearchGrid();
@@ -2878,7 +2819,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
                   card.style.transform = 'scale(0.95)';
                 }
                 await new Promise(r => setTimeout(r, 250));
-                await fetch('/api/research/' + rid, { method: 'DELETE', credentials: 'same-origin' });
+                await del('/api/research/' + rid);
                 _researchItems = _researchItems.filter(r => r.id !== rid);
                 _renderResearchGrid();
               } },
@@ -2946,9 +2887,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         }
         const results = await Promise.all(needFetch.map(async r => {
           try {
-            const res = await fetch('/api/research/detail/' + r.id, { credentials: 'same-origin' });
-            if (!res.ok) return null;
-            const d = await res.json();
+            const d = await get('/api/research/detail/' + r.id);
             // Backend JSON uses `result` (rendered) or `raw_report` (raw md).
             // If neither exists or both are tiny, treat as empty.
             const body = (d.result || d.raw_report || '').trim();
@@ -2960,7 +2899,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
           if (uiModule) uiModule.showToast('Nothing to tidy');
           return;
         }
-        await Promise.all(candidates.map(r => fetch('/api/research/' + r.id, { method: 'DELETE', credentials: 'same-origin' }).catch(() => {})));
+        await Promise.all(candidates.map(r => del('/api/research/' + r.id).catch(() => {})));
         const ids = new Set(candidates.map(r => r.id));
         _researchItems = _researchItems.filter(r => !ids.has(r.id));
         _renderResearchGrid();
@@ -3011,7 +2950,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         });
       }
       await new Promise(r => setTimeout(r, 250));
-      await Promise.all([..._researchSelected].map(rid => fetch('/api/research/' + rid, { method: 'DELETE', credentials: 'same-origin' })));
+      await Promise.all([..._researchSelected].map(rid => del('/api/research/' + rid)));
       _researchItems = _researchItems.filter(r => !_researchSelected.has(r.id));
       _researchSelected.clear();
       _researchSelectMode = false;
@@ -3035,7 +2974,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
         });
       }
       await new Promise(r => setTimeout(r, 250));
-      await Promise.all([..._researchSelected].map(rid => fetch('/api/research/' + rid + '/archive?archived=' + toArchived, { method: 'POST', credentials: 'same-origin' })));
+      await Promise.all([..._researchSelected].map(rid => post('/api/research/' + rid + '/archive?archived=' + toArchived)));
       _researchItems = _researchItems.filter(r => !_researchSelected.has(r.id));
       _researchSelected.clear();
       _researchSelectMode = false;
@@ -3130,8 +3069,7 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       createBtn.addEventListener('click', async () => {
         // Create a new session, then create a blank document in it
         try {
-          const sRes = await fetch('/api/session', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Untitled Document' }) });
-          const sData = await sRes.json();
+          const sData = await post('/api/session', { title: 'Untitled Document' });
           const sessionId = sData.session_id;
           await _createDocument(sessionId);
           // Close library and open the new session
@@ -3175,24 +3113,20 @@ let _libraryArchivedView = false;   // Documents tab showing archived docs?
       let aiMessage = '';
       try {
         // Phase 1: regex tidy (empty/broken docs)
-        const [res1] = await Promise.all([
-          fetch(`${API_BASE}/api/documents/tidy`, { method: 'POST' }),
+        const [d1] = await Promise.all([
+          post(`${API_BASE}/api/documents/tidy`),
           new Promise(r => setTimeout(r, 600)),
         ]);
-        if (res1.ok) {
-          const d1 = await res1.json();
+        if (d1) {
           totalDeleted += d1.deleted || 0;
           totalFixed += d1.fixed_titles || 0;
         }
 
         // Phase 2: AI tidy (junk/test detection)
         try {
-          const res2 = await fetch(`${API_BASE}/api/documents/ai-tidy`, { method: 'POST' });
-          if (res2.ok) {
-            const d2 = await res2.json();
-            totalDeleted += d2.deleted || 0;
-            if (d2.message) aiMessage = d2.message;
-          }
+          const d2 = await post(`${API_BASE}/api/documents/ai-tidy`);
+          totalDeleted += d2.deleted || 0;
+          if (d2.message) aiMessage = d2.message;
         } catch (_) { /* AI tidy is optional */ }
 
         spinner.destroy();

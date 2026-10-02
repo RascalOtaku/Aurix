@@ -20,6 +20,7 @@ import documentModule from './document.js';
 import settingsModule from './settings.js';
 import cookbookModule from './cookbook.js';
 import { EVAL_PROMPTS } from './compare/index.js';
+import { get, post, del, patch, ApiError } from './api.js';
 
 // ── Module state ──────────────────────────────────────────────────────
 
@@ -214,9 +215,7 @@ async function _hasConfiguredModels() {
   const modelsBox = document.getElementById('models');
   if (modelsBox && modelsBox.querySelector('.models-row')) return true;
   try {
-    const res = await fetch(`${API_BASE}/api/models`, { credentials: 'same-origin' });
-    if (!res.ok) return false;
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/models`);
     return (data.items || []).some(item =>
       ((item.models || []).length > 0 || (item.models_extra || []).length > 0) && item.url
     );
@@ -243,11 +242,7 @@ function _persistMsg(role, content, metadata) {
   if (!sid || !content) return;
   const payload = { role, content };
   if (metadata) payload.metadata = metadata;
-  fetch(`${API_BASE}/api/session/${sid}/message`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  }).catch(() => {});
+  post(`${API_BASE}/api/session/${sid}/message`, payload).catch(() => {});
 }
 
 function slashReply(text) {
@@ -550,17 +545,14 @@ async function connectDetectedSetupEndpoint(detected) {
     if (detected.name) fd.append('name', detected.name);
     fd.append('require_models', 'true');
     if (!isLocal) fd.append('skip_probe', 'true');
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
-    const res = await fetch(`${API_BASE}/api/model-endpoints`, { method: 'POST', body: fd, credentials: 'same-origin', signal: controller.signal });
-    clearTimeout(timer);
-    const data = await res.json();
-
-    if (!res.ok) {
+    let data;
+    try {
+      data = await post(`${API_BASE}/api/model-endpoints`, fd);
+    } catch (e) {
       setupSpinner.destroy();
       spinnerDiv.remove();
       setupMode = 'endpoint-provider-first';
-      await typewriterReply(`Endpoint was not saved: ${data.detail || 'connection failed'}`);
+      await typewriterReply(`Endpoint was not saved: ${(e instanceof ApiError && e.detail) || 'connection failed'}`);
       return;
     }
 
@@ -746,15 +738,10 @@ async function handleSetupWizard(mode, input) {
   if (mode === 'features') {
     const name = input.trim().toLowerCase();
     try {
-      const res = await fetch(`${API_BASE}/api/auth/features`, { credentials: 'same-origin' });
-      const features = await res.json();
+      const features = await get(`${API_BASE}/api/auth/features`);
       if (name in features) {
         features[name] = !features[name];
-        await fetch(`${API_BASE}/api/auth/features`, {
-          method: 'POST', credentials: 'same-origin',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(features),
-        });
+        await post(`${API_BASE}/api/auth/features`, features);
         await typewriterReply(`${name}: ${features[name] ? 'on' : 'off'}`);
       } else {
         await typewriterReply(`Unknown feature "${name}". Available: ${Object.keys(features).join(', ')}`);
@@ -824,8 +811,7 @@ async function _cmdSessionNew(args, ctx) {
   // No current session — try default chat, then any recent session with a model
   if (!endpointUrl || !model) {
     try {
-      const dcRes = await fetch(`${API_BASE}/api/default-chat`);
-      const dc = await dcRes.json();
+      const dc = await get(`${API_BASE}/api/default-chat`);
       if (dc.endpoint_url && dc.model) {
         endpointUrl = dc.endpoint_url;
         model = dc.model;
@@ -844,8 +830,7 @@ async function _cmdSessionNew(args, ctx) {
   // Last resort — pull first model from /api/models
   if (!endpointUrl || !model) {
     try {
-      const mRes = await fetch(`${API_BASE}/api/models`, { credentials: 'same-origin' });
-      const mData = await mRes.json();
+      const mData = await get(`${API_BASE}/api/models`);
       for (const ep of (mData.items || [])) {
         if (ep.models && ep.models.length && ep.url) {
           endpointUrl = ep.url;
@@ -867,15 +852,17 @@ async function _cmdSessionNew(args, ctx) {
   fd.append('model', model);
   fd.append('skip_validation', 'true');
   if (endpointId) fd.append('endpoint_id', endpointId);
-  const res = await fetch(`${API_BASE}/api/session`, { method: 'POST', body: fd, credentials: 'same-origin' });
-  if (res.ok) {
-    const data = await res.json();
+  try {
+    const data = await post(`${API_BASE}/api/session`, fd);
     await sessionModule.loadSessions();
     await sessionModule.selectSession(data.id);
     _hideWelcomeScreen();
     const shortModel = (model || '').split('/').pop();
     await typewriterReply(`New session — ${shortModel || 'ready'}.`);
-  } else { const err = await res.json().catch(() => null); slashReply('Failed to create session' + (err?.detail ? ': ' + ctx.esc(err.detail) : '')); }
+  } catch (e) {
+    const detail = e instanceof ApiError ? e.detail : null;
+    slashReply('Failed to create session' + (detail ? ': ' + ctx.esc(detail) : ''));
+  }
   return true;
 }
 
@@ -892,8 +879,7 @@ async function _cmdSessionDelete(args, ctx) {
     if (!targets.length) { slashReply('Nothing to delete' + (skipped ? ` (${skipped} starred)` : '')); return true; }
     let deleted = 0, failed = 0;
     for (const s of targets) {
-      const res = await fetch(`${API_BASE}/api/session/${s.id}`, { method: 'DELETE', credentials: 'same-origin' });
-      if (res.ok) deleted++; else failed++;
+      try { await del(`${API_BASE}/api/session/${s.id}`); deleted++; } catch { failed++; }
     }
     await sessionModule.loadSessions();
     let msg = `Deleted ${deleted} session${deleted !== 1 ? 's' : ''}`;
@@ -909,13 +895,18 @@ async function _cmdSessionDelete(args, ctx) {
   const sessions = sessionModule.getSessions();
   const sess = sessions.find(s => s.id === target);
   const label = sess ? `"${ctx.esc(sess.name || target.slice(0,8))}"` : target.slice(0,8);
-  const res = await fetch(`${API_BASE}/api/session/${target}`, { method: 'DELETE', credentials: 'same-origin' });
-  if (res.ok) {
+  try {
+    await del(`${API_BASE}/api/session/${target}`);
     await typewriterReply(`Deleted ${label}`);
     await sessionModule.loadSessions();
-  } else if (res.status === 403) {
-    slashReply('Cannot delete a starred session — unstar it first, or use <code>/s rm -rf</code>');
-  } else { const err = await res.json().catch(() => null); slashReply('Delete failed' + (err?.detail ? ': ' + ctx.esc(err.detail) : '')); }
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 403) {
+      slashReply('Cannot delete a starred session — unstar it first, or use <code>/s rm -rf</code>');
+    } else {
+      const detail = e instanceof ApiError ? e.detail : null;
+      slashReply('Delete failed' + (detail ? ': ' + ctx.esc(detail) : ''));
+    }
+  }
   return true;
 }
 
@@ -926,9 +917,10 @@ async function _cmdSessionArchive(args, ctx) {
   const sess = sessions.find(s => s.id === target);
   const label = sess ? `"${ctx.esc(sess.name || target.slice(0,8))}"` : target.slice(0,8);
   if (sess && sess.archived) { await typewriterReply(`${label} is already archived`); return true; }
-  const res = await fetch(`${API_BASE}/api/session/${target}/archive`, { method: 'POST', credentials: 'same-origin' });
-  if (res.ok) { await typewriterReply(`Archived ${label}`); await sessionModule.loadSessions(); }
-  else { slashReply('Archive failed'); }
+  try {
+    await post(`${API_BASE}/api/session/${target}/archive`);
+    await typewriterReply(`Archived ${label}`); await sessionModule.loadSessions();
+  } catch { slashReply('Archive failed'); }
   return true;
 }
 
@@ -936,22 +928,23 @@ async function _cmdSessionRename(args, ctx) {
   const newName = args.join(' ');
   if (!newName) { slashReply('Usage: /rename New Name'); return true; }
   const fd = new FormData(); fd.append('name', newName);
-  const res = await fetch(`${API_BASE}/api/session/${ctx.sid}`, { method: 'PATCH', body: fd, credentials: 'same-origin' });
-  if (res.ok) { await typewriterReply(`Renamed to "${ctx.esc(newName)}"`); await sessionModule.loadSessions(); }
-  else { slashReply('Rename failed'); }
+  try {
+    await patch(`${API_BASE}/api/session/${ctx.sid}`, fd);
+    await typewriterReply(`Renamed to "${ctx.esc(newName)}"`); await sessionModule.loadSessions();
+  } catch { slashReply('Rename failed'); }
   return true;
 }
 
 async function _cmdSessionImportant(args, ctx) {
   const fd = new FormData(); fd.append('important', 'true');
-  await fetch(`${API_BASE}/api/session/${ctx.sid}/important`, { method: 'POST', body: fd, credentials: 'same-origin' });
+  await post(`${API_BASE}/api/session/${ctx.sid}/important`, fd);
   await typewriterReply('Session marked as important');
   return true;
 }
 
 async function _cmdSessionUnimportant(args, ctx) {
   const fd = new FormData(); fd.append('important', 'false');
-  await fetch(`${API_BASE}/api/session/${ctx.sid}/important`, { method: 'POST', body: fd, credentials: 'same-origin' });
+  await post(`${API_BASE}/api/session/${ctx.sid}/important`, fd);
   await typewriterReply('Session unmarked');
   return true;
 }
@@ -959,17 +952,12 @@ async function _cmdSessionUnimportant(args, ctx) {
 async function _cmdSessionFork(args, ctx) {
   if (!ctx.sid) { slashReply('No active session'); return true; }
   const keepCount = parseInt(args[0]) || 0;
-  const res = await fetch(`${API_BASE}/api/session/${ctx.sid}/fork`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ keep_count: keepCount })
-  });
-  if (res.ok) {
-    const data = await res.json();
+  try {
+    const data = await post(`${API_BASE}/api/session/${ctx.sid}/fork`, { keep_count: keepCount });
     await sessionModule.loadSessions();
     await sessionModule.selectSession(data.id);
     await typewriterReply(`Forked session (${data.kept || 0} messages)`);
-  } else { slashReply('Fork failed'); }
+  } catch { slashReply('Fork failed'); }
   return true;
 }
 
@@ -977,13 +965,10 @@ async function _cmdSessionTruncate(args, ctx) {
   if (!ctx.sid) { slashReply('No active session'); return true; }
   const keep = parseInt(args[0]);
   if (!keep || keep < 1) { slashReply('Usage: /truncate N — deletes older messages, keeps the last N'); return true; }
-  const res = await fetch(`${API_BASE}/api/session/${ctx.sid}/truncate`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ keep_count: keep })
-  });
-  if (res.ok) { await typewriterReply(`Truncated to ${keep} messages`); }
-  else { slashReply('Truncate failed'); }
+  try {
+    await post(`${API_BASE}/api/session/${ctx.sid}/truncate`, { keep_count: keep });
+    await typewriterReply(`Truncated to ${keep} messages`);
+  } catch { slashReply('Truncate failed'); }
   return true;
 }
 
@@ -1016,9 +1001,8 @@ async function _cmdSessionSwitch(args, ctx) {
 
 async function _cmdSessionSort(args, ctx) {
   slashReply('Auto-sorting sessions...');
-  const res = await fetch(`${API_BASE}/api/sessions/auto-sort`, { method: 'POST', credentials: 'same-origin' });
-  if (res.ok) {
-    const data = await res.json();
+  try {
+    const data = await post(`${API_BASE}/api/sessions/auto-sort`);
     await sessionModule.loadSessions();
     // Handle skipped status
     if (data.status === 'skipped') {
@@ -1027,7 +1011,7 @@ async function _cmdSessionSort(args, ctx) {
       const del_msg = data.deleted_empty ? ` (${data.deleted_empty} empty deleted)` : '';
       await typewriterReply(`Sorted ${data.updated || 0} sessions into ${data.folders?.length || 0} folders${del_msg}`);
     }
-  } else { slashReply('Auto-sort failed'); }
+  } catch { slashReply('Auto-sort failed'); }
   return true;
 }
 
@@ -1305,8 +1289,7 @@ async function _cmdTheme(args, ctx) {
 
 async function _cmdModels(args, ctx) {
   slashReply('Fetching models...');
-  const res = await fetch(`${API_BASE}/api/models`, { credentials: 'same-origin' });
-  const data = await res.json();
+  const data = await get(`${API_BASE}/api/models`);
   let lines = [];
   (data.items || []).forEach(ep => {
     lines.push(`<b>${ctx.esc(ep.endpoint_name || ep.url)}</b>`);
@@ -1319,8 +1302,7 @@ async function _cmdModels(args, ctx) {
 // ── Memory ──
 
 async function _cmdMemoryList(args, ctx) {
-  const res = await fetch(`${API_BASE}/api/memory`, { credentials: 'same-origin' });
-  const data = await res.json();
+  const data = await get(`${API_BASE}/api/memory`);
   const mems = data.memory || [];
   if (!mems.length) { slashReply('No memories stored'); return true; }
   const lines = mems.slice(0, 40).map(m => `[${m.category||'fact'}] ${m.id.slice(0,8)} — ${ctx.esc(m.text)}`);
@@ -1332,13 +1314,10 @@ async function _cmdMemoryList(args, ctx) {
 async function _cmdMemoryAdd(args, ctx) {
   const text = args.join(' ');
   if (!text) { slashReply('Usage: /memory add Your text here'); return true; }
-  const res = await fetch(`${API_BASE}/api/memory/add`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, category: 'fact', source: 'user' })
-  });
-  if (res.ok) await typewriterReply(`Memory added: ${ctx.esc(text)}`);
-  else slashReply('Failed to add memory');
+  try {
+    await post(`${API_BASE}/api/memory/add`, { text, category: 'fact', source: 'user' });
+    await typewriterReply(`Memory added: ${ctx.esc(text)}`);
+  } catch { slashReply('Failed to add memory'); }
   return true;
 }
 
@@ -1348,8 +1327,7 @@ async function _cmdMemoryDelete(args, ctx) {
   const cleanArg = raw.replace(/\s*-(rf|fr)\b\s*/, '').trim();
 
   if (cleanArg === 'all' || (force && !cleanArg)) {
-    const listRes = await fetch(`${API_BASE}/api/memory`, { credentials: 'same-origin' });
-    const listData = await listRes.json();
+    const listData = await get(`${API_BASE}/api/memory`);
     const mems = listData.memory || [];
     if (!mems.length) { slashReply('No memories to delete'); return true; }
     if (!force) {
@@ -1358,8 +1336,7 @@ async function _cmdMemoryDelete(args, ctx) {
     }
     let deleted = 0;
     for (const m of mems) {
-      const res = await fetch(`${API_BASE}/api/memory/${m.id}`, { method: 'DELETE', credentials: 'same-origin' });
-      if (res.ok) deleted++;
+      try { await del(`${API_BASE}/api/memory/${m.id}`); deleted++; } catch {}
     }
     await typewriterReply(`Deleted ${deleted}/${mems.length} memories`);
     return true;
@@ -1370,14 +1347,14 @@ async function _cmdMemoryDelete(args, ctx) {
   // Resolve short ID to full UUID and get preview
   let preview = memId.slice(0, 8);
   if (memId.length < 36) {
-    const listRes = await fetch(`${API_BASE}/api/memory`, { credentials: 'same-origin' });
-    const listData = await listRes.json();
+    const listData = await get(`${API_BASE}/api/memory`);
     const match = (listData.memory || []).find(m => m.id.startsWith(memId));
     if (match) { memId = match.id; preview = match.text.slice(0, 50); }
   }
-  const res = await fetch(`${API_BASE}/api/memory/${memId}`, { method: 'DELETE', credentials: 'same-origin' });
-  if (res.ok) await typewriterReply(`Deleted: ${preview}${preview.length >= 50 ? '...' : ''}`);
-  else slashReply('Delete failed — check the ID');
+  try {
+    await del(`${API_BASE}/api/memory/${memId}`);
+    await typewriterReply(`Deleted: ${preview}${preview.length >= 50 ? '...' : ''}`);
+  } catch { slashReply('Delete failed — check the ID'); }
   return true;
 }
 
@@ -1385,8 +1362,7 @@ async function _cmdMemorySearch(args, ctx) {
   const query = args.join(' ');
   if (!query) { slashReply('Usage: /memory search query'); return true; }
   const fd = new FormData(); fd.append('query', query);
-  const res = await fetch(`${API_BASE}/api/memory/search`, { method: 'POST', body: fd, credentials: 'same-origin' });
-  const data = await res.json();
+  const data = await post(`${API_BASE}/api/memory/search`, fd);
   const mems = data.memories || [];
   if (!mems.length) { await typewriterReply(`No memories matching "${ctx.esc(query)}"`); return true; }
   const lines = mems.map(m => `[${m.category||'fact'}] ${ctx.esc(m.text)}`);
@@ -1399,13 +1375,10 @@ async function _cmdMemorySearch(args, ctx) {
 async function _cmdNote(args, ctx) {
   const text = args.join(' ');
   if (!text) { slashReply('Usage: /note Your note here'); return true; }
-  const res = await fetch(`${API_BASE}/api/memory/add`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, category: 'note', source: 'user' })
-  });
-  if (res.ok) await typewriterReply(`Note saved: ${ctx.esc(text)}`);
-  else slashReply('Failed to save note');
+  try {
+    await post(`${API_BASE}/api/memory/add`, { text, category: 'note', source: 'user' });
+    await typewriterReply(`Note saved: ${ctx.esc(text)}`);
+  } catch { slashReply('Failed to save note'); }
   return true;
 }
 
@@ -1492,25 +1465,22 @@ function _parseTimeSpec(input) {
 async function _cmdTodo(args, ctx) {
   const sub = (args[0] || '').toLowerCase();
   if (sub === 'list' || sub === 'ls') {
-    const res = await fetch(`${API_BASE}/api/notes?note_type=note`, { credentials: 'same-origin' });
-    if (!res.ok) { slashReply('Failed to load todos'); return true; }
-    const data = await res.json();
-    const items = (data.notes || data || []).filter(n => !n.archived).slice(0, 30);
-    if (!items.length) { slashReply('No todos'); return true; }
-    const lines = items.map(n => `• ${ctx.esc(n.title || n.content || '').slice(0, 80)}`);
-    slashReply(`<pre>${lines.join('\n')}</pre>`);
+    try {
+      const data = await get(`${API_BASE}/api/notes?note_type=note`);
+      const items = (data.notes || data || []).filter(n => !n.archived).slice(0, 30);
+      if (!items.length) { slashReply('No todos'); return true; }
+      const lines = items.map(n => `• ${ctx.esc(n.title || n.content || '').slice(0, 80)}`);
+      slashReply(`<pre>${lines.join('\n')}</pre>`);
+    } catch { slashReply('Failed to load todos'); }
     return true;
   }
   // Treat everything after /todo (or after /todo add) as the todo text
   const rest = (sub === 'add' ? args.slice(1) : args).join(' ').trim();
   if (!rest) { slashReply('Usage: /todo Your task here  ·  /todo list'); return true; }
-  const res = await fetch(`${API_BASE}/api/notes`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title: rest, note_type: 'note', source: 'slash', label: 'todo' }),
-  });
-  if (res.ok) await typewriterReply(`Todo added: ${ctx.esc(rest)}`);
-  else slashReply('Failed to add todo');
+  try {
+    await post(`${API_BASE}/api/notes`, { title: rest, note_type: 'note', source: 'slash', label: 'todo' });
+    await typewriterReply(`Todo added: ${ctx.esc(rest)}`);
+  } catch { slashReply('Failed to add todo'); }
   return true;
 }
 
@@ -1527,15 +1497,11 @@ async function _cmdEvent(args, ctx) {
     dtend: _toLocalIso(end),
     all_day: false,
   };
-  const res = await fetch(`${API_BASE}/api/calendar/events`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (res.ok) {
+  try {
+    await post(`${API_BASE}/api/calendar/events`, body);
     await typewriterReply(`Event: ${ctx.esc(parsed.rest)} — ${start.toLocaleString()}`);
-  } else {
-    const err = await res.text().catch(() => '');
+  } catch (e) {
+    const err = e instanceof ApiError ? (typeof e.detail === 'string' ? e.detail : e.message) : '';
     slashReply(`Failed to create event${err ? `: ${ctx.esc(err.slice(0,200))}` : ''}`);
   }
   return true;
@@ -1557,15 +1523,11 @@ async function _cmdRemind(args, ctx) {
     dtend: _toLocalIso(end),
     all_day: false,
   };
-  const res = await fetch(`${API_BASE}/api/calendar/events`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (res.ok) {
+  try {
+    await post(`${API_BASE}/api/calendar/events`, body);
     await typewriterReply(`Reminder set: ${ctx.esc(parsed.rest)} — ${start.toLocaleString()}`);
-  } else {
-    const err = await res.text().catch(() => '');
+  } catch (e) {
+    const err = e instanceof ApiError ? (typeof e.detail === 'string' ? e.detail : e.message) : '';
     slashReply(`Failed to set reminder${err ? `: ${ctx.esc(err.slice(0,200))}` : ''}`);
   }
   return true;
@@ -1578,12 +1540,7 @@ async function _cmdShell(args, ctx) {
   if (!cmd) { slashReply('Usage: /sh command'); return true; }
   slashReply(`<pre>$ ${ctx.esc(cmd)}\nRunning...</pre>`);
   try {
-    const res = await fetch(`${API_BASE}/api/shell/exec`, {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ command: cmd })
-    });
-    const data = await res.json();
+    const data = await post(`${API_BASE}/api/shell/exec`, { command: cmd });
     let out = '';
     if (data.stdout) out += data.stdout;
     if (data.stderr) out += (out ? '\n' : '') + data.stderr;
@@ -1599,8 +1556,7 @@ async function _cmdShell(args, ctx) {
 // ── RAG ──
 
 async function _cmdRagList(args, ctx) {
-  const res = await fetch(`${API_BASE}/api/personal`, { credentials: 'same-origin' });
-  const data = await res.json();
+  const data = await get(`${API_BASE}/api/personal`);
   let lines = [];
   if (data.directories && data.directories.length) {
     lines.push('<b>Directories:</b>');
@@ -1618,15 +1574,10 @@ async function _cmdRagList(args, ctx) {
 async function _cmdRagAdd(args, ctx) {
   const dir = args.join(' ');
   if (!dir) { slashReply('Usage: /rag add /path/to/directory'); return true; }
-  const res = await fetch(`${API_BASE}/api/personal/add_directory`, {
-    method: 'POST', credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ directory: dir })
-  });
-  if (res.ok) {
-    const data = await res.json();
+  try {
+    const data = await post(`${API_BASE}/api/personal/add_directory`, { directory: dir });
     await typewriterReply(`Indexed "${ctx.esc(dir)}" (${data.indexed_count || 0} files)`);
-  } else { slashReply('Failed to add directory'); }
+  } catch { slashReply('Failed to add directory'); }
   return true;
 }
 
@@ -1636,8 +1587,7 @@ async function _cmdRagRemove(args, ctx) {
   const cleanArg = raw.replace(/\s*-(rf|fr)\b\s*/, '').trim();
 
   if (cleanArg === 'all' || (force && !cleanArg)) {
-    const listRes = await fetch(`${API_BASE}/api/personal`, { credentials: 'same-origin' });
-    const listData = await listRes.json();
+    const listData = await get(`${API_BASE}/api/personal`);
     const dirs = listData.directories || [];
     if (!dirs.length) { slashReply('No RAG directories to remove'); return true; }
     if (!force) {
@@ -1648,8 +1598,7 @@ async function _cmdRagRemove(args, ctx) {
     for (const d of dirs) {
       const path = typeof d === 'string' ? d : d.path || '';
       if (!path) continue;
-      const res = await fetch(`${API_BASE}/api/personal/remove_directory?directory=${encodeURIComponent(path)}`, { method: 'DELETE', credentials: 'same-origin' });
-      if (res.ok) removed++;
+      try { await del(`${API_BASE}/api/personal/remove_directory?directory=${encodeURIComponent(path)}`); removed++; } catch {}
     }
     await typewriterReply(`Removed ${removed}/${dirs.length} directories from RAG`);
     return true;
@@ -1657,11 +1606,10 @@ async function _cmdRagRemove(args, ctx) {
 
   const dir = cleanArg;
   if (!dir) { slashReply('Usage: /rag remove /path or /rag rm -rf to remove all'); return true; }
-  const res = await fetch(`${API_BASE}/api/personal/remove_directory?directory=${encodeURIComponent(dir)}`, {
-    method: 'DELETE', credentials: 'same-origin'
-  });
-  if (res.ok) await typewriterReply(`Removed "${ctx.esc(dir)}" from RAG`);
-  else slashReply('Failed to remove directory');
+  try {
+    await del(`${API_BASE}/api/personal/remove_directory?directory=${encodeURIComponent(dir)}`);
+    await typewriterReply(`Removed "${ctx.esc(dir)}" from RAG`);
+  } catch { slashReply('Failed to remove directory'); }
   return true;
 }
 
@@ -1684,9 +1632,8 @@ async function _cmdWebSearch(args, ctx) {
 async function _cmdSearch(args, ctx) {
   const query = args.join(' ');
   if (!query) { slashReply('Usage: /find &lt;query&gt;'); return true; }
-  const res = await fetch(`${API_BASE}/api/search?q=${encodeURIComponent(query)}&limit=20`, { credentials: 'same-origin' });
-  if (res.ok) {
-    const data = await res.json();
+  try {
+    const data = await get(`${API_BASE}/api/search?q=${encodeURIComponent(query)}&limit=20`);
     const results = Array.isArray(data) ? data : (data.results || []);
     if (!results.length) { slashReply(`No results for "${ctx.esc(query)}"`); return true; }
     const lines = results.slice(0, 20).map(r => {
@@ -1696,22 +1643,21 @@ async function _cmdSearch(args, ctx) {
       return `<a href="#${sid}" style="color:var(--red);text-decoration:none">${name}</a>  ${snippet}`;
     });
     slashReply(`<pre>${lines.join('\n')}</pre>`);
-  } else { slashReply('Search failed'); }
+  } catch { slashReply('Search failed'); }
   return true;
 }
 
 // ── Stats ──
 
 async function _cmdStats(args, ctx) {
-  const res = await fetch(`${API_BASE}/api/db/stats`, { credentials: 'same-origin' });
-  if (res.ok) {
-    const d = await res.json();
+  try {
+    const d = await get(`${API_BASE}/api/db/stats`);
     slashReply(`<pre>Sessions:  ${d.sessions || '?'}
 Messages:  ${d.messages || '?'}
 Memories:  ${d.memories || '?'}
 Documents: ${d.documents || '?'}
 Uploads:   ${d.uploads || '?'}</pre>`);
-  } else { slashReply('Failed to fetch stats'); }
+  } catch { slashReply('Failed to fetch stats'); }
   return true;
 }
 
@@ -1728,22 +1674,14 @@ async function _cmdCompact(args, ctx) {
     reply.body.appendChild(spinnerEl);
     compactSpinner.start(110);
   }
-  const res = await fetch(`${API_BASE}/api/session/${encodeURIComponent(ctx.sid)}/compact`, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  compactSpinner.destroy();
-  if (res.ok) {
-    const d = await res.json();
+  try {
+    const d = await post(`${API_BASE}/api/session/${encodeURIComponent(ctx.sid)}/compact`);
+    compactSpinner.destroy();
     slashReply(`Conversation compacted. Summarized ${d.summarized || 0} older messages, kept ${d.kept || 0} recent messages.`);
     if (sessionModule?.selectSession) await sessionModule.selectSession(ctx.sid);
-  } else {
-    let detail = 'Compaction failed';
-    try {
-      const err = await res.json();
-      detail = err.detail || detail;
-    } catch {}
+  } catch (e) {
+    compactSpinner.destroy();
+    const detail = (e instanceof ApiError && e.detail) || 'Compaction failed';
     slashReply(ctx.esc(detail));
   }
   return true;
@@ -1756,19 +1694,14 @@ async function _cmdTts(args, ctx) {
   if (!text) { slashReply('Usage: /tts &lt;text to speak&gt;'); return true; }
   slashReply('Synthesizing...');
   try {
-    const res = await fetch(`${API_BASE}/api/tts/synthesize`, {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, format: 'base64' })
-    });
-    if (res.ok) {
-      const data = await res.json();
+    try {
+      const data = await post(`${API_BASE}/api/tts/synthesize`, { text, format: 'base64' });
       if (data.audio) {
         const audio = new Audio('data:audio/wav;base64,' + data.audio);
         audio.play();
         slashReply('Playing...');
       } else { slashReply('No audio returned'); }
-    } else { slashReply('TTS failed (is Kokoro running?)'); }
+    } catch(e) { slashReply('TTS failed (is Kokoro running?)'); }
   } catch(e) { slashReply('TTS service unavailable'); }
   return true;
 }
@@ -4490,11 +4423,8 @@ async function _cmdTourLibrary(args, ctx) {
   // Try to load the user's most recent document. If none exist, end with a hint.
   let firstDocId = null;
   try {
-    const r = await fetch('/api/documents/library?limit=1&sort=recent', { credentials: 'same-origin' });
-    if (r.ok) {
-      const data = await r.json();
-      if (data.documents && data.documents.length) firstDocId = data.documents[0].id;
-    }
+    const data = await get('/api/documents/library?limit=1&sort=recent');
+    if (data.documents && data.documents.length) firstDocId = data.documents[0].id;
   } catch (_) {}
 
   if (!firstDocId || !window.documentModule || !window.documentModule.loadDocument) {
@@ -4775,8 +4705,7 @@ async function _cmdSetup(args, ctx) {
 
     if (topic === 'memory' || topic === 'memories') {
       try {
-        const res = await fetch(`${API_BASE}/api/memory`, { credentials: 'same-origin' });
-        const memories = await res.json();
+        const memories = await get(`${API_BASE}/api/memory`);
         const count = Array.isArray(memories) ? memories.length : 0;
         await typewriterReply(`You have ${count} saved memor${count === 1 ? 'y' : 'ies'}.\n\nType a memory to save, or use /memory to manage them.`);
       } catch {
@@ -4787,8 +4716,7 @@ async function _cmdSetup(args, ctx) {
 
     if (topic === 'features') {
       try {
-        const res = await fetch(`${API_BASE}/api/auth/features`, { credentials: 'same-origin' });
-        const features = await res.json();
+        const features = await get(`${API_BASE}/api/auth/features`);
         const lines = Object.entries(features).map(([k, v]) => `${k}: ${v ? 'on' : 'off'}`).join('\n');
         await typewriterReply(`Feature toggles:\n\n${lines}\n\nType a feature name to toggle it.`);
         setupMode = 'features';
@@ -4827,8 +4755,7 @@ async function _cmdShortcuts(args, ctx) {
   };
 
   try {
-    const res = await fetch(`${API_BASE}/api/auth/settings`, { credentials: 'same-origin' });
-    const settings = await res.json();
+    const settings = await get(`${API_BASE}/api/auth/settings`);
     if (settings.keybinds) {
       keybinds = { ...keybinds, ...settings.keybinds };
     }
@@ -5149,8 +5076,7 @@ async function _cmdUptime(args, ctx) {
 async function _cmdPing(args, ctx) {
   slashReply('<span style="opacity:0.5">Pinging endpoints...</span>');
   try {
-    const res = await fetch(`${API_BASE}/api/ping`, { credentials: 'same-origin' });
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/ping`);
     const eps = data.endpoints || [];
     if (!eps.length) { slashReply('No endpoints configured.'); return true; }
     let html = '<div style="font-family:inherit;font-size:0.9em">';
@@ -5185,8 +5111,7 @@ async function _cmdProbe(args, ctx) {
   if (query) {
     // Fetch endpoint list to resolve name -> id
     try {
-      const epRes = await fetch(`${API_BASE}/api/model-endpoints`, { credentials: 'same-origin' });
-      const eps = await epRes.json();
+      const eps = await get(`${API_BASE}/api/model-endpoints`);
       const match = eps.find(e =>
         e.name.toLowerCase() === query.toLowerCase() ||
         e.name.toLowerCase().includes(query.toLowerCase())
@@ -5868,11 +5793,9 @@ async function handleSlashCommand(input) {
     // message and re-submit. Lets you fire a stored procedure on demand
     // without the model having to discover the skill itself.
     try {
-      const skillRes = await fetch(`${API_BASE}/api/skills/${encodeURIComponent(rawCmd)}/markdown`, { credentials: 'same-origin' });
-      if (skillRes.ok) {
-        const skillData = await skillRes.json();
-        const md = skillData.markdown || '';
-        if (md) {
+      const skillData = await get(`${API_BASE}/api/skills/${encodeURIComponent(rawCmd)}/markdown`);
+      const md = skillData.markdown || '';
+      if (md) {
           _showUser();
           const request = args.join(' ').trim();
           const msgInput = document.getElementById('message');
@@ -5891,7 +5814,6 @@ async function handleSlashCommand(input) {
           }
           return true;
         }
-      }
     } catch (_) { /* fall through to fuzzy match */ }
 
     // --- 5. Fuzzy match for typos ---
