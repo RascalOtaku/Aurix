@@ -762,7 +762,7 @@ function initEndpointForm() {
         const fd = new FormData();
         fd.append('base_url', url);
         if (apiKey) fd.append('api_key', apiKey);
-        const d = await post('/api/model-endpoints/test', fd, { signal: apiTestController.signal });
+        const d = await post('/api/model-endpoints/test', fd, { signal: apiTestController.signal, timeoutMs: 0 });
         _renderEndpointTestResult(msg, true, d);
       } catch (e) {
         if (apiTestController && apiTestController.signal.aborted) {
