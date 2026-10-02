@@ -10,7 +10,34 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
+from src.exceptions import McpToolDisabledError
+
 logger = logging.getLogger(__name__)
+
+
+def load_disabled_map() -> Dict[str, set]:
+    """Load per-server disabled tool sets from the database.
+
+    Returns {server_id: set_of_disabled_tool_names}. The map is the single
+    source of truth for both hiding tools from listings AND blocking
+    execution in McpManager.call_tool.
+    """
+    from src.database import McpServer, SessionLocal
+
+    disabled_map: Dict[str, set] = {}
+    db = SessionLocal()
+    try:
+        for srv in db.query(McpServer).all():
+            if srv.disabled_tools:
+                try:
+                    names = json.loads(srv.disabled_tools)
+                    if names:
+                        disabled_map[srv.id] = set(names)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+    finally:
+        db.close()
+    return disabled_map
 
 
 class McpManager:
@@ -25,6 +52,10 @@ class McpManager:
         self._sessions: Dict[str, Any] = {}
         # server_id -> exit stack (for cleanup)
         self._stacks: Dict[str, Any] = {}
+        # server_id -> set of disabled tool names. None = not loaded yet;
+        # call_tool lazy-loads from the DB on first use so enforcement works
+        # for every caller, not just the agent loop.
+        self._disabled_map: Optional[Dict[str, set]] = None
 
     async def connect_server(
         self,
@@ -193,10 +224,23 @@ class McpManager:
         finally:
             db.close()
 
+    def set_disabled_map(self, disabled_map: Optional[Dict[str, set]]) -> None:
+        """Push a fresh per-server disabled-tool map (e.g. per agent-loop request,
+        or right after the settings UI toggles a tool)."""
+        self._disabled_map = disabled_map or {}
+
+    def refresh_disabled_map(self) -> Dict[str, set]:
+        """Reload the disabled map from the database and cache it."""
+        self._disabled_map = load_disabled_map()
+        return self._disabled_map
+
     async def call_tool(self, qualified_name: str, arguments: Dict) -> Dict:
         """Call an MCP tool by its qualified name (mcp__{server_id}__{tool_name}).
 
         Returns a result dict compatible with agent_tools format.
+
+        Raises McpToolDisabledError if the tool is disabled by the user —
+        disabled tools are execution-blocked, not just hidden from listings.
         """
         parts = qualified_name.split("__", 2)
         if len(parts) != 3 or parts[0] != "mcp":
@@ -204,6 +248,14 @@ class McpManager:
 
         server_id = parts[1]
         tool_name = parts[2]
+
+        # Execution gate: a disabled tool must never reach the MCP session,
+        # even if something invokes it directly (bypassing the listings).
+        if self._disabled_map is None:
+            self._disabled_map = load_disabled_map()
+        if tool_name in self._disabled_map.get(server_id, set()):
+            logger.warning(f"Blocked execution of disabled MCP tool: {qualified_name}")
+            raise McpToolDisabledError(server_id, tool_name)
 
         session = self._sessions.get(server_id)
         if not session:

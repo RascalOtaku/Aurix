@@ -331,6 +331,10 @@ def setup_mcp_routes(mcp_manager: McpManager):
             srv.disabled_tools = json.dumps(disabled) if disabled else None
             db.commit()
 
+            # Refresh the manager's execution-time disabled map so the toggle
+            # takes effect immediately (no restart / next-request wait).
+            mcp_manager.refresh_disabled_map()
+
             return {"id": server_id, "disabled_count": len(disabled)}
         finally:
             db.close()

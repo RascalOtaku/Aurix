@@ -27,3 +27,14 @@ class WebSearchError(Exception):
         self.query = query
         self.message = message
         super().__init__(message)
+
+class McpToolDisabledError(Exception):
+    """Raised when code tries to execute an MCP tool the user has disabled.
+
+    Disabling a tool hides it from listings AND blocks execution — a disabled
+    tool must never reach the underlying MCP session.
+    """
+    def __init__(self, server_id: str, tool_name: str):
+        self.server_id = server_id
+        self.tool_name = tool_name
+        super().__init__(f"MCP tool '{tool_name}' on server '{server_id}' is disabled")

@@ -1277,6 +1277,10 @@ async def stream_agent_loop(
     # not just the latest message, so short follow-ups don't drop just-used tools.
     _retrieval_query = _recent_context_for_retrieval(messages) or _last_user
     _mcp_disabled_map = _load_mcp_disabled_map() if mcp_mgr else {}
+    if mcp_mgr:
+        # Push the fresh map into the manager so call_tool execution-blocks
+        # disabled tools (not just hides them from listings).
+        mcp_mgr.set_disabled_map(_mcp_disabled_map)
     prep_timings["request_setup"] = time.time() - _t0
 
     # RAG-based tool selection: retrieve relevant tools for this query.

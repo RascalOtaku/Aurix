@@ -16,6 +16,7 @@ import time
 from typing import Any, Awaitable, Callable, Dict, Optional, Tuple
 
 from src.tool_security import is_public_blocked_tool, owner_is_admin_or_single_user
+from src.exceptions import McpToolDisabledError
 
 MAX_OUTPUT_CHARS = 10_000
 MAX_READ_CHARS = 20_000
@@ -263,7 +264,13 @@ async def _call_mcp_tool(
     server_id, tool_name = _MCP_TOOL_MAP[tool]
     qualified = f"mcp__{server_id}__{tool_name}"
     args = _build_mcp_args(tool, content)
-    result = await mcp.call_tool(qualified, args)
+    try:
+        result = await mcp.call_tool(qualified, args)
+    except McpToolDisabledError:
+        # User disabled this tool: surface a tidy failure. Do NOT fall through
+        # to the direct fallback — that would silently bypass the user's block.
+        logger.info(f"Legacy tool '{tool}' maps to disabled MCP tool {qualified}; blocked")
+        return {"error": f"MCP tool '{tool_name}' is disabled by user.", "exit_code": 1}
 
     # If MCP server not connected, try direct fallback
     if isinstance(result, dict) and result.get("exit_code") == 1 and "not connected" in result.get("error", ""):
@@ -746,7 +753,12 @@ async def execute_tool_block(
             except (json.JSONDecodeError, TypeError):
                 args = {}
             desc = f"mcp: {tool}"
-            result = await mcp.call_tool(tool, args)
+            try:
+                result = await mcp.call_tool(tool, args)
+            except McpToolDisabledError as e:
+                # Disabled tools surface as a clean tool result, never a traceback.
+                logger.info(f"Blocked execution of disabled MCP tool: {tool}")
+                result = {"error": f"MCP tool '{e.tool_name}' is disabled by user.", "exit_code": 1}
         else:
             desc = f"mcp: {tool}"
             result = {"error": "MCP manager not available", "exit_code": 1}
