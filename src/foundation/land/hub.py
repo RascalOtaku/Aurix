@@ -230,8 +230,11 @@ async def check_research_trigger(llm, store_: Optional[Any] = None, session_id: 
            for m in (store_ or ms.MissionStore()).all()):
         return None
     _atomic(_research_state_path(), {"ts": now})
+    # 'listings' deliberately avoided below (2026-10-01): it is real_estate_leads's own
+    # trigger word, same class of false-positive as the \bflip fix in capabilities.py -
+    # this goal only ever means land_intelligence.
     goal = (f"LandPilot: search for cheap, distressed land matching this owner brief: \"{c['text'][:600]}\". "
-            "Check county tax-delinquent/tax-sale listings, land marketplaces (LandWatch, Land.com, etc.), and "
+            "Check county tax-delinquent/tax-sale records, land marketplaces (LandWatch, Land.com, etc.), and "
             "similar public sources. This is a LEAD SCAN, not a full dossier: for each promising candidate, write "
             "one JSON object with state, county, address_or_parcel, asking_price_usd, source_url, why_promising, "
             "known_problem. Save the full list as a JSON array at land_evidence/leads.json in this mission's own "
