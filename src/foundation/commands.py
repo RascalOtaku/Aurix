@@ -206,6 +206,8 @@ _PATTERNS = [
     ("land_promote", re.compile(r"^\s*/?land\s+promote\s+(m-[0-9a-f]{6}\s+[A-Za-z0-9_\-]{2,60})\s*$", re.I)),
     ("land_propose", re.compile(r"^\s*/?land\s+propose\s+(\S{2,60})\s*$", re.I)),
     ("land_show", re.compile(r"^\s*/?land\s+show\s+(\S{2,60})\s*$", re.I)),
+    ("land_criteria", re.compile(r"^\s*/?land\s+criteria\s*[:\-]\s*(\S.{6,998})$", re.I | re.S)),
+    ("land_leads", re.compile(r"^\s*/?land\s+leads\s+(m-[0-9a-f]{6})\s*$", re.I)),
     ("land", re.compile(r"^\s*/?(?:land|land\s*pilot|parcels?)\s*\??\s*$", re.I)),
     # evolve (src/foundation/evolve.py): GA/PBT search over a domain's genome; a candidate only ever goes live via `yes evolve e-xxxxxx`
     ("evolve_yes", re.compile(r"^\s*/?(?:yes|approve)\s+evolve\s+(e-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
@@ -462,6 +464,10 @@ class Foundation:
             await self._maybe_forge_autonomy(now or time.time())
         except Exception:
             pass
+        try:                                    # LandPilot proposing its own research mission must never break scheduling either
+            await self._maybe_land_research(now or time.time())
+        except Exception:
+            pass
         try:                                    # the learning flywheel + "what's new" (both read-only on existing records)
             experience.harvest()
             for text in announce.tick(now or time.time()):
@@ -619,6 +625,22 @@ class Foundation:
             result = await forge.check_autonomous_trigger(self.llm)
         except Exception as e:
             audit.append("forge_autonomy_failed", why=repr(e)[:200])
+            return
+        if result:
+            await self.notify(result)
+
+    async def _maybe_land_research(self, now_ts: float) -> None:
+        """LandPilot's own autonomous trigger (see land/hub.py's check_research_trigger): at most once every
+        RESEARCH_COOLDOWN_DAYS, if the owner has set search criteria, propose a real mission to go find leads.
+        Skipped while a mission runs, same reasoning as forge autonomy above - never auto-started either way."""
+        if self.running():
+            return
+        try:
+            sandboxed = await asyncio.to_thread(sandbox.available)
+            result = await land.check_research_trigger(self.llm, store_=self.store, session_id=self.session_id,
+                                                        sandboxed=sandboxed, now=now_ts, **(await self._presence()))
+        except Exception as e:
+            audit.append("land_research_failed", why=repr(e)[:200])
             return
         if result:
             await self.notify(result)
@@ -872,6 +894,17 @@ class Foundation:
             return await asyncio.to_thread(fworkers.status_text)
         if kind == "land_show":
             return await asyncio.to_thread(land.show, arg)
+        if kind == "land_criteria":
+            return await asyncio.to_thread(land.set_criteria, arg)
+        if kind == "land_leads":
+            leads = await asyncio.to_thread(land.leads, arg)
+            if not leads:
+                return f"No leads yet at <code>{arg}</code> (still running, found nothing, or not a lead-scan mission)."
+            lines = [f"🗺️ {len(leads)} lead(s) from {arg}:"]
+            for l in leads[:20]:
+                lines.append(f"• {html.escape(str(l.get('address_or_parcel', '?')))} ({html.escape(str(l.get('county', '?')))}, "
+                            f"{html.escape(str(l.get('state', '?')))}) - ${l.get('asking_price_usd', '?')} - {html.escape(str(l.get('why_promising', '')))[:120]}")
+            return "\n".join(lines)
         if kind == "land_build":
             return await asyncio.to_thread(land.build, arg)
         if kind == "land_cap":

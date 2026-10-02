@@ -167,6 +167,95 @@ def cap_command(arg: str) -> str:
 
 
 # ------------------------------------------------------------------------------------------------------------------------------
+# search criteria + the autonomous research-mission trigger (2026-10-01, owner: "we want landpilot to find the
+# properties and do the runaround, thats the whole point" - L0/L1 dossiers alone never go looking for anything;
+# this is the L2 piece __init__.py already described ("a mission contract for web research") but nothing had
+# ever actually proposed one. Finding leads and building a verified dossier stay two separate jobs on purpose:
+# a lead-scan mission is cheap and wide (find() in the sense of "what's out there"), a dossier is the narrow,
+# evidence-graded "runaround" on ONE property once the owner picks a lead worth pursuing (land build, as today).
+# ------------------------------------------------------------------------------------------------------------------------------
+
+RESEARCH_COOLDOWN_DAYS = 7         # L3 (standing/unattended) is deliberately not allowed for this pack - this just
+                                    # throttles how often a FRESH proposal is even offered, each one still needs a yes
+
+
+def _criteria_path() -> Path:
+    return store.data_dir() / "criteria.json"
+
+
+def criteria() -> Optional[dict]:
+    return _read(_criteria_path(), None)
+
+
+def set_criteria(text: str, decided_by: str = "owner:telegram", now: Optional[float] = None) -> str:
+    """Owner only, free text on purpose (no rigid region/budget/type fields to parse) - it is handed straight
+    into the research mission's own goal description, the same way any other `mission: <goal>` is."""
+    text = (text or "").strip()
+    if not (8 <= len(text) <= 1000):
+        return "Describe what to look for in 8-1000 characters, e.g. regions, budget, and the kind of problem property."
+    rec = {"text": text, "set_by": decided_by, "set_at": _when(now or time.time())}
+    _atomic(_criteria_path(), rec)
+    audit.append("land_criteria_set", decided_by=decided_by, chars=len(text))
+    return f"🗺️ Search criteria saved: {e(text)}\nAURIX will propose a research mission against this on its own (at most once every {RESEARCH_COOLDOWN_DAYS} days) - you still approve each one."
+
+
+def criteria_text() -> str:
+    c = criteria()
+    return f"Current search criteria: {e(c['text'])}" if c else "No search criteria set yet. <code>land criteria: &lt;what to look for&gt;</code>"
+
+
+def _research_state_path() -> Path:
+    return store.data_dir() / "research_state.json"
+
+
+async def check_research_trigger(llm, store_: Optional[Any] = None, session_id: Optional[str] = None,
+                                  sandboxed: bool = False, now: Optional[float] = None, **presence_kw) -> Optional[str]:
+    """The autonomous entry point: if the owner has set criteria, enough time has passed since the last
+    proposal, and nothing is already pending, PROPOSE a real land_intelligence mission for it (planner.py's
+    normal goal -> contract path, so it gets exactly the same tool/budget/approval rules as a typed
+    `mission: <goal>` - never auto-started, land_intelligence's standing_ok is False). Returns owner-facing
+    text, or None when there is nothing new to propose."""
+    c = criteria()
+    if c is None or llm is None:
+        return None
+    now = now or time.time()
+    try:
+        last = json.loads(_research_state_path().read_text(encoding="utf-8")).get("ts", 0)
+    except (OSError, ValueError):
+        last = 0
+    if now - float(last) < RESEARCH_COOLDOWN_DAYS * 86400:
+        return None
+    ms = foundation_mission
+    if any(m.status in (ms.MissionStatus.PROPOSED, ms.MissionStatus.ACTIVE) and "landpilot" in (m.objective or "").lower()
+           for m in (store_ or ms.MissionStore()).all()):
+        return None
+    _atomic(_research_state_path(), {"ts": now})
+    goal = (f"LandPilot: search for cheap, distressed land matching this owner brief: \"{c['text'][:600]}\". "
+            "Check county tax-delinquent/tax-sale listings, land marketplaces (LandWatch, Land.com, etc.), and "
+            "similar public sources. This is a LEAD SCAN, not a full dossier: for each promising candidate, write "
+            "one JSON object with state, county, address_or_parcel, asking_price_usd, source_url, why_promising, "
+            "known_problem. Save the full list as a JSON array at land_evidence/leads.json in this mission's own "
+            "workspace - do not attempt a full evidenced dossier, that is a separate, later step (`land build`) "
+            "the owner does once a lead looks worth pursuing.")
+    from src.foundation import planner
+    audit.append("land_research_triggered", chars=len(c["text"]))
+    m = await planner.propose_mission(goal, llm=llm, session_id=session_id, store=store_, sandboxed=sandboxed, **presence_kw)
+    return (f"🗺️ <b>Proposed a LandPilot research mission on its own</b>\nAgainst: {e(c['text'][:200])}\n"
+            f"<code>approve mission {m.id}</code> / <code>deny mission {m.id}</code>")
+
+
+def leads(mission_id: str) -> List[dict]:
+    """A lead-scan mission's candidate list (land_evidence/leads.json in its workspace) - informational only,
+    never auto-promoted. The owner reviews it and runs `land build` on whichever one looks worth the real
+    evidence-gathering `land propose`/`land cap` flow needs."""
+    if not _MID.match(mission_id or ""):
+        return []
+    path = Path(foundation_mission.workspace_for(mission_id)) / "land_evidence" / "leads.json"
+    data = _read(path, [])
+    return data if isinstance(data, list) else []
+
+
+# ------------------------------------------------------------------------------------------------------------------------------
 # promotion: mission workspace -> draft -> validation -> owner promotion -> evidence store
 # ------------------------------------------------------------------------------------------------------------------------------
 

@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.foundation import audit, buttons, capabilities, commands, identity  # noqa: E402
 from src.foundation.mission import workspace_for as mission_ws  # noqa: E402
+from src.foundation import mission as ms  # noqa: E402
 from src.foundation.land import dossier, hub, report, schema, store  # noqa: E402
 from src.foundation.land.adapters import PropertyRef, load_fixture, parse_bundle  # noqa: E402
 from src.foundation.land.economics import Line, summarize  # noqa: E402
@@ -26,8 +27,6 @@ from src.foundation.land.evidence import Claim, Source, SourceType, Tier, grade,
 
 FIXTURE = hub.FIXTURES / "va_botetourt_14338.json"
 TODAY = date(2026, 9, 28)
-# The real-parcel fixture stays on the owner's server (never published): tests that need it skip without it.
-needs_fixture = unittest.skipUnless(FIXTURE.exists(), "land research fixture is local-only (not in the public repo)")
 REF = PropertyRef("VA", "Testcounty", "1-2-3", "Test parcel")
 CASE_2000 = {"source": "case", "max_exposure_usd": 2000.0, "target_offer_usd": 1500.0, "authorized_by": "owner:telegram",
              "authorized_at": "2026-09-28T12:00:00-0600"}
@@ -446,7 +445,6 @@ class AcquisitionGate(Base):
         self.assertIn("already stale", hub.approve(cid))
         self.assertIsNone(hub.approval_in_force(REF.key))
 
-    @needs_fixture
     def test_locked_dossiers_and_fixtures_get_no_card(self):
         _write_candidate("gappy", _replace(_clean_raw(), "legal_access", value=None, sources=[]))
         hub.build("gappy", today=TODAY)
@@ -665,7 +663,6 @@ class CapEscalation(Base):
 # the golden test: 14338 Botetourt Rd must STOP, for the right reasons
 # ------------------------------------------------------------------------------------------------------------------------------
 
-@needs_fixture
 class Golden14338(Base):
     def setUp(self):
         super().setUp()
@@ -725,6 +722,73 @@ class Golden14338(Base):
         self.assertNotIn("probably", md.lower())
         for text in (md, FIXTURE.read_text(encoding="utf-8")):               # no credential ever enters evidence or reports
             self.assertNotRegex(text.lower(), r"password\s*[:=]|[a-z0-9._-]+@[a-z0-9.-]+\.gov")
+
+
+class ResearchTriggerTests(unittest.IsolatedAsyncioTestCase):
+    """2026-10-01: LandPilot could build a dossier from evidence the owner fed it, but nothing ever went
+    looking for a property in the first place - hub.check_research_trigger is the fix, a real
+    planner.propose_mission() call (never auto-started: land_intelligence's standing_ok is False)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.dict(os.environ, {"AURIX_PROJECT_ROOT": self.tmp.name})
+        self.env.start()
+        audit._heads.clear()
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+        audit._heads.clear()
+
+    async def _noop_llm(self, system, prompt):
+        return "{}"
+
+    def test_no_criteria_set_is_no_proposal(self):
+        self.assertIsNone(asyncio.run(hub.check_research_trigger(self._noop_llm)))
+
+    def test_criteria_text_before_and_after(self):
+        self.assertIn("No search criteria", hub.criteria_text())
+        hub.set_criteria("Virginia/Maryland/Colorado/Oregon/Washington/Montana, $500-3500, distressed land")
+        self.assertIn("Virginia", hub.criteria_text())
+
+    def test_too_short_criteria_is_refused(self):
+        self.assertIn("8-1000 characters", hub.set_criteria("VA"))
+        self.assertIsNone(hub.criteria())
+
+    async def test_criteria_set_proposes_a_real_mission(self):
+        hub.set_criteria("Virginia, Maryland, Colorado - cheap distressed land, abandoned houses, under $3500")
+        result = await hub.check_research_trigger(self._noop_llm)
+        self.assertIsNotNone(result)
+        self.assertIn("Proposed a LandPilot research mission", result)
+        self.assertIn("land_research_triggered", [e for e in (json.loads(l)["event"] for l in
+                      open(audit.audit_path(), encoding="utf-8") if l.strip())])
+
+    async def test_does_not_re_propose_within_the_cooldown(self):
+        hub.set_criteria("Virginia - cheap distressed land")
+        await hub.check_research_trigger(self._noop_llm)
+        again = await hub.check_research_trigger(self._noop_llm)
+        self.assertIsNone(again)
+
+    async def test_does_not_propose_a_second_time_while_one_is_already_pending(self):
+        hub.set_criteria("Virginia - cheap distressed land")
+        store = ms.MissionStore()
+        await hub.check_research_trigger(self._noop_llm, store_=store)
+        # manually clear the cooldown state to isolate the "already pending" check specifically
+        hub._research_state_path().unlink()
+        again = await hub.check_research_trigger(self._noop_llm, store_=store)
+        self.assertIsNone(again)
+
+    def test_leads_with_no_mission_workspace_is_empty_not_an_error(self):
+        self.assertEqual(hub.leads("m-000000"), [])
+
+    def test_leads_reads_the_real_mission_workspace_file(self):
+        mid = "m-abc123"
+        path = Path(mission_ws(mid)) / "land_evidence"
+        path.mkdir(parents=True)
+        (path / "leads.json").write_text(json.dumps([{"state": "VA", "address_or_parcel": "123 Old Mill Rd"}]), encoding="utf-8")
+        found = hub.leads(mid)
+        self.assertEqual(len(found), 1)
+        self.assertEqual(found[0]["state"], "VA")
 
 
 if __name__ == "__main__":
