@@ -11,7 +11,8 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src import approval_gate as ag  # noqa: E402
-from src.foundation import audit, commands, heartbeat, mission as ms, standing as st  # noqa: E402
+from src.foundation import audit, commands, forge, heartbeat, mission as ms, standing as st  # noqa: E402
+from src.foundation.land import hub as land  # noqa: E402
 
 GRANTED = dict(env={}, which=lambda b: None, find_spec=lambda m: None, probe=lambda h, p: False,
                authorizations={"content-rights": {"granted_by": "rascal"}})
@@ -285,6 +286,47 @@ class HeartbeatTests(_Base):
         audit.append("mission_completed")
         self.assertIn("nothing recorded", heartbeat.activity_summary(24, now_ts=datetime.now(timezone.utc).timestamp()
                                                                      + 3 * 24 * 3600))
+
+
+class AutonomyNotificationTests(_Base):
+    """2026-10-01: a real autonomous proposal (forge noticing a gap, LandPilot proposing research) reached
+    Telegram as plain text with no tap-to-approve buttons - owner's own words, "no clear approval screen".
+    The bug: both call sites used self.notify(result) instead of self.notify_ui(result, kind), and the
+    fake notify() in this file's own setUp only accepts one positional arg, so a naive test asserting the
+    message TEXT arrived would pass either way (notify_ui's TypeError fallback masks the difference) -
+    these assert notify_ui specifically gets called, not just that the owner-visible words looked right."""
+
+    async def test_forge_autonomy_uses_notify_ui_not_plain_notify(self):
+        with mock.patch.object(forge, "check_autonomous_trigger", new=mock.AsyncMock(return_value="approve skill foo")), \
+             mock.patch.object(self.f, "notify_ui", new=mock.AsyncMock()) as nui, \
+             mock.patch.object(self.f, "notify", new=mock.AsyncMock()) as plain:
+            await self.f._maybe_forge_autonomy(ts(2026, 9, 20, 8, 0))
+        nui.assert_awaited_once_with("approve skill foo", "skills")
+        plain.assert_not_awaited()
+
+    async def test_land_research_uses_notify_ui_not_plain_notify(self):
+        with mock.patch.object(land, "check_research_trigger", new=mock.AsyncMock(return_value="approve mission m-abcdef")), \
+             mock.patch.object(self.f, "notify_ui", new=mock.AsyncMock()) as nui, \
+             mock.patch.object(self.f, "notify", new=mock.AsyncMock()) as plain:
+            await self.f._maybe_land_research(ts(2026, 9, 20, 8, 0))
+        nui.assert_awaited_once_with("approve mission m-abcdef", "land")
+        plain.assert_not_awaited()
+
+    async def test_a_real_forge_autonomy_message_actually_gets_a_tappable_button(self):
+        """End to end, through the real buttons.for_reply - not mocked - so a regression here fails loudly."""
+        with mock.patch.object(forge, "check_autonomous_trigger", new=mock.AsyncMock(return_value="...approve skill foo_bar...")):
+            with mock.patch.object(self.f, "notify", new=mock.AsyncMock()) as plain:
+                await self.f._maybe_forge_autonomy(ts(2026, 9, 20, 8, 0))
+        self.assertEqual(plain.await_args.args[0], "...approve skill foo_bar...")
+        kb = plain.await_args.args[1]
+        self.assertIn({"text": "✅ Approve skill", "callback_data": "do:approve skill foo_bar"}, kb["inline_keyboard"][0])
+
+    async def test_a_real_land_research_message_actually_gets_a_tappable_button(self):
+        with mock.patch.object(land, "check_research_trigger", new=mock.AsyncMock(return_value="...approve mission m-abcdef...")):
+            with mock.patch.object(self.f, "notify", new=mock.AsyncMock()) as plain:
+                await self.f._maybe_land_research(ts(2026, 9, 20, 8, 0))
+        kb = plain.await_args.args[1]
+        self.assertIn({"text": "✅ Approve", "callback_data": "do:approve mission m-abcdef"}, kb["inline_keyboard"][0])
 
 
 if __name__ == "__main__":

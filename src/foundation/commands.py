@@ -627,7 +627,7 @@ class Foundation:
             audit.append("forge_autonomy_failed", why=repr(e)[:200])
             return
         if result:
-            await self.notify(result)
+            await self.notify_ui(result, "skills")   # the real tap-to-approve buttons were missing: plain notify() never attaches them
 
     async def _maybe_land_research(self, now_ts: float) -> None:
         """LandPilot's own autonomous trigger (see land/hub.py's check_research_trigger): at most once every
@@ -643,7 +643,7 @@ class Foundation:
             audit.append("land_research_failed", why=repr(e)[:200])
             return
         if result:
-            await self.notify(result)
+            await self.notify_ui(result, "land")   # same bug as forge autonomy above - plain notify() never attaches the tap-to-approve buttons
 
     async def _maybe_digest(self, now_ts: float) -> None:
         """Opt-in: AURIX_DIGEST_AT=07:00 sends one owner digest per local day."""
