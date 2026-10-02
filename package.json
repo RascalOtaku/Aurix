@@ -1,4 +1,6 @@
 {
+  "name": "aurix",
+  "version": "0.9.1",
   "devDependencies": {
     "@antithesishq/bombadil": "^0.7.7"
   },

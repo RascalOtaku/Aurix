@@ -78,10 +78,10 @@ for server in servers:
 
 ## Integration Checklist
 
-- [ ] **Model Router:** Import `choose_model_for_task` in `agent_loop.py` or `task_scheduler.py` for fallback/routing decisions
-- [ ] **MCP Discovery:** Call `discover_mcp_servers_from_env()` in app startup (e.g., `main.py` or `__init__.py`)
+- [ ] **Model Router:** `is_free_model()` is already wired into `src/model_discovery.py` (free-model sorting for OpenCode Zen) and `src/spend_ledger.py` (paid/free classification); `choose_model_for_task` is covered by `tests/test_starred_integrations.py`. Optional next step: call `choose_model_for_task` in `agent_loop.py` or `task_scheduler.py` for task-aware routing decisions
+- [x] **MCP Discovery:** `discover_mcp_servers_from_env()` is called in `src/builtin_mcp.py::_start_env_servers()` (each candidate passes through the `agent_shield` safety scan before connecting)
 - [ ] **Settings:** Add routing/MCP config keys to user settings (optional but recommended for UI control)
-- [ ] **Testing:** Verify routing with `python -m pytest tests/test_model_router.py`
+- [ ] **Testing:** Verify routing with `python -m pytest tests/test_starred_integrations.py` (`tests/test_model_router.py` does not exist; router tests live in the starred suite)
 - [ ] **Environment:** Set `MCP_SERVER_URL` or `MCP_SERVERS` in `.env` for auto-discovery
 
 ---
