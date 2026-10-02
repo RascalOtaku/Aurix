@@ -369,8 +369,12 @@ PACKS: List[DomainPack] = [
         ("Nothing is published without owner approval.",)),
     DomainPack(
         "real_estate_leads", "Find homes for sale (lead research)",
-        (r"homes? for sale", r"real[- ]estate", r"\blistings?\b", r"wholesal", r"\bflip", r"finder'?s fee",
+        (r"homes? for sale", r"real[- ]estate", r"\blistings?\b", r"wholesal", r"finder'?s fee",
          r"\bcommission\b", r"property lead"),
+        # 2026-10-01: bare \bflip was too broad - it fired on a LandPilot principal-buyer goal that happened to
+        # use the owner's own phrase "fix, flip" for property THEY would own, incorrectly pulling in this pack's
+        # real-estate-license requirement (which exists for being PAID to find deals for others). The remaining
+        # triggers above are all specifically brokerage/fee-shaped and do not have this problem.
         ("web_search", "browser", "httpx", "pandas", "real-estate-license"),
         ("Colorado generally requires a real-estate license to be paid for finding or steering buyers/sellers: "
          "get advice from a Colorado attorney or licensed broker BEFORE taking any fee.",

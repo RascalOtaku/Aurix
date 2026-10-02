@@ -125,6 +125,17 @@ class IdentifyTests(unittest.TestCase):
         self.assertTrue(any("real-estate-license" in m for m in req.manual))
         self.assertTrue(any("Colorado" in n and "license" in n for n in req.legal))
 
+    def test_a_landpilot_principal_buyer_goal_does_not_need_a_real_estate_license(self):
+        """2026-10-01 real incident: LandPilot's own research-trigger goal used the owner's exact words
+        "fix, flip" for land THEY would own (land_intelligence's own stated use case), and the bare \\bflip
+        trigger on real_estate_leads (a license is for being PAID to find deals for OTHERS) pulled that
+        pack in too, blocking a real mission at preflight with an irrelevant requirement."""
+        req, packs = cp.identify(
+            "LandPilot: search for cheap distressed land - abandoned houses, farmland, homestead land, or "
+            "cheap land with a fixable problem (buy low, fix, flip).", **NOTHING)
+        self.assertEqual([p.id for p in packs], ["land_intelligence"])
+        self.assertFalse(any("real-estate-license" in m for m in req.manual))
+
     def test_trading_is_paper_only_and_live_needs_owner(self):
         req, packs = self.ident("trading")
         self.assertTrue(any("live-trading" in m for m in req.manual))
