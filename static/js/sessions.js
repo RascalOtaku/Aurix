@@ -9,6 +9,7 @@ import { providerLogo } from './providers.js';
 import { initModelPicker, updateModelPicker } from './modelPicker.js';
 import themeModule from './theme.js';
 import spinnerModule from './spinner.js';
+import { get, post, patch, del, ApiError } from './api.js';
 
 const API_BASE = window.location.origin;
 
@@ -44,7 +45,7 @@ async function _cleanupIncognitoSessions() {
   const keep = ids.filter(sid => sid === currentSessionId);
   sessionStorage.setItem(_INCOGNITO_SESSIONS_KEY, JSON.stringify(keep));
   await Promise.all(toDelete.map(sid =>
-    fetch(`${API_BASE}/api/session/${sid}`, { method: 'DELETE' }).catch(() => {})
+    del(`${API_BASE}/api/session/${sid}`).catch(() => {})
   ));
 }
 
@@ -109,7 +110,7 @@ function getFolderNames() {
 async function moveToFolder(sessionId, folderName) {
   const fd = new FormData();
   fd.append('folder', folderName || '');
-  await fetch(`${API_BASE}/api/session/${sessionId}`, { method: 'PATCH', body: fd });
+  await patch(`${API_BASE}/api/session/${sessionId}`, fd);
   // Update local data
   const s = sessions.find(x => x.id === sessionId);
   if (s) s.folder = folderName || null;
@@ -294,7 +295,7 @@ function createSessionItem(s) {
       e.stopPropagation();
       const fd = new FormData();
       fd.append('important', false);
-      await fetch(`${API_BASE}/api/session/${s.id}/important`, { method: 'POST', body: fd });
+      await post(`${API_BASE}/api/session/${s.id}/important`, fd);
       s.is_important = false;
       uiModule.showToast('Unfavorited');
       renderSessionList();
@@ -332,7 +333,7 @@ function createSessionItem(s) {
         if (newName && newName !== s.name) {
           const fd = new FormData();
           fd.append('name', newName);
-          await fetch(`${API_BASE}/api/session/${s.id}`, { method: 'PATCH', body: fd });
+          await patch(`${API_BASE}/api/session/${s.id}`, fd);
           s.name = newName;
           uiModule.showToast('Renamed');
         }
@@ -451,7 +452,7 @@ function createSessionItem(s) {
       const newVal = !s.is_important;
       const fd = new FormData();
       fd.append('important', newVal);
-      await fetch(`${API_BASE}/api/session/${s.id}/important`, { method: 'POST', body: fd });
+      await post(`${API_BASE}/api/session/${s.id}/important`, fd);
       s.is_important = newVal;
       dropdown.style.display = 'none';
       renderSessionList();
@@ -466,8 +467,7 @@ function createSessionItem(s) {
     e.stopPropagation();
     dropdown.style.display = 'none';
     try {
-      const res = await fetch(`${API_BASE}/api/history/${s.id}`);
-      const data = await res.json();
+      const data = await get(`${API_BASE}/api/history/${s.id}`);
       const msgs = data.history || [];
       if (!msgs.length) { uiModule.showToast('No messages to copy'); return; }
       const lines = msgs
@@ -594,7 +594,7 @@ function createSessionItem(s) {
       if (newName && newName !== s.name) {
         const fd = new FormData();
         fd.append('name', newName);
-        await fetch(`${API_BASE}/api/session/${s.id}`, { method: 'PATCH', body: fd });
+        await patch(`${API_BASE}/api/session/${s.id}`, fd);
         s.name = newName;
         uiModule.showToast('Renamed');
       }
@@ -641,7 +641,7 @@ function createSessionItem(s) {
       _forceSidebarOpen();
     }
     // Fire API and reload in background
-    fetch(`${API_BASE}/api/session/${s.id}`, { method: 'DELETE' })
+    del(`${API_BASE}/api/session/${s.id}`)
       .then(() => loadSessions())
       .catch(() => loadSessions());
   });
@@ -650,18 +650,11 @@ function createSessionItem(s) {
     dropdown.style.display = 'none';
     _forceSidebarOpen();
     try {
-      const response = await fetch(`${API_BASE}/api/session/${s.id}/archive`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (response.ok) {
-        _forceSidebarOpen();
-        await loadSessions();
-        dropdown.style.display = 'none';
-        uiModule.showToast('Session archived');
-      } else {
-        throw new Error('Failed to archive session');
-      }
+      await post(`${API_BASE}/api/session/${s.id}/archive`);
+      _forceSidebarOpen();
+      await loadSessions();
+      dropdown.style.display = 'none';
+      uiModule.showToast('Session archived');
     } catch (error) {
       console.error('Error archiving session:', error);
       uiModule.showError('Failed to archive session');
@@ -870,7 +863,7 @@ function _renderSessionListImpl() {
       if (!await uiModule.styledConfirm(`Delete folder "${folderName}" and all ${count} session(s) inside it?`, { confirmText: 'Delete', danger: true })) return;
       for (const s of folders[folderName]) {
         try {
-          await fetch(`${API_BASE}/api/session/${s.id}`, { method: 'DELETE' });
+          await del(`${API_BASE}/api/session/${s.id}`);
           _deselectCurrentSession(s.id);
         } catch (err) {
           console.error('Failed to delete session:', s.id, err);
@@ -995,7 +988,7 @@ function _renderSessionListImpl() {
       if (!await uiModule.styledConfirm(`Delete all ${unfiled.length} unsorted session(s)?`, { confirmText: 'Delete', danger: true })) return;
       for (const s of unfiled) {
         try {
-          await fetch(`${API_BASE}/api/session/${s.id}`, { method: 'DELETE' });
+          await del(`${API_BASE}/api/session/${s.id}`);
           _deselectCurrentSession(s.id);
         } catch (err) {
           console.error('Failed to delete session:', s.id, err);
@@ -1257,7 +1250,7 @@ function _initBulkSelect() {
       if (!await uiModule.styledConfirm(`Archive ${count} session(s)?`, { confirmText: 'Archive' })) return;
       for (const sid of _selectedIds) {
         try {
-          await fetch(`${API_BASE}/api/session/${sid}/archive`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+          await post(`${API_BASE}/api/session/${sid}/archive`);
         } catch (_) {}
       }
       _exitSelectMode();
@@ -1276,8 +1269,8 @@ function _initBulkSelect() {
       const deletedIds = [];
       for (const sid of _selectedIds) {
         try {
-          const res = await fetch(`${API_BASE}/api/session/${sid}`, { method: 'DELETE' });
-          if (res.ok) deletedIds.push(sid);
+          await del(`${API_BASE}/api/session/${sid}`);
+          deletedIds.push(sid);
         } catch (_) {}
       }
       await _animateSessionRowsRemoving(deletedIds, '#session-list .list-item[data-session-id]');
@@ -1314,8 +1307,7 @@ export async function loadSessions() {
       sessionStorage.removeItem('ody-prefetch-sessions');
       fetched = JSON.parse(prefetched);
     } else {
-      const res = await fetch(`${API_BASE}/api/sessions`);
-      fetched = await res.json();
+      fetched = await get(`${API_BASE}/api/sessions`);
     }
     sessions = fetched;
     renderSessionList();
@@ -1387,8 +1379,7 @@ export async function loadSessions() {
       sessionStorage.setItem('ody-session-active', '1');
       if (!targetId) {
         try {
-          const dcRes = await fetch(`${API_BASE}/api/default-chat`);
-          const dc = await dcRes.json();
+          const dc = await get(`${API_BASE}/api/default-chat`);
           if (dc.endpoint_url && dc.model) {
             // Check if there's already an empty session with this model we can reuse
             const emptyDefault = activeSessions.find(s =>
@@ -1434,8 +1425,7 @@ export async function loadSessions() {
       if (activeSessions.length === 0 && !_autoCreateInProgress) {
         _autoCreateInProgress = true;
         try {
-          const dcRes = await fetch(`${API_BASE}/api/default-chat`);
-          const dc = await dcRes.json();
+          const dc = await get(`${API_BASE}/api/default-chat`);
           if (dc.endpoint_url && dc.model) {
             await createDirectChat(dc.endpoint_url, dc.model, dc.endpoint_id);
           }
@@ -1551,8 +1541,7 @@ export async function selectSession(id, { keepSidebar = false } = {}) {
     const isOC = meta && (meta.is_openclaw || id === 'openclaw');
     let msgHistory = [], modelName = null;
     if (!isOC) {
-      const res = await fetch(`${API_BASE}/api/history/${id}`);
-      const data = await res.json();
+      const data = await get(`${API_BASE}/api/history/${id}`);
       if (navToken !== _sessionNavToken || currentSessionId !== id) return;
       msgHistory = data.history || [];
       modelName = data.model || null;
@@ -1792,23 +1781,13 @@ export async function materializePendingSession() {
     fd.append('endpoint_id', pending.endpointId);
   }
 
-  let res;
-  try {
-    res = await fetch(`${API_BASE}/api/session`, { method: 'POST', body: fd });
-  } catch (e) {
-    uiModule.showError('Failed to reach backend: ' + e);
-    return false;
-  }
-
   let payload;
   try {
-    payload = await res.json();
-  } catch {
-    payload = { detail: await res.text() };
-  }
-
-  if (!res.ok) {
-    uiModule.showError(`Session create failed (${res.status}) ${payload.detail || JSON.stringify(payload)}`);
+    payload = await post(`${API_BASE}/api/session`, fd);
+  } catch (e) {
+    const _st = e instanceof ApiError ? e.status : 0;
+    const _dt = e instanceof ApiError ? (e.detail || e.message) : String(e);
+    uiModule.showError(_st === 0 ? 'Failed to reach backend: ' + _dt : `Session create failed (${_st}) ${_dt}`);
     return false;
   }
 
@@ -1901,7 +1880,7 @@ function _onSessionListKeydown(e) {
     }
     _sessionListFocused = true;
     (async () => {
-      await fetch(`${API_BASE}/api/session/${s.id}`, { method: 'DELETE' });
+      await del(`${API_BASE}/api/session/${s.id}`);
       _deselectCurrentSession(s.id);
       await loadSessions();
     })();
@@ -1988,9 +1967,11 @@ function _startResearchPolling() {
     }
     for (var sid of _researchingSessions) {
       try {
-        var res = await fetch(`${API_BASE}/api/research/status/${sid}`);
-        if (!res.ok) { _researchingSessions.delete(sid); continue; }
-        var data = await res.json();
+        var data = await get(`${API_BASE}/api/research/status/${sid}`).catch(e => {
+          if (e instanceof ApiError && e.status !== 0) return null;
+          throw e;
+        });
+        if (!data) { _researchingSessions.delete(sid); continue; }
         if (data.status !== 'running') {
           _researchingSessions.delete(sid);
         }
@@ -2100,9 +2081,11 @@ async function _checkServerStream(sessionId) {
     // Skip if the SSE reader is still actively connected — it handles rendering
     if (window.chatModule && window.chatModule.hasActiveStream && window.chatModule.hasActiveStream(sessionId)) return;
 
-    const res = await fetch(`${API_BASE}/api/chat/stream_status/${sessionId}`);
-    if (!res.ok) return; // 404 = no active stream
-    const info = await res.json();
+    const info = await get(`${API_BASE}/api/chat/stream_status/${sessionId}`).catch(e => {
+      if (e instanceof ApiError && e.status !== 0) return null;
+      throw e;
+    });
+    if (!info) return; // 404 = no active stream
     if (info.status !== 'streaming') return;
 
     // Skip if this is a research stream — research has its own progress UI
@@ -2132,8 +2115,11 @@ async function _checkServerStream(sessionId) {
         return;
       }
       try {
-        const r = await fetch(`${API_BASE}/api/chat/stream_status/${sessionId}`);
-        if (!r.ok || (await r.json()).status !== 'streaming') {
+        const _ss = await get(`${API_BASE}/api/chat/stream_status/${sessionId}`).catch(e => {
+          if (e instanceof ApiError && e.status !== 0) return null;
+          throw e;
+        });
+        if (!_ss || _ss.status !== 'streaming') {
           clearInterval(pollId);
           spinner.destroy();
           if (holder.parentNode) holder.remove();
@@ -2281,8 +2267,7 @@ async function _arcPeekOpen(sid) {
     _peekingSessionId = sid;
     closeArchive();
     // Load history directly without unarchiving
-    const res = await fetch(`${API_BASE}/api/history/${sid}`);
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/history/${sid}`);
     const history = data.history || [];
 
     // Set as current session so chat renders
@@ -2324,8 +2309,7 @@ function _checkPeekCleanup(newSessionId) {
 
 async function _arcRestore(sid) {
   try {
-    const res = await fetch(`${API_BASE}/api/session/${sid}/unarchive`, { method: 'POST' });
-    if (!res.ok) throw new Error('Failed');
+    await post(`${API_BASE}/api/session/${sid}/unarchive`);
     _arcRemove(sid);
     _arcRefreshUI();
     uiModule.showToast('Session restored');
@@ -2336,8 +2320,7 @@ async function _arcRestore(sid) {
 async function _arcDelete(sid) {
   if (!await window.styledConfirm('Delete this session permanently?', { confirmText: 'Delete', danger: true })) return;
   try {
-    const res = await fetch(`${API_BASE}/api/session/${sid}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error('Failed');
+    await del(`${API_BASE}/api/session/${sid}`);
     await _animateSessionRowsRemoving([sid], '#archive-grid .archive-row[data-session-id]');
     _arcRemove(sid);
     _arcRefreshUI();
@@ -2356,7 +2339,7 @@ async function _arcBulkRestore() {
   if (!ids.length) return;
   for (const sid of ids) {
     try {
-      await fetch(`${API_BASE}/api/session/${sid}/unarchive`, { method: 'POST' });
+      await post(`${API_BASE}/api/session/${sid}/unarchive`);
       _arcRemove(sid);
     } catch {}
   }
@@ -2374,11 +2357,9 @@ async function _arcBulkDelete() {
   const deletedIds = [];
   for (const sid of ids) {
     try {
-      const res = await fetch(`${API_BASE}/api/session/${sid}`, { method: 'DELETE' });
-      if (res.ok) {
-        deletedIds.push(sid);
-        _arcRemove(sid);
-      }
+      await del(`${API_BASE}/api/session/${sid}`);
+      deletedIds.push(sid);
+      _arcRemove(sid);
     } catch {}
   }
   await _animateSessionRowsRemoving(deletedIds, '#archive-grid .archive-row[data-session-id]');
@@ -2413,9 +2394,7 @@ async function _arcFetch(append) {
   if (_arc.search) params.set('search', _arc.search);
   if (_arc.model) params.set('model', _arc.model);
   try {
-    const res = await fetch(`${API_BASE}/api/sessions/archived?${params}`);
-    if (!res.ok) throw new Error(res.statusText);
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/sessions/archived?${params}`);
     _arc.data = append ? _arc.data.concat(data.sessions) : data.sessions;
     _arc.total = data.total;
     // Cache model counts from unfiltered first fetch
@@ -2664,10 +2643,10 @@ export function openLibrary(defaultTab) {
   // Bulk action 1 (Archive/Restore/Export)
   document.getElementById('lib-bulk-action1').addEventListener('click', async () => {
     if (_lib.tab === 'chats') {
-      for (const sid of _lib.selected) await fetch(`${API_BASE}/api/session/${sid}/archive`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      for (const sid of _lib.selected) await post(`${API_BASE}/api/session/${sid}/archive`);
       uiModule.showToast(`Archived ${_lib.selected.size} sessions`);
     } else if (_lib.tab === 'archive') {
-      for (const sid of _lib.selected) await fetch(`${API_BASE}/api/session/${sid}/restore`, { method: 'POST' });
+      for (const sid of _lib.selected) await post(`${API_BASE}/api/session/${sid}/restore`);
       uiModule.showToast(`Restored ${_lib.selected.size} sessions`);
     }
     _lib.selected.clear();
@@ -2681,11 +2660,11 @@ export function openLibrary(defaultTab) {
   document.getElementById('lib-bulk-delete').addEventListener('click', async () => {
     if (!await uiModule.styledConfirm(`Delete ${_lib.selected.size} items?`, { confirmText: 'Delete', danger: true })) return;
     if (_lib.tab === 'chats' || _lib.tab === 'archive') {
-      for (const sid of _lib.selected) await fetch(`${API_BASE}/api/session/${sid}`, { method: 'DELETE' });
+      for (const sid of _lib.selected) await del(`${API_BASE}/api/session/${sid}`);
     } else if (_lib.tab === 'documents') {
-      for (const did of _lib.selected) await fetch(`${API_BASE}/api/document/${did}`, { method: 'DELETE' });
+      for (const did of _lib.selected) await del(`${API_BASE}/api/document/${did}`);
     } else if (_lib.tab === 'research') {
-      for (const rid of _lib.selected) await fetch(`${API_BASE}/api/research/${rid}`, { method: 'DELETE' });
+      for (const rid of _lib.selected) await del(`${API_BASE}/api/research/${rid}`);
     }
     _lib.selected.clear();
     _lib.selectMode = false;
@@ -2743,8 +2722,8 @@ function _renderLibChats(grid) {
       e.stopPropagation();
       _showDropdown(e.currentTarget, [
         { label: 'Open', action: () => { closeLibrary(); selectSession(s.id); } },
-        { label: 'Archive', action: async () => { await fetch(`${API_BASE}/api/session/${s.id}/archive`, { method: 'POST', headers: { 'Content-Type': 'application/json' } }); await loadSessions(); _renderLibGrid(); } },
-        { label: 'Delete', action: async () => { if (!await uiModule.styledConfirm('Delete?', { confirmText: 'Delete', danger: true })) return; await fetch(`${API_BASE}/api/session/${s.id}`, { method: 'DELETE' }); await loadSessions(); _renderLibGrid(); }, danger: true },
+        { label: 'Archive', action: async () => { await post(`${API_BASE}/api/session/${s.id}/archive`); await loadSessions(); _renderLibGrid(); } },
+        { label: 'Delete', action: async () => { if (!await uiModule.styledConfirm('Delete?', { confirmText: 'Delete', danger: true })) return; await del(`${API_BASE}/api/session/${s.id}`); await loadSessions(); _renderLibGrid(); }, danger: true },
       ]);
     });
     grid.appendChild(card);
@@ -2757,8 +2736,7 @@ async function _renderLibArchive(grid) {
   try {
     const params = new URLSearchParams({ limit: '50', sort: _lib.sort === 'most-messages' ? 'messages' : _lib.sort });
     if (_lib.search) params.set('search', _lib.search);
-    const res = await fetch(`${API_BASE}/api/sessions/archived?${params}`);
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/sessions/archived?${params}`);
     const items = data.sessions || [];
     const stats = document.getElementById('lib-stats');
     if (stats) stats.textContent = `(${data.total || items.length})`;
@@ -2773,8 +2751,8 @@ async function _renderLibArchive(grid) {
       card.querySelector('.archive-menu-btn').addEventListener('click', (e) => {
         e.stopPropagation();
         _showDropdown(e.currentTarget, [
-          { label: 'Restore', action: async () => { await fetch(`${API_BASE}/api/session/${s.id}/restore`, { method: 'POST' }); await loadSessions(); _renderLibGrid(); } },
-          { label: 'Delete', action: async () => { if (!await uiModule.styledConfirm('Delete?', { confirmText: 'Delete', danger: true })) return; await fetch(`${API_BASE}/api/session/${s.id}`, { method: 'DELETE' }); _renderLibGrid(); }, danger: true },
+          { label: 'Restore', action: async () => { await post(`${API_BASE}/api/session/${s.id}/restore`); await loadSessions(); _renderLibGrid(); } },
+          { label: 'Delete', action: async () => { if (!await uiModule.styledConfirm('Delete?', { confirmText: 'Delete', danger: true })) return; await del(`${API_BASE}/api/session/${s.id}`); _renderLibGrid(); }, danger: true },
         ]);
       });
       grid.appendChild(card);
@@ -2788,8 +2766,7 @@ async function _renderLibDocuments(grid) {
   try {
     const params = new URLSearchParams({ limit: '50', sort: _lib.sort });
     if (_lib.search) params.set('search', _lib.search);
-    const res = await fetch(`${API_BASE}/api/documents/library?${params}`);
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/documents/library?${params}`);
     const docs = data.documents || [];
     const stats = document.getElementById('lib-stats');
     if (stats) stats.textContent = `(${data.total || docs.length})`;
@@ -2812,7 +2789,7 @@ async function _renderLibDocuments(grid) {
         e.stopPropagation();
         _showDropdown(e.currentTarget, [
           { label: 'Open', action: () => { if (d.session_id) { closeLibrary(); selectSession(d.session_id); } } },
-          { label: 'Delete', action: async () => { if (!await uiModule.styledConfirm('Delete?', { confirmText: 'Delete', danger: true })) return; await fetch(`${API_BASE}/api/document/${d.id}`, { method: 'DELETE' }); _renderLibGrid(); }, danger: true },
+          { label: 'Delete', action: async () => { if (!await uiModule.styledConfirm('Delete?', { confirmText: 'Delete', danger: true })) return; await del(`${API_BASE}/api/document/${d.id}`); _renderLibGrid(); }, danger: true },
         ]);
       });
       grid.appendChild(card);
@@ -2826,9 +2803,7 @@ async function _renderLibResearch(grid) {
   try {
     const params = new URLSearchParams({ limit: '50', sort: _lib.sort });
     if (_lib.search) params.set('search', _lib.search);
-    const res = await fetch(`${API_BASE}/api/research/library?${params}`);
-    if (!res.ok) throw new Error(res.status);
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/research/library?${params}`);
     const items = data.research || [];
     const statsEl = document.getElementById('lib-stats');
     if (statsEl) statsEl.textContent = `${data.total || 0} research`;
@@ -2868,7 +2843,7 @@ async function _renderLibResearch(grid) {
             }},
             { label: 'Delete', danger: true, action: async () => {
               if (!await window.styledConfirm('Delete this research?', { confirmText: 'Delete', danger: true })) return;
-              await fetch(`${API_BASE}/api/research/${item.id}`, { method: 'DELETE' });
+              await del(`${API_BASE}/api/research/${item.id}`);
               _renderLibGrid();
             }},
           ]);

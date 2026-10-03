@@ -21,6 +21,7 @@ import * as emailInbox from './emailInbox.js';
 import codeRunnerModule from './codeRunner.js';
 import slashCommands, { initSlashCommands, isCommand, handleSlashCommand, handleSetupInput, handleSetupWizard, typewriterInto } from './slashCommands.js';
 import createResearchSynapse from './researchSynapse.js';
+import { get, post, ApiError } from './api.js';
   const RESEARCH_TIMEOUT_MS = 360000;
   const DEFAULT_TIMEOUT_MS = 120000;
   const RESEARCH_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>';
@@ -131,20 +132,13 @@ import createResearchSynapse from './researchSynapse.js';
   async function _probeCurrentEndpointStatus(endpointUrl, signal) {
     const target = _normalizeEndpointForCompare(endpointUrl);
     if (!target) return null;
-    const modelsRes = await fetch(`${API_BASE}/api/models`, { credentials: 'same-origin', signal });
-    if (!modelsRes.ok) return null;
-    const modelsData = await modelsRes.json().catch(() => ({}));
+    const modelsData = await get(`${API_BASE}/api/models`, { signal }).catch(() => ({}));
     const item = (modelsData.items || []).find(ep =>
       _normalizeEndpointForCompare(ep.url || ep.endpoint_url || ep.base_url) === target
     );
     if (!item || !item.endpoint_id) return null;
 
-    const probesRes = await fetch(`${API_BASE}/api/model-endpoints/probe-local`, {
-      credentials: 'same-origin',
-      signal,
-    });
-    if (!probesRes.ok) return null;
-    const probes = await probesRes.json().catch(() => ({}));
+    const probes = await get(`${API_BASE}/api/model-endpoints/probe-local`, { signal }).catch(() => ({}));
     return probes[item.endpoint_id] || null;
   }
 
@@ -250,7 +244,7 @@ import createResearchSynapse from './researchSynapse.js';
       // Cancel server-side research if in progress
       const _cancelSid = sessionModule.getCurrentSessionId();
       if (_cancelSid && _researchingStreamIds.has(_cancelSid)) {
-        fetch(`${API_BASE}/api/research/cancel/${_cancelSid}`, { method: 'POST' }).catch(e => console.warn('Research cancel failed:', e));
+        post(`${API_BASE}/api/research/cancel/${_cancelSid}`).catch(e => console.warn('Research cancel failed:', e));
         _researchingStreamIds.delete(_cancelSid);
         _clearResearchTimer();
       }
@@ -344,7 +338,7 @@ import createResearchSynapse from './researchSynapse.js';
 
         // Tell server to mark this message as stopped
         const _sid = sessionModule.getCurrentSessionId();
-        if (_sid) fetch(`${API_BASE}/api/session/${_sid}/mark-stopped`, { method: 'POST' }).catch(e => console.warn('mark-stopped failed:', e));
+        if (_sid) post(`${API_BASE}/api/session/${_sid}/mark-stopped`).catch(e => console.warn('mark-stopped failed:', e));
 
         // Add footer with copy/regen if not already present
         if (!currentHolder.querySelector('.msg-footer')) {
@@ -437,8 +431,7 @@ import createResearchSynapse from './researchSynapse.js';
       try {
         let dc = null;
         try {
-          const dcRes = await fetch('/api/default-chat');
-          dc = await dcRes.json();
+          dc = await get('/api/default-chat');
           if (dc && dc.endpoint_url && dc.model) {
             try { window.__aurixDefaultChat = dc; } catch (_) {}
           }
@@ -666,11 +659,7 @@ import createResearchSynapse from './researchSynapse.js';
               const dotIdx = info.name.lastIndexOf('.');
               const title = dotIdx > 0 ? info.name.slice(0, dotIdx) : info.name;
               const ext = dotIdx >= 0 ? info.name.slice(dotIdx).toLowerCase() : '';
-              await fetch(`${API_BASE}/api/document`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, language: EXT_LANG[ext] || '', content }),
-              });
+              await post(`${API_BASE}/api/document`, { title, language: EXT_LANG[ext] || '', content });
               imported++;
             } catch (e) { console.error('Import failed:', info.name, e); }
           }
@@ -2475,11 +2464,7 @@ import createResearchSynapse from './researchSynapse.js';
             // Persist merge to server
             const sid = sessionModule.getCurrentSessionId();
             if (sid) {
-              fetch(`${API_BASE}/api/session/${sid}/merge-last-assistant`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ separator: '\n\n*(continued)*\n\n' })
-              }).catch(e => console.warn('merge-last-assistant failed:', e));
+              post(`${API_BASE}/api/session/${sid}/merge-last-assistant`, { separator: '\n\n*(continued)*\n\n' }).catch(e => console.warn('merge-last-assistant failed:', e));
             }
           }
         }
@@ -2615,7 +2600,7 @@ import createResearchSynapse from './researchSynapse.js';
 
             // Tell server to mark this message as stopped
             const _sid2 = sessionModule.getCurrentSessionId();
-            if (_sid2) fetch(`${API_BASE}/api/session/${_sid2}/mark-stopped`, { method: 'POST' }).catch(e => console.warn('mark-stopped failed:', e));
+            if (_sid2) post(`${API_BASE}/api/session/${_sid2}/mark-stopped`).catch(e => console.warn('mark-stopped failed:', e));
 
             if (!holder.querySelector('.msg-footer')) {
               holder.appendChild(createMsgFooter(holder));
@@ -2772,7 +2757,7 @@ import createResearchSynapse from './researchSynapse.js';
         const _sid = _streamSessionId
           || (window.sessionModule && window.sessionModule.getCurrentSessionId && window.sessionModule.getCurrentSessionId());
         if (_sid) {
-          fetch(`/api/chat/stop/${encodeURIComponent(_sid)}`, { method: 'POST', credentials: 'same-origin' }).catch(() => {});
+          post(`/api/chat/stop/${encodeURIComponent(_sid)}`).catch(() => {});
         }
       } catch (_) {}
     }
@@ -2917,16 +2902,12 @@ import createResearchSynapse from './researchSynapse.js';
           || holder.querySelector('.msg-header .msg-model')?.textContent
           || '';
       }
-      fetch(`${API_BASE}/api/session/${sid}/inject_messages`, {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [{
-            role: 'assistant',
-            content: '',
-            metadata: { stopped: true, cancelled: true, model: modelName },
-          }],
-        }),
+      post(`${API_BASE}/api/session/${sid}/inject_messages`, {
+        messages: [{
+          role: 'assistant',
+          content: '',
+          metadata: { stopped: true, cancelled: true, model: modelName },
+        }],
       }).catch(() => {});
     }
   }
@@ -3348,11 +3329,7 @@ import createResearchSynapse from './researchSynapse.js';
 
       const keepCount = msgIndex;
       try {
-        await fetch(`${API_BASE}/api/session/${sessionId}/truncate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keep_count: keepCount })
-        });
+        await post(`${API_BASE}/api/session/${sessionId}/truncate`, { keep_count: keepCount });
 
         // Remove DOM elements from msgIndex onward
         for (let i = allMsgs.length - 1; i >= msgIndex; i--) {
@@ -3432,11 +3409,7 @@ import createResearchSynapse from './researchSynapse.js';
     // Truncate backend to keep everything before this user message
     const keepCount = msgIndex;
     try {
-      await fetch(`${API_BASE}/api/session/${sessionId}/truncate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keep_count: keepCount })
-      });
+      await post(`${API_BASE}/api/session/${sessionId}/truncate`, { keep_count: keepCount });
 
       // Drop the AI replies after the user message but KEEP the user bubble
       // itself (so its photo stays visible). Then suppress the new user
@@ -3547,11 +3520,7 @@ import createResearchSynapse from './researchSynapse.js';
     const keepCount = userIndex;
 
     try {
-      await fetch(`${API_BASE}/api/session/${sessionId}/truncate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keep_count: keepCount })
-      });
+      await post(`${API_BASE}/api/session/${sessionId}/truncate`, { keep_count: keepCount });
 
       for (let i = allMsgs.length - 1; i > aiIndex; i--) {
         allMsgs[i].remove();
@@ -3605,11 +3574,7 @@ import createResearchSynapse from './researchSynapse.js';
     // Persist variants to server
     const sid = sessionModule.getCurrentSessionId();
     if (sid) {
-      fetch(`${API_BASE}/api/session/${sid}/update-last-meta`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ metadata: { variants: variants, variantIndex: variants.length - 1 } })
-      }).catch(e => console.warn('update-last-meta (variants) failed:', e));
+      post(`${API_BASE}/api/session/${sid}/update-last-meta`, { metadata: { variants: variants, variantIndex: variants.length - 1 } }).catch(e => console.warn('update-last-meta (variants) failed:', e));
     }
   }
 
@@ -3703,11 +3668,7 @@ import createResearchSynapse from './researchSynapse.js';
     // Persist selected variant to server
     const sid = sessionModule.getCurrentSessionId();
     if (sid) {
-      fetch(`${API_BASE}/api/session/${sid}/update-last-meta`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ metadata: { variantIndex: newIdx } })
-      }).catch(e => console.warn('update-last-meta (variantIndex) failed:', e));
+      post(`${API_BASE}/api/session/${sid}/update-last-meta`, { metadata: { variantIndex: newIdx } }).catch(e => console.warn('update-last-meta (variantIndex) failed:', e));
     }
   }
 
@@ -3723,13 +3684,12 @@ import createResearchSynapse from './researchSynapse.js';
     const keepCount = aiIndex + 1;
 
     try {
-      const res = await fetch(`${API_BASE}/api/session/${sessionId}/fork`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keep_count: keepCount }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      let data;
+      try {
+        data = await post(`${API_BASE}/api/session/${sessionId}/fork`, { keep_count: keepCount });
+      } catch (e) {
+        throw new Error(e instanceof ApiError ? (e.detail || `HTTP ${e.status}`) : e.message);
+      }
 
       await sessionModule.loadSessions();
       await sessionModule.selectSession(data.id);
@@ -3748,17 +3708,23 @@ import createResearchSynapse from './researchSynapse.js';
   export async function checkPendingResearch(sessionId) {
     if (!sessionId) return;
     try {
-      const res = await fetch(`${API_BASE}/api/research/status/${sessionId}`);
-      if (!res.ok) return; // 404 = no research for this session
-      const data = await res.json();
+      let data;
+      try {
+        data = await get(`${API_BASE}/api/research/status/${sessionId}`);
+      } catch (e) {
+        if (e instanceof ApiError && e.status !== 0) return; // 404 = no research for this session
+        throw e;
+      }
 
       if (data.status === 'done') {
         // Fetch and render the completed result
         _notifyResearchComplete(sessionId, data.query || '');
         if (sessionModule && sessionModule.clearResearching) sessionModule.clearResearching(sessionId);
-        const resultRes = await fetch(`${API_BASE}/api/research/result/${sessionId}`, { method: 'POST' });
-        if (resultRes.ok) {
-          const resultData = await resultRes.json();
+        const resultData = await post(`${API_BASE}/api/research/result/${sessionId}`).catch(e => {
+          if (e instanceof ApiError && e.status !== 0) return null;
+          throw e;
+        });
+        if (resultData) {
           if (resultData.result) {
             // Skip if history already has a research message for this session
             if (document.querySelector(`#chat-history .msg-ai[data-research-session="${sessionId}"]`)) return;
@@ -3904,8 +3870,11 @@ import createResearchSynapse from './researchSynapse.js';
           return;
         }
         try {
-          const pollRes = await fetch(`${API_BASE}/api/research/status/${sessionId}`);
-          if (!pollRes.ok) {
+          const pollData = await get(`${API_BASE}/api/research/status/${sessionId}`).catch(e => {
+            if (e instanceof ApiError && e.status !== 0) return null;
+            throw e;
+          });
+          if (!pollData) {
             clearInterval(pollInterval);
             spinner.destroy();
             _clearResearchTimer();
@@ -3913,7 +3882,7 @@ import createResearchSynapse from './researchSynapse.js';
             if (sessionModule && sessionModule.clearResearching) sessionModule.clearResearching(sessionId);
             return;
           }
-          const pollData = await pollRes.json();
+
           updateSpinnerFromProgress(pollData.progress);
           if (_researchSynapse && pollData.progress) {
             _researchSynapse.setPhase(pollData.progress.phase, pollData.progress);
@@ -3930,9 +3899,11 @@ import createResearchSynapse from './researchSynapse.js';
 
             if (pollData.status === 'done') {
               _notifyResearchComplete(sessionId, data.query || '');
-              const rRes = await fetch(`${API_BASE}/api/research/result/${sessionId}`, { method: 'POST' });
-              if (rRes.ok) {
-                const rData = await rRes.json();
+              const rData = await post(`${API_BASE}/api/research/result/${sessionId}`).catch(e => {
+                if (e instanceof ApiError && e.status !== 0) return null;
+                throw e;
+              });
+              if (rData) {
                 if (rData.result) {
                   var srcHtml = '';
                   if (rData.sources && rData.sources.length > 0) {
@@ -4071,12 +4042,11 @@ import createResearchSynapse from './researchSynapse.js';
     }
 
     try {
-      const res = await fetch(`${API_BASE}/api/session/${sessionId}/delete-messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ msg_ids: msgIds })
-      });
-      if (!res.ok) throw new Error('Server error ' + res.status);
+      try {
+        await post(`${API_BASE}/api/session/${sessionId}/delete-messages`, { msg_ids: msgIds });
+      } catch (e) {
+        throw e instanceof ApiError ? new Error('Server error ' + e.status) : e;
+      }
       domToRemove.forEach(el => el.remove());
       if (uiModule) uiModule.showToast('Message deleted');
     } catch (err) {
@@ -4143,12 +4113,11 @@ import createResearchSynapse from './researchSynapse.js';
       if (!sessionId) { cleanup(); return; }
 
       try {
-        const res = await fetch(`${API_BASE}/api/session/${sessionId}/edit-message`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ msg_id: msgId, content: newContent }),
-        });
-        if (!res.ok) throw new Error('Server error ' + res.status);
+        try {
+          await post(`${API_BASE}/api/session/${sessionId}/edit-message`, { msg_id: msgId, content: newContent });
+        } catch (e) {
+          throw e instanceof ApiError ? new Error('Server error ' + e.status) : e;
+        }
 
         // Re-render body with markdown
         body.innerHTML = markdownModule.processWithThinking(markdownModule.squashOutsideCode(newContent));
@@ -4308,11 +4277,7 @@ import createResearchSynapse from './researchSynapse.js';
 
         // Persist variant metadata to server
         try {
-          await fetch(`${API_BASE}/api/session/${sessionId}/update-last-meta`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ metadata: { variants: variants, variantIndex: variants.length - 1 } }),
-          });
+          await post(`${API_BASE}/api/session/${sessionId}/update-last-meta`, { metadata: { variants: variants, variantIndex: variants.length - 1 } });
         } catch (_) {}
 
         // Re-render variant navigation
@@ -4398,8 +4363,8 @@ import createResearchSynapse from './researchSynapse.js';
         const _fd = new FormData();
         _fd.append('name', name || 'Attachment');
         _fd.append('skip_validation', 'true');
-        const r = await fetch(`${API_BASE}/api/session`, { method: 'POST', body: _fd, credentials: 'same-origin' });
-        if (r.ok) { const d = await r.json(); if (d && d.id) { sid = d.id; if (sessionModule.loadSessions) await sessionModule.loadSessions(); } }
+        const d = await post(`${API_BASE}/api/session`, _fd).catch(() => null);
+        if (d && d.id) { sid = d.id; if (sessionModule.loadSessions) await sessionModule.loadSessions(); }
       } catch (_) {}
     }
 
@@ -4411,17 +4376,18 @@ import createResearchSynapse from './researchSynapse.js';
         const fd = new FormData();
         fd.append('file', blob, name || 'document.pdf');
         if (sid) fd.append('session_id', sid);
-        const res = await fetch(`${API_BASE}/api/documents/import-pdf`, { method: 'POST', body: fd, credentials: 'same-origin' });
-        if (!res.ok) throw new Error('import-pdf ' + res.status);
-        doc = await res.json();
+        try {
+          doc = await post(`${API_BASE}/api/documents/import-pdf`, fd);
+        } catch (e) {
+          throw e instanceof ApiError ? new Error('import-pdf ' + e.status) : e;
+        }
       } else {
         const text = await (await fetch(url)).text();
-        const res = await fetch(`${API_BASE}/api/document`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sid || null, title: name.replace(/\.[^.]+$/, '') || 'Document', content: text, language: _attachLang(name) }),
-        });
-        if (!res.ok) throw new Error('document ' + res.status);
-        doc = await res.json();
+        try {
+          doc = await post(`${API_BASE}/api/document`, { session_id: sid || null, title: name.replace(/\.[^.]+$/, '') || 'Document', content: text, language: _attachLang(name) });
+        } catch (e) {
+          throw e instanceof ApiError ? new Error('document ' + e.status) : e;
+        }
       }
       if (doc && doc.id) {
         _attachDocCache.set(id, doc.id);

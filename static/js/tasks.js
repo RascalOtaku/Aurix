@@ -7,6 +7,7 @@ import markdownModule from './markdown.js';
 import * as spinnerModule from './spinner.js';
 import { makeWindowDraggable } from './windowDrag.js';
 import { sortModelIds } from './modelSort.js';
+import { get, post, put, del, ApiError } from './api.js';
 
 const API_BASE = window.location.origin;
 let _open = false;
@@ -23,8 +24,7 @@ const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'S
 
 async function _fetchTasks() {
   try {
-    const res = await fetch(`${API_BASE}/api/tasks?include_last_run=true`, { credentials: 'same-origin' });
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/tasks?include_last_run=true`);
     _tasks = data.tasks || [];
   } catch (e) {
     console.error('Failed to fetch tasks:', e);
@@ -35,49 +35,29 @@ async function _fetchTasks() {
 
 async function _runFirstOpenOnboarding() {
   try {
-    const res = await fetch(`${API_BASE}/api/tasks/onboarding`, { credentials: 'same-origin' });
-    if (!res.ok) return;
-    const state = await res.json();
+    const state = await get(`${API_BASE}/api/tasks/onboarding`).catch(e => {
+      if (e instanceof ApiError && e.status !== 0) return null;
+      throw e;
+    });
+    if (!state) return;
     if (state.opened) return;
 
-    await fetch(`${API_BASE}/api/tasks/onboarding`, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: false }),
-    });
+    await post(`${API_BASE}/api/tasks/onboarding`, { enabled: false });
   } catch (e) {
     console.warn('Tasks onboarding failed:', e);
   }
 }
 
 async function _createTask(data) {
-  const res = await fetch(`${API_BASE}/api/tasks`, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error('Failed to create task');
-  return await res.json();
+  return await post(`${API_BASE}/api/tasks`, data);
 }
 
 async function _updateTask(id, data) {
-  const res = await fetch(`${API_BASE}/api/tasks/${id}`, {
-    method: 'PUT',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error('Failed to update task');
-  return await res.json();
+  return await put(`${API_BASE}/api/tasks/${id}`, data);
 }
 
 async function _deleteTask(id) {
-  const res = await fetch(`${API_BASE}/api/tasks/${id}`, {
-    method: 'DELETE', credentials: 'same-origin',
-  });
-  if (!res.ok) throw new Error('Failed to delete task');
+  await del(`${API_BASE}/api/tasks/${id}`);
 }
 
 function _taskCardById(id) {
@@ -96,43 +76,34 @@ function _animateTaskRemoval(ids) {
 }
 
 async function _pauseTask(id) {
-  const res = await fetch(`${API_BASE}/api/tasks/${id}/pause`, {
-    method: 'POST', credentials: 'same-origin',
-  });
-  if (!res.ok) throw new Error('Failed to pause task');
+  await post(`${API_BASE}/api/tasks/${id}/pause`);
 }
 
 async function _resumeTask(id) {
-  const res = await fetch(`${API_BASE}/api/tasks/${id}/resume`, {
-    method: 'POST', credentials: 'same-origin',
-  });
-  if (!res.ok) throw new Error('Failed to resume task');
+  await post(`${API_BASE}/api/tasks/${id}/resume`);
 }
 
 async function _runNow(id, force = false) {
-  const res = await fetch(`${API_BASE}/api/tasks/${id}/run${force ? '?force=true' : ''}`, {
-    method: 'POST', credentials: 'same-origin',
-  });
-  if (!res.ok) {
+  try {
+    await post(`${API_BASE}/api/tasks/${id}/run${force ? '?force=true' : ''}`);
+  } catch (e) {
     // Surface the backend's actual reason — 409 means "already running",
-    // 404 task missing, etc. Previously every error rendered as the same
-    // generic "Failed to trigger task", which hid the cause.
-    let msg = `Failed to trigger task (${res.status})`;
-    try {
-      const data = await res.json();
-      if (data && data.detail) msg = data.detail;
-    } catch (_) {}
-    if (res.status === 409) msg = 'Task is already running';
-    throw new Error(msg);
+    // 404 task missing, etc.
+    if (e instanceof ApiError && e.status !== 0) {
+      let msg = e.detail || `Failed to trigger task (${e.status})`;
+      if (e.status === 409) msg = 'Task is already running';
+      throw new Error(msg);
+    }
+    throw e;
   }
 }
 
 async function _fetchRuns(taskId, limit = 10) {
-  const res = await fetch(`${API_BASE}/api/tasks/${taskId}/runs?limit=${limit}`, {
-    credentials: 'same-origin',
+  const data = await get(`${API_BASE}/api/tasks/${taskId}/runs?limit=${limit}`).catch(e => {
+    if (e instanceof ApiError && e.status !== 0) return null;
+    throw e;
   });
-  if (!res.ok) return [];
-  const data = await res.json();
+  if (!data) return [];
   return data.runs || [];
 }
 
@@ -140,8 +111,7 @@ let _outputTargets = null;
 async function _fetchOutputTargets() {
   if (_outputTargets) return _outputTargets;
   try {
-    const res = await fetch(`${API_BASE}/api/tasks/meta/output-targets`, { credentials: 'same-origin' });
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/tasks/meta/output-targets`);
     _outputTargets = data.targets || [];
   } catch (e) {
     _outputTargets = [{ value: 'session', label: 'Session' }];
@@ -153,8 +123,7 @@ let _builtinActions = null;
 async function _fetchActions() {
   if (_builtinActions) return _builtinActions;
   try {
-    const res = await fetch(`${API_BASE}/api/tasks/meta/actions`, { credentials: 'same-origin' });
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/tasks/meta/actions`);
     _builtinActions = data.actions || [];
   } catch (e) {
     _builtinActions = [];
@@ -166,8 +135,7 @@ let _urgentEmailSettings = null;
 async function _fetchUrgentEmailSettings() {
   if (_urgentEmailSettings) return _urgentEmailSettings;
   try {
-    const res = await fetch('/api/auth/settings', { credentials: 'same-origin' });
-    _urgentEmailSettings = await res.json();
+    _urgentEmailSettings = await get('/api/auth/settings');
   } catch (e) {
     _urgentEmailSettings = { urgent_email_prompt: '' };
   }
@@ -179,22 +147,14 @@ async function _saveUrgentEmailSettings(prompt) {
     ...(_urgentEmailSettings || {}),
     urgent_email_prompt: prompt || '',
   };
-  await fetch('/api/auth/settings', {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      urgent_email_prompt: prompt || '',
-    }),
-  });
+  await post('/api/auth/settings', { urgent_email_prompt: prompt || '' });
 }
 
 let _triggerEvents = null;
 async function _fetchEvents() {
   if (_triggerEvents) return _triggerEvents;
   try {
-    const res = await fetch(`${API_BASE}/api/tasks/meta/events`, { credentials: 'same-origin' });
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/tasks/meta/events`);
     _triggerEvents = data.events || [];
   } catch (e) {
     _triggerEvents = [];
@@ -1258,8 +1218,7 @@ function _showForm(existing, initTaskType, initTriggerType) {
   // Populate model dropdown from /api/models. Value is "endpoint_url::model"
   // so a single field encodes both the model name and which endpoint to call.
   // Blank value (option 0) = inherit session default.
-  fetch(`${API_BASE}/api/models`, { credentials: 'same-origin' })
-    .then(r => r.json())
+  get(`${API_BASE}/api/models`)
     .then(data => {
       const modelSel = document.getElementById('task-form-model');
       if (!modelSel) return;
@@ -1570,8 +1529,7 @@ async function _doRevert(id) {
     : confirm('Revert this built-in task to its default?');
   if (!ok) return;
   try {
-    const res = await fetch(`${API_BASE}/api/tasks/${id}/revert`, { method: 'POST', credentials: 'same-origin' });
-    if (!res.ok) throw new Error('Failed to revert task');
+    await post(`${API_BASE}/api/tasks/${id}/revert`);
     if (uiModule) uiModule.showToast('Reverted to default');
     await _fetchTasks();
     _renderMainView();
@@ -1772,9 +1730,12 @@ async function _renderActivityView() {
   if (searchEl) searchEl.addEventListener('input', () => { _afQuery = searchEl.value; _buildChips(); _applyFilter(); });
 
   try {
-    const res = await fetch(`${API_BASE}/api/tasks/runs/recent?limit=100`, { credentials: 'same-origin' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
+    let data;
+    try {
+      data = await get(`${API_BASE}/api/tasks/runs/recent?limit=100`);
+    } catch (e) {
+      throw e instanceof ApiError ? new Error(`HTTP ${e.status}`) : e;
+    }
     const runs = data.runs || [];
     const list = document.getElementById('tasks-activity-list');
     if (!list) return;
@@ -1981,8 +1942,7 @@ async function _openResultInChat(entry) {
     }
     if (!url) {
       try {
-        const dcRes = await fetch(`${API_BASE}/api/default-chat`, { credentials: 'same-origin' });
-        const dc = dcRes.ok ? await dcRes.json() : {};
+        const dc = await get(`${API_BASE}/api/default-chat`).catch(() => ({}));
         url = dc.endpoint_url || '';
         model = dc.model || model || '';
         epId = dc.endpoint_id || '';
@@ -2010,21 +1970,24 @@ async function _openResultInChat(entry) {
     if (url) fd.append('endpoint_url', url);
     if (model) fd.append('model', model);
     if (epId) fd.append('endpoint_id', epId);
-    const res = await fetch(`${API_BASE}/api/session`, { method: 'POST', credentials: 'same-origin', body: fd });
-    if (!res.ok) { uiModule.showToast(`Couldn't create chat (HTTP ${res.status})`); return; }
-    const sess = await res.json();
+    let sess;
+    try {
+      sess = await post(`${API_BASE}/api/session`, fd);
+    } catch (e) {
+      if (e instanceof ApiError && e.status !== 0) {
+        uiModule.showToast(`Couldn't create chat (HTTP ${e.status})`);
+        return;
+      }
+      throw e;
+    }
     const sid = sess.id || sess.session_id;
     if (!sid) { uiModule.showToast('Chat created but no session id returned'); return; }
 
     // Seed the conversation: a framing user line + the result as assistant.
-    await fetch(`${API_BASE}/api/session/${sid}/inject_messages`, {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: [
-        { role: 'user', content: `Here is the latest run of my scheduled task "${entry.taskName}". Let's review it.` },
-        { role: 'assistant', content: entry.result || '(no output)' },
-      ] }),
-    });
+    await post(`${API_BASE}/api/session/${sid}/inject_messages`, { messages: [
+      { role: 'user', content: `Here is the latest run of my scheduled task "${entry.taskName}". Let's review it.` },
+      { role: 'assistant', content: entry.result || '(no output)' },
+    ] });
 
     closeTasks();
     if (window.sessionModule) {
@@ -2263,12 +2226,7 @@ async function _aiDraftTask(inputEl, btnEl) {
   btnEl.appendChild(_spEl);
   _sp.start();
   try {
-    const res = await fetch(`${API_BASE}/api/tasks/parse`, {
-      method: 'POST', credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ description: desc }),
-    });
-    const data = await res.json();
+    const data = await post(`${API_BASE}/api/tasks/parse`, { description: desc });
     if (!data.success || !data.draft) {
       if (uiModule) uiModule.showError(data.message || 'Could not draft task');
       return;
@@ -2534,9 +2492,11 @@ let _notifInterval = null;
 
 async function _pollTaskNotifications() {
   try {
-    const res = await fetch(`${API_BASE}/api/tasks/notifications`, { credentials: 'same-origin' });
-    if (!res.ok) return;
-    const data = await res.json();
+    const data = await get(`${API_BASE}/api/tasks/notifications`).catch(e => {
+      if (e instanceof ApiError && e.status !== 0) return null;
+      throw e;
+    });
+    if (!data) return;
     const notes = data.notifications || [];
     for (const n of notes) {
       const ok = n.status === 'success';
