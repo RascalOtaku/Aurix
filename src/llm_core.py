@@ -162,7 +162,9 @@ def _is_ollama_native_url(url: str) -> bool:
     if host.endswith("ollama.com"):
         return True
     local_ollama_host = host in {"localhost", "127.0.0.1", "0.0.0.0", "::1"} or parsed.port == 11434
-    return local_ollama_host and (path == "/api" or path.startswith("/api/"))
+    # A bare local host (no path, e.g. http://localhost:11434) is Ollama's
+    # default address — without this it misdetects as OpenAI and chat 404s.
+    return local_ollama_host and (not path or path == "/" or path == "/api" or path.startswith("/api/"))
 
 
 def _ollama_api_root(url: str) -> str:
@@ -182,6 +184,8 @@ def _ollama_api_root(url: str) -> str:
     if host.endswith("ollama.com"):
         root = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else "https://ollama.com"
         return root.rstrip("/") + "/api"
+    if not path or path == "/":
+        return url.rstrip("/") + "/api"
     return url
 
 
@@ -468,6 +472,21 @@ def _build_anthropic_headers(headers):
                 h[k] = v
     return h
 
+
+def _normalize_headers(headers):
+    """Tolerate headers stored double-encoded as a JSON string (or junk).
+
+    Some sessions stored headers double-encoded — llm_call already defends
+    against this; the async/stream paths must too, otherwise headers.items()
+    / h.update() crash on a plain string.
+    """
+    if isinstance(headers, str):
+        try:
+            headers = json.loads(headers)
+        except Exception:
+            return None
+    return headers if isinstance(headers, dict) else None
+
 def _parse_anthropic_response(data: dict) -> str:
     """Extract text from Anthropic response."""
     for block in data.get("content", []):
@@ -484,7 +503,10 @@ def _sanitize_llm_messages(messages: List[Dict]) -> List[Dict]:
         if not isinstance(msg, dict):
             continue
         item = {k: v for k, v in msg.items() if k in allowed and v is not None}
-        if "role" in item and "content" in item:
+        # Keep assistant tool-call turns even when content is None (the
+        # standard OpenAI shape for a pure tool call); dropping them orphans
+        # the tool messages that answer them.
+        if "role" in item and ("content" in item or "tool_calls" in item):
             cleaned.append(item)
     return cleaned
 
@@ -553,11 +575,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     # Tolerate headers that arrive as a JSON string (some sessions stored them
     # double-encoded) — otherwise h.update() throws "dictionary update sequence
     # element #0 has length 1; 2 is required".
-    if isinstance(headers, str):
-        try:
-            headers = json.loads(headers)
-        except Exception:
-            headers = None
+    headers = _normalize_headers(headers)
     h = _provider_headers(_detect_provider(url), headers if isinstance(headers, dict) else None)
 
     messages_copy = _sanitize_llm_messages(messages)
@@ -603,7 +621,7 @@ def llm_call(url: str, model: str, messages: List[Dict], temperature: float = LL
     if _blocked:
         raise HTTPException(402, _blocked)
     try:
-        note_model_activity(target_url, model)
+        note_model_activity(url, model)
         r = httpx.post(target_url, headers=h, json=payload, timeout=timeout)
     except Exception as e:
         raise HTTPException(502, f"POST {target_url} failed: {e}")
@@ -677,6 +695,7 @@ async def llm_call_async(
     prompt_type: Optional[str] = None
 ) -> str:
     """Asynchronous LLM call using httpx with connection pooling, timeout, retry logic, and performance logging."""
+    headers = _normalize_headers(headers)
     provider = _detect_provider(url)
     messages_copy = _sanitize_llm_messages(messages)
 
@@ -733,7 +752,7 @@ async def llm_call_async(
         attempt += 1
         start = time.time()
         try:
-            note_model_activity(target_url, model)
+            note_model_activity(url, model)
             client = _get_http_client()
             r = await client.post(target_url, headers=h, json=payload, timeout=call_timeout)
             duration = time.time() - start
@@ -785,6 +804,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
       - event: error                       — errors
       - data: [DONE]                       — end of stream
     """
+    headers = _normalize_headers(headers)
     provider = _detect_provider(url)
     messages_copy = _sanitize_llm_messages(messages)
 
@@ -842,7 +862,7 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
     if _blocked:
         yield f'event: error\ndata: {json.dumps({"error": _blocked, "status": 402})}\n\n'
         return
-    note_model_activity(target_url, model)
+    note_model_activity(url, model)
 
     # ── Native Ollama streaming ──
     if provider == "ollama":
@@ -1081,10 +1101,16 @@ async def stream_llm(url: str, model: str, messages: List[Dict], temperature: fl
                                             if func.get("name"):
                                                 _tc_acc[idx]["name"] = func["name"]
                                             if "arguments" in func:
-                                                _tc_acc[idx]["arguments"] += func["arguments"]
+                                                # arguments may arrive as null or a dict from
+                                                # some OpenAI-compatible servers — normalize to str.
+                                                _args = func.get("arguments") or ""
+                                                if isinstance(_args, dict):
+                                                    _args = json.dumps(_args)
+                                                if isinstance(_args, str) and _args:
+                                                    _tc_acc[idx]["arguments"] += _args
                                                 # Stream tool arg deltas for doc tools
-                                                if func["arguments"] and _tc_acc[idx].get("name") in ("create_document", "update_document", "edit_document"):
-                                                    yield f'data: {json.dumps({"type": "tool_call_delta", "index": idx, "name": _tc_acc[idx]["name"], "arg_delta": func["arguments"]})}\n\n'
+                                                if _args and _tc_acc[idx].get("name") in ("create_document", "update_document", "edit_document"):
+                                                    yield f'data: {json.dumps({"type": "tool_call_delta", "index": idx, "name": _tc_acc[idx]["name"], "arg_delta": _args})}\n\n'
                                 elif "text" in j:
                                     if j["text"]:
                                         yield f'data: {json.dumps({"delta": j["text"]})}\n\n'

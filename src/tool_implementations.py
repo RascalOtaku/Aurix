@@ -810,6 +810,36 @@ def _skill_dump(sk) -> Dict:
 # Task management tool
 # ---------------------------------------------------------------------------
 
+_NEXT_RUN_UNCHANGED = object()
+
+
+def _next_run_for_task_edit(args, task, schedule_changed):
+    """Decide the new next_run for a manage_tasks edit.
+
+    Returns _NEXT_RUN_UNCHANGED to leave next_run alone, a datetime to set,
+    or None to clear it.
+
+    A trigger_type change must recompute next_run: switching an event task
+    to schedule mode while next_run is None means it never fires
+    (_check_due_tasks requires next_run <= now); switching away from
+    schedule mode with a stale next_run means it misfires on the old
+    schedule. Defaults mirror the create path (daily / 09:00) so a
+    converted task is immediately runnable.
+    """
+    from src.task_scheduler import compute_next_run
+    trigger_type_changed = args.get("trigger_type") is not None
+    in_schedule_mode = (task.trigger_type or "schedule") == "schedule"
+    if in_schedule_mode and (schedule_changed or trigger_type_changed):
+        return compute_next_run(
+            task.schedule or "daily",
+            task.scheduled_time or "09:00",
+            task.scheduled_day,
+        )
+    if trigger_type_changed and not in_schedule_mode:
+        return None
+    return _NEXT_RUN_UNCHANGED
+
+
 async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
     """Handle manage_tasks tool calls: CRUD on scheduled tasks."""
     import uuid as _uuid
@@ -926,10 +956,9 @@ async def do_manage_tasks(content: str, owner: Optional[str] = None) -> Dict:
                     changed.append(field)
                     schedule_changed = True
 
-            if schedule_changed and (task.trigger_type or "schedule") == "schedule":
-                task.next_run = compute_next_run(
-                    task.schedule, task.scheduled_time, task.scheduled_day,
-                )
+            new_next_run = _next_run_for_task_edit(args, task, schedule_changed)
+            if new_next_run is not _NEXT_RUN_UNCHANGED:
+                task.next_run = new_next_run
 
             db.commit()
             return {"response": f"Updated task '{task.name}': {', '.join(changed)}", "exit_code": 0}
@@ -1333,6 +1362,35 @@ async def do_manage_tokens(content: str, owner: Optional[str] = None) -> Dict:
 # Document management tool (delete, list, organize)
 # ---------------------------------------------------------------------------
 
+def _escape_like(s: str) -> str:
+    """Escape LIKE wildcards so a user search string matches literally."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _resolve_doc_for_delete(db, explicit_id, active_id):
+    """Resolve which document a manage_documents delete targets.
+
+    Returns (doc, error). An explicit id that matches nothing is an error —
+    it must NOT fall back to deleting the most recently updated document
+    (wrong-target data loss). The most-recent fallback applies only when no
+    id was given at all.
+    """
+    from core.database import Document
+    if explicit_id:
+        doc = db.query(Document).filter(Document.id == explicit_id).first()
+        if not doc:
+            return None, f"Document '{explicit_id}' not found"
+        return doc, None
+    doc = None
+    if active_id:
+        doc = db.query(Document).filter(Document.id == active_id).first()
+    if not doc:
+        doc = db.query(Document).filter(Document.is_active == True).order_by(Document.updated_at.desc()).first()
+    if not doc:
+        return None, "No document to delete"
+    return doc, None
+
+
 async def do_manage_documents(content: str, owner: Optional[str] = None) -> Dict:
     """Manage documents: list, read/view/open, delete, tidy.
 
@@ -1369,7 +1427,7 @@ async def do_manage_documents(content: str, owner: Optional[str] = None) -> Dict
         if action == "list":
             q = db.query(Document).filter(Document.is_active == True)
             if args.get("search"):
-                q = q.filter(Document.title.ilike(f"%{args['search']}%"))
+                q = q.filter(Document.title.ilike(f"%{_escape_like(args['search'])}%", escape="\\"))
             if args.get("language"):
                 q = q.filter(Document.language == args["language"])
             docs = q.order_by(Document.updated_at.desc()).limit(args.get("limit", 50)).all()
@@ -1420,15 +1478,10 @@ async def do_manage_documents(content: str, owner: Optional[str] = None) -> Dict
             }
 
         elif action == "delete":
-            doc_id = args.get("document_id") or args.get("id") or args.get("uid") or _active_document_id
-            doc = None
-            if doc_id:
-                doc = db.query(Document).filter(Document.id == doc_id).first()
-            if not doc:
-                # Fallback: most recently updated doc (likely what the user means)
-                doc = db.query(Document).filter(Document.is_active == True).order_by(Document.updated_at.desc()).first()
-            if not doc:
-                return {"error": "No document to delete", "exit_code": 1}
+            explicit_id = args.get("document_id") or args.get("id") or args.get("uid")
+            doc, err = _resolve_doc_for_delete(db, explicit_id, _active_document_id)
+            if err:
+                return {"error": err, "exit_code": 1}
             title = doc.title
             doc.is_active = False
             db.commit()

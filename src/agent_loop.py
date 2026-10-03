@@ -554,7 +554,10 @@ def _build_system_prompt(
         _ov_sig = _hl.sha256(_json.dumps(get_builtin_overrides() or {}, sort_keys=True).encode()).hexdigest()
     except Exception:
         _ov_sig = ""
-    cache_key = (frozenset(disabled_tools or []), bool(mcp_mgr), needs_admin, _rt_key, compact, _ov_sig)
+    cache_key = (frozenset(disabled_tools or []), bool(mcp_mgr), needs_admin, _rt_key, compact, _ov_sig,
+                 # The per-server MCP disabled map feeds get_tool_descriptions_for_prompt —
+                 # include it so toggling an MCP tool busts the cached prompt.
+                 frozenset((k, frozenset(v)) for k, v in (mcp_disabled_map or {}).items()))
     if _cached_base_prompt and _cached_base_prompt_key == cache_key and not active_document:
         agent_prompt = _cached_base_prompt
     else:
@@ -1015,11 +1018,18 @@ def _build_base_prompt(
 
 
 def _resolve_tool_blocks(round_response: str, native_tool_calls: list, round_num: int):
-    """Choose native function calls or fenced code block parsing. Returns (tool_blocks, used_native)."""
+    """Choose native function calls or fenced code block parsing.
+
+    Returns (tool_blocks, used_native, failed_native_idxs). failed_native_idxs
+    are indices into native_tool_calls whose conversion failed — their results
+    must be reported as explicit errors so result indices stay aligned with
+    call ids in _append_tool_results.
+    """
     used_native = False
+    failed_native_idxs = set()
     if native_tool_calls:
         tool_blocks = []
-        for tc in native_tool_calls:
+        for j, tc in enumerate(native_tool_calls):
             tc_name = tc.get("name", "")
             tc_args = tc.get("arguments", "{}")
             block = function_call_to_tool_block(tc_name, tc_args)
@@ -1027,6 +1037,7 @@ def _resolve_tool_blocks(round_response: str, native_tool_calls: list, round_num
                 tool_blocks.append(block)
                 logger.info(f"  -> converted: {tc_name} -> {block.tool_type}")
             else:
+                failed_native_idxs.add(j)
                 logger.warning(f"  -> FAILED to convert native call: {tc_name} args={tc_args[:200]}")
         if tool_blocks:
             used_native = True
@@ -1040,7 +1051,7 @@ def _resolve_tool_blocks(round_response: str, native_tool_calls: list, round_num
                 f"{len(native_tool_calls)} native calls, "
                 f"{len(tool_blocks)} tool blocks. Preview: {resp_preview}")
 
-    return tool_blocks, used_native
+    return tool_blocks, used_native, failed_native_idxs
 
 
 def _append_tool_results(
@@ -1052,6 +1063,7 @@ def _append_tool_results(
     used_native: bool,
     round_num: int,
     round_reasoning: str = "",
+    failed_native_idxs: set = None,
 ):
     """Append tool execution results back into the message history for the next LLM round.
 
@@ -1059,6 +1071,11 @@ def _append_tool_results(
     back via `reasoning_content` on the assistant message — DeepSeek's API
     rejects follow-up requests in thinking mode that don't include the
     prior reasoning. Other vendors ignore the extra field.
+
+    `failed_native_idxs` are native-call indices whose conversion failed in
+    _resolve_tool_blocks. They get explicit error tool messages so result
+    indices stay aligned with call ids (tool_result_texts only holds
+    results for successfully converted + executed blocks).
     """
     if used_native and native_tool_calls:
         assistant_msg = {"role": "assistant"}
@@ -1077,8 +1094,20 @@ def _append_tool_results(
             for j, tc in enumerate(native_tool_calls)
         ]
         messages.append(assistant_msg)
+        failed_native_idxs = failed_native_idxs or set()
+        result_idx = 0
         for j, tc in enumerate(native_tool_calls):
-            result_text = tool_result_texts[j] if j < len(tool_result_texts) else ""
+            if j in failed_native_idxs:
+                # Conversion failed in _resolve_tool_blocks — this call was
+                # never executed. Report it explicitly so the model doesn't
+                # reason over another call's result under this call id.
+                result_text = (
+                    f"Error: could not convert the '{tc.get('name', '')}' tool call "
+                    f"(unknown tool or malformed arguments) — it was not executed."
+                )
+            else:
+                result_text = tool_result_texts[result_idx] if result_idx < len(tool_result_texts) else ""
+                result_idx += 1
             messages.append({
                 "role": "tool",
                 "tool_call_id": tc.get("id", f"call_{round_num}_{j}"),
@@ -1675,7 +1704,7 @@ async def stream_agent_loop(
                 yield chunk
             # Intercept [DONE] — don't forward until all rounds finish
 
-        tool_blocks, used_native = _resolve_tool_blocks(round_response, native_tool_calls, round_num)
+        tool_blocks, used_native, failed_native_idxs = _resolve_tool_blocks(round_response, native_tool_calls, round_num)
 
         # Force-answer round: we told the model to STOP calling tools and
         # answer. If it ignored that and emitted a (possibly DSML) tool
@@ -1960,7 +1989,7 @@ async def stream_agent_loop(
             desc, result = await _tool_task
 
             # Extract structured web sources from web_search tool output
-            _src_text = result.get("results") or result.get("stdout") or ""
+            _src_text = result.get("results") or result.get("stdout") or result.get("output") or ""
             if block.tool_type == "web_search" and _src_text:
                 _src_marker = "<!-- SOURCES:"
                 _src_idx = _src_text.find(_src_marker)
@@ -2104,12 +2133,24 @@ async def stream_agent_loop(
 
         # If budget was hit, stop the loop
         if budget_hit:
+            # Feed the results we DID get back into the history so the model
+            # can use them, then tell it to wrap up instead of calling more
+            # tools. Without this the executed results are silently dropped.
+            _append_tool_results(messages, round_response, native_tool_calls,
+                                 tool_results, tool_result_texts, used_native, round_num,
+                                 round_reasoning=round_reasoning,
+                                 failed_native_idxs=failed_native_idxs)
+            messages.append({
+                "role": "system",
+                "content": "Tool budget exhausted. Write your final answer now from the results above; do not call more tools.",
+            })
             break
 
         # Feed results back to LLM for next round
         _append_tool_results(messages, round_response, native_tool_calls,
                              tool_results, tool_result_texts, used_native, round_num,
-                             round_reasoning=round_reasoning)
+                             round_reasoning=round_reasoning,
+                             failed_native_idxs=failed_native_idxs)
 
         # Emit agent_step event
         yield (

@@ -197,11 +197,18 @@ class ToolIndex:
         if not mcp_mgr:
             return
 
-        # Get current MCP generation to avoid redundant reindexing
-        gen = getattr(mcp_mgr, '_generation', 0)
-        if gen == self._mcp_generation:
+        # Get current MCP tools first; hash the text as the change signature
+        # (McpManager exposes no _generation counter) to avoid redundant
+        # reindexing. The old getattr(mcp_mgr, '_generation', 0) guard never
+        # changed, so reindexing silently stopped after the first call.
+        try:
+            all_tools = mcp_mgr.get_tool_descriptions_for_prompt(disabled_map or {})
+        except Exception:
+            all_tools = ""
+        sig = hashlib.sha256((all_tools or "").encode()).hexdigest()
+        if sig == self._mcp_generation:
             return
-        self._mcp_generation = gen
+        self._mcp_generation = sig
 
         # Remove old MCP entries
         try:
@@ -210,12 +217,6 @@ class ToolIndex:
                 self._collection.delete(ids=existing["ids"])
         except Exception:
             pass
-
-        # Get current MCP tools
-        try:
-            all_tools = mcp_mgr.get_tool_descriptions_for_prompt(disabled_map or {})
-        except Exception:
-            all_tools = ""
 
         if not all_tools:
             return
