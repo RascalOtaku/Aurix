@@ -5855,6 +5855,30 @@ export function isCommand(str) {
 }
 
 /**
+ * List all slash commands as plain data for UI features (autocomplete,
+ * command palette). Returns [{ name, help, usage, category, aliases,
+ * hidden, subs: [{ name, help, usage, aliases }] }]. Handlers are omitted.
+ */
+export function listSlashCommands() {
+  return Object.entries(COMMANDS).map(([name, def]) => ({
+    name,
+    help: def.help || '',
+    usage: def.usage || ('/' + name),
+    category: def.category || 'General',
+    aliases: def.alias || [],
+    hidden: !!def.hidden,
+    subs: def.subs
+      ? Object.entries(def.subs).map(([sname, sdef]) => ({
+          name: sname,
+          help: sdef.help || '',
+          usage: sdef.usage || ('/' + name + ' ' + sname),
+          aliases: sdef.alias || [],
+        }))
+      : [],
+  }));
+}
+
+/**
  * Get the current setupMode state.
  */
 export function getSetupMode() {
@@ -5877,6 +5901,7 @@ export { handleSlashCommand, handleSetupInput, handleSetupWizard, slashReply, ty
 const slashCommands = {
   initSlashCommands,
   isCommand,
+  listSlashCommands,
   getSetupMode,
   clearSetupMode,
   handleSlashCommand,

@@ -20,6 +20,7 @@ import documentModule from './document.js';
 import * as emailInbox from './emailInbox.js';
 import codeRunnerModule from './codeRunner.js';
 import slashCommands, { initSlashCommands, isCommand, handleSlashCommand, handleSetupInput, handleSetupWizard, typewriterInto } from './slashCommands.js';
+import { initSlashAutocomplete } from './slashAutocomplete.js';
 import createResearchSynapse from './researchSynapse.js';
 import { get, post, ApiError } from './api.js';
   const RESEARCH_TIMEOUT_MS = 360000;
@@ -148,6 +149,7 @@ import { get, post, ApiError } from './api.js';
   export function init(apiBase) {
     API_BASE = apiBase;
     initSlashCommands({ apiBase, isStreaming: () => isStreaming });
+    initSlashAutocomplete();
     // Initialize email inbox
     emailInbox.init(documentModule);
   }

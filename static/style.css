@@ -34336,3 +34336,40 @@ body.theme-frosted .modal {
   background-color: color-mix(in srgb, var(--accent, var(--red)) 10%, transparent);
   transform: translateX(1px);
 }
+
+/* ── Slash-command autocomplete (slac-) ───────────────────────────── */
+.slac-dropdown {
+  position: fixed;
+  z-index: 10000;
+  background: color-mix(in srgb, var(--panel, #111) 96%, var(--bg, #000));
+  border: 1px solid var(--border, #355a66);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  overflow-y: auto;
+  padding: 4px;
+  font-size: 13px;
+}
+.slac-item {
+  padding: 7px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  line-height: 1.35;
+}
+.slac-item.slac-sel {
+  background: color-mix(in srgb, var(--accent, var(--fg)) 16%, transparent);
+}
+.slac-label {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  color: var(--fg);
+}
+.slac-help {
+  color: var(--dim, #8a93a3);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 480px) {
+  .slac-dropdown { font-size: 14px; }
+}
