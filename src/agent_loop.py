@@ -600,7 +600,7 @@ def _build_system_prompt(
             f"(local {_now.strftime('%H:%M')} = {_utc.strftime('%H:%M')} UTC right now).\n\n"
         ) + agent_prompt
     except Exception:
-        pass
+        logger.debug("Building date/time prompt block failed")
 
     # Owner-chosen output style rules, e.g. AURIX_OUTPUT_STYLE=adhd (answer-first; src/foundation/skills.py).
     _style = os.environ.get("AURIX_OUTPUT_STYLE", "").strip()
@@ -612,7 +612,7 @@ def _build_system_prompt(
             if _block:
                 agent_prompt = agent_prompt + "\n\n## Output style\n" + _block.replace("### Coding rules: ", "### ")
         except Exception:
-            pass
+            logger.debug("Rendering skills style block for prompt failed")
 
     # Document context is kept as a SEPARATE message (not merged into the tool
     # prompt) so the context trimmer doesn't destroy it when truncating the
@@ -650,7 +650,7 @@ def _build_system_prompt(
                 from src.pdf_form_doc import find_source_upload_id
                 _is_form_backed = bool(find_source_upload_id(active_document.current_content or ""))
             except Exception:
-                pass
+                logger.debug("PDF form-backing check failed")
 
             if _is_form_backed:
                 doc_ctx = (
@@ -777,7 +777,7 @@ def _build_system_prompt(
                     "If the saved style specifies Best/newline/name, use that sign-off when a sign-off is natural."
                 )
         except Exception:
-            pass
+            logger.debug("Loading email writing style into prompt failed")
 
     # When creating email documents, instruct the AI on the format
     if relevant_tools and (_EMAIL_TOOL_HINTS & set(relevant_tools)):
@@ -811,7 +811,7 @@ def _build_system_prompt(
             _prefs = _load_prefs(owner) or {}
             _skills_on = _prefs.get("skills_enabled", True)
         except Exception:
-            pass
+            logger.debug("Loading user prefs for skills toggle failed")
         if last_user and _skills_on:
             from services.memory.skills import SkillsManager
             from src.constants import DATA_DIR
@@ -851,7 +851,7 @@ def _build_system_prompt(
                     try:
                         sm.record_use(_sk.get('name', ''))
                     except Exception:
-                        pass
+                        logger.debug("Recording skill usage metric failed")
                 lines = ["", "## Relevant skills for this request",
                          "These skills are matched to your current request. Each is a "
                          "procedure proven to work. Follow them step by step. To see "
@@ -1977,7 +1977,7 @@ async def stream_agent_loop(
                             elif "stdout" in result:
                                 result["stdout"] = _clean
                         except (json.JSONDecodeError, Exception):
-                            pass
+                            logger.debug("Stripping web_sources marker from tool result failed")
 
             # Emit doc-specific event for document tools — the frontend
             # document panel handles this; no need to show content in chat.

@@ -226,7 +226,7 @@ def setup_chat_routes(
                 from routes.calendar_routes import set_user_tz_offset
                 set_user_tz_offset(_tz_hdr)
         except Exception:
-            pass
+            logger.debug("Applying x-tz-offset header failed")
 
         form_data = await request.form()
         message = form_data.get("message")
@@ -315,7 +315,7 @@ def setup_chat_routes(
             try:
                 att_ids = [str(x) for x in json.loads(attachments)]
             except Exception:
-                pass
+                logger.debug("Parsing attachment IDs failed; attachments skipped")
 
         no_memory = str(form_data.get("no_memory", "")).lower() == "true"
 
@@ -656,7 +656,7 @@ def setup_chat_routes(
                     finally:
                         _db.close()
                 except Exception:
-                    pass
+                    logger.debug("Image-model endpoint check failed")
 
             if _is_image_model:
                 from src.settings import get_setting
