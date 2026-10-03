@@ -249,8 +249,8 @@ def _provider_headers(provider: str, headers: Optional[Dict] = None) -> Dict[str
     if isinstance(headers, dict):
         h.update(headers)
     if provider == "openrouter":
-        h.setdefault("HTTP-Referer", "https://github.com/pewdiepie-archdaemon/odysseus")
-        h.setdefault("X-OpenRouter-Title", "Odysseus")
+        h.setdefault("HTTP-Referer", "https://github.com/RascalOtaku/Aurix")
+        h.setdefault("X-OpenRouter-Title", "Aurix")
     return key_rotation.apply(provider, h)
 
 
