@@ -1,0 +1,174 @@
+--- a/static/command.html
++++ b/static/command.html
+@@ -450,6 +450,120 @@
+   setInterval(addBoardFilter, 2000);
+ })();
+
++/* ---- Aurix LLM: model status + chat ---- */
++(function () {
++  "use strict";
++
++  var LLM_API = "http://100.114.213.55:11434/api/generate";
++  var LLM_MODEL = "aurix:0.5b"; // falls back to qwen3.5:9b until trained
++  var FALLBACK_MODEL = "qwen3.5:9b";
++
++  function createLLMTab() {
++    // Add LLM tab to the tab bar (after existing tabs)
++    var tabs = document.querySelector(".tabs");
++    if (!tabs || document.querySelector('[data-tab="aurix-llm"]')) return;
++
++    var btn = document.createElement("button");
++    btn.className = "tabbtn";
++    btn.setAttribute("data-tab", "aurix-llm");
++    btn.textContent = "🧠 Aurix LLM";
++    tabs.appendChild(btn);
++
++    // Create tab panel
++    var panels = document.querySelector(".tabpanels") || document.body;
++    var panel = document.createElement("div");
++    panel.className = "tabpanel";
++    panel.setAttribute("data-tab", "aurix-llm");
++    panel.innerHTML = `
++      <section class="card c12">
++        <h2>Aurix LLM <span class="small" id="llm-status">checking...</span></h2>
++        <div class="dim small" style="margin-bottom:8px">
++          Rascal's own model — distilled from Qwen, trained on Aurix's ecosystem.
++          <span id="llm-model-name"></span>
++        </div>
++        <div id="llm-info" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:12px"></div>
++        <div id="llm-chat" style="max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;min-height:100px"></div>
++        <div style="display:flex;gap:8px">
++          <input id="llm-input" type="text" placeholder="Ask Aurix LLM..." style="flex:1;padding:8px 12px;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:8px;font:inherit" />
++          <button id="llm-send" class="btn">Send</button>
++        </div>
++      </section>
++      <section class="card c12">
++        <h2>Training <span class="small" id="llm-train-status"></span></h2>
++        <div class="dim small" id="llm-train-info">Training pipeline status will appear here when active.</div>
++      </section>
++    `;
++    panels.appendChild(panel);
++
++    // Wire up chat
++    var input = panel.querySelector("#llm-input");
++    var sendBtn = panel.querySelector("#llm-send");
++    var chat = panel.querySelector("#llm-chat");
++
++    function addMsg(role, text) {
++      var div = document.createElement("div");
++      div.style.cssText = "margin:6px 0;padding:8px 12px;border-radius:8px;" +
++        (role === "user" ? "background:rgba(107,159,255,.15);margin-left:20px;" : "background:rgba(255,255,255,.05);margin-right:20px;");
++      div.innerHTML = "<strong>" + (role === "user" ? "You" : "Aurix") + ":</strong> " +
++        text.replace(/</g, "&lt;").replace(/\n/g, "<br>");
++      chat.appendChild(div);
++      chat.scrollTop = chat.scrollHeight;
++    }
++
++    async function sendMessage() {
++      var text = input.value.trim();
++      if (!text) return;
++      input.value = "";
++      addMsg("user", text);
++      addMsg("aurix", "<em>thinking...</em>");
++
++      try {
++        // Try Aurix model first, fall back to 9B
++        var model = LLM_MODEL;
++        var resp = await fetch(LLM_API, {
++          method: "POST",
++          headers: {"Content-Type": "application/json"},
++          body: JSON.stringify({
++            model: model,
++            prompt: "You are Aurix, a direct and helpful AI assistant. User: " + text + "\nAurix:",
++            stream: false,
++          }),
++        });
++        if (!resp.ok) throw new Error("model not found");
++        var data = await resp.json();
++        chat.lastChild.remove();
++        addMsg("aurix", data.response || "No response");
++      } catch (e) {
++        // Fall back to 9B
++        try {
++          var resp2 = await fetch(LLM_API, {
++            method: "POST",
++            headers: {"Content-Type": "application/json"},
++            body: JSON.stringify({
++              model: FALLBACK_MODEL,
++              prompt: "You are Aurix, a direct and helpful AI assistant. User: " + text + "\nAurix:",
++              stream: false,
++            }),
++          });
++          var data2 = await resp2.json();
++          chat.lastChild.remove();
++          addMsg("aurix", (data2.response || "No response") + " <span class='dim small'>(via 9B fallback)</span>");
++        } catch (e2) {
++          chat.lastChild.remove();
++          addMsg("aurix", "Model unreachable. Is Ollama running on Steammachine?");
++        }
++      }
++    }
++
++    sendBtn.addEventListener("click", sendMessage);
++    input.addEventListener("keydown", function (e) {
++      if (e.key === "Enter") sendMessage();
++    });
++
++    checkLLMStatus();
++    setInterval(checkLLMStatus, 30000);
++  }
++
++  async function checkLLMStatus() {
++    var statusEl = document.getElementById("llm-status");
++    var infoEl = document.getElementById("llm-info");
++    var modelEl = document.getElementById("llm-model-name");
++    if (!statusEl) return;
++
++    try {
++      var resp = await fetch("http://100.114.213.55:11434/api/tags");
++      var data = await resp.json();
++      var models = (data.models || []).map(function (m) { return m.name; });
++
++      var hasAurix = models.some(function (m) { return m.indexOf("aurix") >= 0; });
++      var has9B = models.indexOf("qwen3.5:9b") >= 0;
++      var has3B = models.indexOf("llama3.2:3b") >= 0;
++
++      if (hasAurix) {
++        statusEl.textContent = "● live";
++        statusEl.style.color = "#43d9a3";
++        modelEl.textContent = "— aurix:0.5b active";
++      } else if (has9B) {
++        statusEl.textContent = "● training (9B fallback active)";
++        statusEl.style.color = "#ffd743";
++        modelEl.textContent = "— aurix:0.5b in training, using qwen3.5:9b";
++      } else {
++        statusEl.textContent = "○ offline";
++        statusEl.style.color = "#ff6b8a";
++      }
++
++      infoEl.innerHTML =
++        infoBox("Aurix 0.5B", hasAurix ? "Live" : "Training", hasAurix ? "#43d9a3" : "#ffd743") +
++        infoBox("Qwen 9B", has9B ? "Ready" : "Offline", has9B ? "#43d9a3" : "#666") +
++        infoBox("Fly 3B", has3B ? "Ready" : "Offline", has3B ? "#43d9a3" : "#666");
++    } catch (e) {
++      statusEl.textContent = "○ unreachable";
++      statusEl.style.color = "#ff6b8a";
++      infoEl.innerHTML = "<div class='dim'>Ollama not reachable at 100.114.213.55:11434</div>";
++    }
++  }
++
++  function infoBox(label, value, color) {
++    return "<div style='background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:8px;padding:8px 10px'>" +
++      "<div class='dim small'>" + label + "</div>" +
++      "<div style='font-weight:600;color:" + color + "'>" + value + "</div></div>";
++  }
++
++  // Initialize when DOM is ready
++  if (document.readyState === "loading") {
++    document.addEventListener("DOMContentLoaded", function () { setTimeout(createLLMTab, 1000); });
++  } else {
++    setTimeout(createLLMTab, 1000);
++  }
++})();
++
+ </script>

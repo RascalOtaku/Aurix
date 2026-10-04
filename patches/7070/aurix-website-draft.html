@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurix — Your Self-Hosted AI Workspace</title>
+<!-- PRIVATE DRAFT — NOT FOR PUBLIC RELEASE -->
+<style>
+  :root {
+    --bg: #0a0e1a; --bg2: #111827; --fg: #e0e6f0; --dim: #8b94a7;
+    --accent: #6b9fff; --accent2: #9f6bff; --green: #43d9a3; --gold: #ffd743;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, sans-serif; line-height: 1.6; }
+  .draft-banner { background: #ff6b8a; color: #fff; text-align: center; padding: 8px; font-size: 13px; font-weight: 600; }
+  nav { display: flex; justify-content: space-between; align-items: center; padding: 20px 40px; max-width: 1200px; margin: 0 auto; }
+  nav .logo { font-size: 24px; font-weight: 700; }
+  nav .logo span { color: var(--accent); }
+  nav a { color: var(--dim); text-decoration: none; margin-left: 24px; font-size: 14px; }
+  nav a:hover { color: var(--fg); }
+  .hero { text-align: center; padding: 80px 20px 60px; max-width: 800px; margin: 0 auto; }
+  .hero h1 { font-size: 52px; font-weight: 800; margin-bottom: 16px; background: linear-gradient(135deg, var(--accent), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero p { font-size: 20px; color: var(--dim); margin-bottom: 32px; }
+  .hero .cta { display: inline-block; background: var(--accent); color: #fff; padding: 14px 32px; border-radius: 10px; text-decoration: none; font-weight: 600; font-size: 16px; }
+  .hero .cta:hover { opacity: 0.9; }
+  .section { max-width: 1100px; margin: 0 auto; padding: 60px 20px; }
+  .section h2 { font-size: 32px; margin-bottom: 12px; text-align: center; }
+  .section .sub { text-align: center; color: var(--dim); margin-bottom: 40px; font-size: 17px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; }
+  .card { background: var(--bg2); border: 1px solid rgba(107,159,255,.15); border-radius: 16px; padding: 28px; }
+  .card h3 { font-size: 19px; margin-bottom: 10px; }
+  .card p { color: var(--dim); font-size: 15px; }
+  .card .icon { font-size: 32px; margin-bottom: 12px; }
+  .ecosystem { display: flex; justify-content: center; align-items: center; gap: 16px; flex-wrap: wrap; margin: 40px 0; }
+  .node { background: var(--bg2); border: 2px solid var(--accent); border-radius: 12px; padding: 16px 24px; text-align: center; }
+  .node .name { font-weight: 700; font-size: 15px; }
+  .node .desc { font-size: 12px; color: var(--dim); }
+  .node.brain { border-color: var(--gold); }
+  .arrow { color: var(--dim); font-size: 24px; }
+  .llm-hero { background: linear-gradient(135deg, rgba(107,159,255,.1), rgba(159,107,255,.1)); border-radius: 20px; padding: 48px; text-align: center; margin: 40px 0; }
+  .llm-hero h3 { font-size: 28px; margin-bottom: 12px; }
+  .llm-hero .specs { display: flex; justify-content: center; gap: 32px; margin-top: 24px; flex-wrap: wrap; }
+  .llm-hero .spec { text-align: center; }
+  .llm-hero .spec .val { font-size: 28px; font-weight: 700; color: var(--accent); }
+  .llm-hero .spec .label { font-size: 13px; color: var(--dim); }
+  footer { text-align: center; padding: 40px 20px; color: var(--dim); font-size: 13px; border-top: 1px solid rgba(255,255,255,.08); }
+  @media (max-width: 600px) { .hero h1 { font-size: 36px; } nav { padding: 16px 20px; } }
+</style>
+</head>
+<body>
+<div class="draft-banner">🔒 PRIVATE DRAFT — NOT FOR PUBLIC RELEASE — Aurix is not ready yet</div>
+
+<nav>
+  <div class="logo">Aurix<span>.</span></div>
+  <div>
+    <a href="#system">System</a>
+    <a href="#llm">Aurix LLM</a>
+    <a href="#ecosystem">Ecosystem</a>
+  </div>
+</nav>
+
+<div class="hero">
+  <h1>Your AI, Your Hardware,<br>Your Rules.</h1>
+  <p>Aurix is a self-hosted AI workspace that runs entirely on your machines. No cloud. No subscriptions. No one watching.</p>
+  <a href="#system" class="cta">Explore the System</a>
+</div>
+
+<div class="section" id="system">
+  <h2>The System</h2>
+  <p class="sub">Everything you need, running on hardware you own.</p>
+  <div class="grid">
+    <div class="card">
+      <div class="icon">🧠</div>
+      <h3>Agent Core</h3>
+      <p>Multi-step task orchestration with tool use, error recovery, and persistent memory. Aurix doesn't just chat — it does.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🎤</div>
+      <h3>Voice</h3>
+      <p>Say "Aurix" and ask anything. 100% open-source pipeline: openWakeWord → Whisper → Piper. No cloud, no accounts.</p>
+    </div>
+    <div class="card">
+      <div class="icon">📊</div>
+      <h3>Command Center</h3>
+      <p>Web dashboard for everything: tasks, email, calendar, code, health monitoring. Keyboard shortcuts, live updates.</p>
+    </div>
+    <div class="card">
+      <div class="icon">💰</div>
+      <h3>Income Avenues</h3>
+      <p>18 tracked income avenues with outreach automation, prospect finding, and a conductor board managing it all.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🗺️</div>
+      <h3>Living Brain Map</h3>
+      <p>Visualize Aurix's processes as a neural network. Services fire as they work, new connections form as ideas emerge.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🔒</div>
+      <h3>Private by Design</h3>
+      <p>Vaultwarden for secrets, local Whisper for transcription, self-hosted everything. Your data never leaves your network.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" id="llm">
+  <h2>Aurix LLM</h2>
+  <p class="sub">Our own model, distilled for the Aurix ecosystem.</p>
+  <div class="llm-hero">
+    <h3>🧠 Aurix-0.5B</h3>
+    <p style="color:var(--dim);max-width:600px;margin:0 auto">A 0.5-billion-parameter model fine-tuned on Aurix's personality, tools, and workflows. Small, fast, and specialized — it knows Aurix because it was trained on Aurix.</p>
+    <div class="specs">
+      <div class="spec"><div class="val">0.5B</div><div class="label">Parameters</div></div>
+      <div class="spec"><div class="val">~50</div><div class="label">Tokens/sec</div></div>
+      <div class="spec"><div class="val">100%</div><div class="label">Local</div></div>
+      <div class="spec"><div class="val">11</div><div class="label">Training categories</div></div>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="card">
+      <div class="icon">🎯</div>
+      <h3>Specialized, Not Generic</h3>
+      <p>Trained on Aurix's tools, workflows, and personality — not generic internet text. It knows your system.</p>
+    </div>
+    <div class="card">
+      <div class="icon">⚡</div>
+      <h3>Fast</h3>
+      <p>0.5B parameters means real-time responses on consumer GPUs. No waiting, no rate limits.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🔧</div>
+      <h3>Tool-Aware</h3>
+      <p>Trained to route to the right tool from 50+ options, output valid JSON, and recover from errors.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" id="ecosystem">
+  <h2>The Ecosystem</h2>
+  <p class="sub">How it all fits together.</p>
+  <div class="ecosystem">
+    <div class="node">
+      <div class="name">7070</div>
+      <div class="desc">OptiPlex<br>Orchestrator</div>
+    </div>
+    <div class="arrow">←→</div>
+    <div class="node">
+      <div class="name">Tailscale</div>
+      <div class="desc">Private<br>Network</div>
+    </div>
+    <div class="arrow">←→</div>
+    <div class="node brain">
+      <div class="name">Steammachine</div>
+      <div class="desc">GTX 1660 SUPER<br>Inference</div>
+    </div>
+  </div>
+  <div class="grid" style="margin-top:40px">
+    <div class="card">
+      <div class="icon">🖥️</div>
+      <h3>7070 — The Orchestrator</h3>
+      <p>Dell OptiPlex 7070 running the full Aurix stack: FastAPI, ChromaDB, Neo4j, task scheduler, and all integrations. The brain stem.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🎮</div>
+      <h3>Steammachine — The Muscle</h3>
+      <p>Windows PC with GTX 1660 SUPER. Runs Ollama with qwen3.5:9b (deep thinking), llama3.2:3b (fast reflexes), and Aurix-0.5B (specialized).</p>
+    </div>
+    <div class="card">
+      <div class="icon">🔗</div>
+      <h3>Tailscale — The Nerves</h3>
+      <p>Zero-config VPN connecting everything. The 7070 talks to Steammachine as if they're in the same room.</p>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Aurix — Built by Rascal. Private draft. Not ready for the world yet.<br>
+  <span style="opacity:.5">Self-hosted AI workspace + custom LLM. 2026.</span>
+</footer>
+</body>
+</html>

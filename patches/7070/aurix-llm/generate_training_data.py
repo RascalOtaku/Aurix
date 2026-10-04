@@ -22,7 +22,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from ecosystem_seeds import ALL_ECOSYSTEM_SEEDS
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
-TEACHER_MODEL = "qwen3.5:9b"
+TEACHER_MODEL = "qwen3.5:9b"      # 9B: deep reasoning, complex tasks
+FAST_TEACHER_MODEL = "llama3.2:3b" # 3B: fast, simple patterns (8x faster)
+
+# Categories that need deep reasoning → 9B teacher
+COMPLEX_CATEGORIES = {"json_reliability", "error_recovery", "code_review", "conductor", "domain", "tool_usage", "tasks"}
+# Categories that are simple patterns → 3B teacher (much faster)
+SIMPLE_CATEGORIES = {"personality", "brevity", "voice_style", "tool_coverage"}
 
 # ── Seed Examples: Aurix Personality ──
 # How Aurix communicates: direct, no fluff, terse but warm, specific not generic.
@@ -106,7 +112,10 @@ TASK_SEEDS = [
 
 
 def generate_variation(seed, category):
-    """Use the teacher model to generate a variation of a seed example."""
+    """Use the appropriate teacher model based on category complexity."""
+    # Pick teacher: 3B for simple patterns (fast), 9B for complex reasoning
+    model = FAST_TEACHER_MODEL if category in SIMPLE_CATEGORIES else TEACHER_MODEL
+
     prompt = f"""You are generating training data for an AI assistant called Aurix.
 
 Aurix's personality: Direct, no fluff, terse but warm. Never says "Great question!" or "I'd be happy to help!" Just helps. Specific, not generic.
@@ -124,8 +133,8 @@ Only output the JSON, nothing else."""
     try:
         resp = requests.post(
             OLLAMA_URL,
-            json={"model": TEACHER_MODEL, "prompt": prompt, "stream": False},
-            timeout=300,  # 9B needs time, especially on first load
+            json={"model": model, "prompt": prompt, "stream": False},
+            timeout=300,
         )
         resp.raise_for_status()
         text = resp.json().get("response", "").strip()
@@ -140,17 +149,18 @@ Only output the JSON, nothing else."""
 
 
 def main():
-    # Warm up the teacher model first
-    print("Warming up teacher model (qwen3.5:9b)...")
-    try:
-        requests.post(
-            OLLAMA_URL,
-            json={"model": TEACHER_MODEL, "prompt": "Hi", "stream": False},
-            timeout=300,
-        )
-        print("Teacher ready.")
-    except Exception as e:
-        print(f"Warmup failed: {e}")
+    # Warm up both teacher models
+    print("Warming up teachers (9B + 3B fly brain)...")
+    for model in [TEACHER_MODEL, FAST_TEACHER_MODEL]:
+        try:
+            requests.post(
+                OLLAMA_URL,
+                json={"model": model, "prompt": "Hi", "stream": False},
+                timeout=300,
+            )
+            print(f"  {model} ready.")
+        except Exception as e:
+            print(f"  {model} warmup failed: {e}")
 
     all_data = []
     seeds = [
