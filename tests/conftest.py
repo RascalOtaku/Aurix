@@ -1,4 +1,5 @@
 """Shared test configuration — ensure project root is on sys.path and stub heavy deps."""
+import pytest
 import sys
 import os
 import types
@@ -32,3 +33,13 @@ if "src.database" not in sys.modules:
     _db.SessionLocal = MagicMock()
     _db.ModelEndpoint = MagicMock()
     sys.modules["src.database"] = _db
+
+
+@pytest.fixture(autouse=True)
+def _no_live_job_feed(monkeypatch):
+    """The standing tick checks a public job feed once a day; in tests that feed is empty, never the network."""
+    try:
+        from src.foundation import freelance
+    except Exception:
+        return
+    monkeypatch.setattr(freelance, "_default_fetch", lambda: b"[]")

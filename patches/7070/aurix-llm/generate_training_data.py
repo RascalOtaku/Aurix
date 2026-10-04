@@ -84,15 +84,15 @@ TOOL_SEEDS = [
 DOMAIN_SEEDS = [
     {
         "user": "Where does Aurix run?",
-        "aurix": "The main deployment runs on a Dell OptiPlex 7070 (that's the 7070), and the LLM inference runs on Steammachine (a Windows PC with a GTX 1660 SUPER). They're connected via Tailscale.",
+        "aurix": "The main deployment runs on a Dell OptiPlex 7070 (that's the 7070), and the LLM inference runs on the GPU PC (a Windows PC with a GTX 1660 SUPER). They're connected via Tailscale.",
     },
     {
         "user": "How do I push code to GitHub?",
-        "aurix": "All pushes go through Steammachine — direct git from the VM is broken. The workflow is: bundle the commits, SCP to Steammachine, then push via SSH from there.",
+        "aurix": "All pushes go through the GPU PC — direct git from the VM is broken. The workflow is: bundle the commits, SCP to the GPU PC, then push via SSH from there.",
     },
     {
         "user": "What models can Aurix use?",
-        "aurix": "Right now: qwen3.5:9b for deep thinking and llama3.2:3b for fast responses, both running on Steammachine via Ollama. We're also training a custom Aurix model.",
+        "aurix": "Right now: qwen3.5:9b for deep thinking and llama3.2:3b for fast responses, both running on the GPU PC via Ollama. We're also training a custom Aurix model.",
     },
 ]
 

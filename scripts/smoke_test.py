@@ -2,7 +2,7 @@
 """
 Aurix fresh-install smoke test.
 
-Runs on Linux (e.g. the OptiPlex 7070) and Windows (e.g. Steammachine)
+Runs on Linux (e.g. the OptiPlex 7070) and Windows (e.g. The GPU PC)
 with only the Python standard library. No third-party packages needed.
 
 What it does:

@@ -130,8 +130,8 @@
     { id: "vaultwarden", label: "Vaultwarden", group: "signals", desc: "Secrets — protected memories", uptime: "4 days", region: 4 },
     { id: "uptime", label: "Uptime Kuma", group: "signals", desc: "Health checks — pain receptors", uptime: "4 days", region: 4 },
     { id: "llm-gateway", label: "LLM Gateway", group: "llm", desc: "Model router — thalamus", uptime: "25 hours", region: 5 },
-    { id: "ajax-9b", label: "Ajax 9B", group: "llm", desc: "qwen3.5:9b on Steammachine — deep thought", uptime: "live", region: 5, external: true },
-    { id: "fly-3b", label: "Fly Brain 3B", group: "llm", desc: "llama3.2:3b on Steammachine — fast reflexes", uptime: "live", region: 5, external: true },
+    { id: "ajax-9b", label: "Ajax 9B", group: "llm", desc: "qwen3.5:9b on the GPU PC — deep thought", uptime: "live", region: 5, external: true },
+    { id: "fly-3b", label: "Fly Brain 3B", group: "llm", desc: "llama3.2:3b on the GPU PC — fast reflexes", uptime: "live", region: 5, external: true },
   ];
 
   var GROUP_COLORS = {
@@ -386,7 +386,7 @@
         "<div class='row'>" + hit.desc + "</div>" +
         "<div class='row' style='margin-top:6px;opacity:.6'>Status: " + hit.uptime + "</div>" +
         "<div class='row' style='opacity:.6'>Connections: " + conns + "</div>" +
-        (hit.external ? "<div class='row' style='opacity:.6'>📍 Steammachine (external)</div>" : "<div class='row' style='opacity:.6'>📍 7070 (local)</div>");
+        (hit.external ? "<div class='row' style='opacity:.6'>📍 the GPU PC (external)</div>" : "<div class='row' style='opacity:.6'>📍 7070 (local)</div>");
       document.getElementById("detail").style.display = "block";
       hit.fire = 1;
     } else document.getElementById("detail").style.display = "none";

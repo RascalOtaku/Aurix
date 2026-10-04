@@ -19,8 +19,8 @@ from src import graph_memory as gm  # noqa: E402
 
 BRAIN = os.environ.get("AURIX_BRAIN", "/aurix")
 SOURCES = [("wiki", os.path.join(BRAIN, "wiki")), ("memory/longterm", os.path.join(BRAIN, "memory", "longterm"))]
-# Facts stated in HANDOFF.md ("Rascal (Jackson Curry) - Acres Green CO"); nothing else is invented.
-OWNER = {"full_name": "Rascal (Jackson Curry)", "location": "Acres Green, CO"}
+# The owner's profile node. Set AURIX_OWNER_NAME / AURIX_OWNER_LOCATION in .env (the repository is public).
+OWNER = {"full_name": os.environ.get("AURIX_OWNER_NAME", "Owner"), "location": os.environ.get("AURIX_OWNER_LOCATION", "")}
 
 
 def collect_pages():

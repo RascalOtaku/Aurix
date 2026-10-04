@@ -8,7 +8,7 @@
 +(function () {
 +  "use strict";
 +
-+  var LLM_API = "http://100.114.213.55:11434/api/generate";
++  var LLM_API = "http://<gpu-pc-tailscale-ip>:11434/api/generate";
 +  var LLM_MODEL = "aurix:0.5b"; // falls back to qwen3.5:9b until trained
 +  var FALLBACK_MODEL = "qwen3.5:9b";
 +
@@ -104,7 +104,7 @@
 +          addMsg("aurix", (data2.response || "No response") + " <span class='dim small'>(via 9B fallback)</span>");
 +        } catch (e2) {
 +          chat.lastChild.remove();
-+          addMsg("aurix", "Model unreachable. Is Ollama running on Steammachine?");
++          addMsg("aurix", "Model unreachable. Is Ollama running on the GPU PC?");
 +        }
 +      }
 +    }
@@ -125,7 +125,7 @@
 +    if (!statusEl) return;
 +
 +    try {
-+      var resp = await fetch("http://100.114.213.55:11434/api/tags");
++      var resp = await fetch("http://<gpu-pc-tailscale-ip>:11434/api/tags");
 +      var data = await resp.json();
 +      var models = (data.models || []).map(function (m) { return m.name; });
 +
@@ -153,7 +153,7 @@
 +    } catch (e) {
 +      statusEl.textContent = "○ unreachable";
 +      statusEl.style.color = "#ff6b8a";
-+      infoEl.innerHTML = "<div class='dim'>Ollama not reachable at 100.114.213.55:11434</div>";
++      infoEl.innerHTML = "<div class='dim'>Ollama not reachable at <gpu-pc-tailscale-ip>:11434</div>";
 +    }
 +  }
 +

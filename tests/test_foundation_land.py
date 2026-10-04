@@ -27,6 +27,8 @@ from src.foundation.land.evidence import Claim, Source, SourceType, Tier, grade,
 
 FIXTURE = hub.FIXTURES / "va_botetourt_14338.json"
 TODAY = date(2026, 9, 28)
+# The real-parcel fixture stays on the owner's server (never published): tests that need it skip without it.
+needs_fixture = unittest.skipUnless(FIXTURE.exists(), "land research fixture is local-only (not in the public repo)")
 REF = PropertyRef("VA", "Testcounty", "1-2-3", "Test parcel")
 CASE_2000 = {"source": "case", "max_exposure_usd": 2000.0, "target_offer_usd": 1500.0, "authorized_by": "owner:telegram",
              "authorized_at": "2026-09-28T12:00:00-0600"}
@@ -445,6 +447,7 @@ class AcquisitionGate(Base):
         self.assertIn("already stale", hub.approve(cid))
         self.assertIsNone(hub.approval_in_force(REF.key))
 
+    @needs_fixture
     def test_locked_dossiers_and_fixtures_get_no_card(self):
         _write_candidate("gappy", _replace(_clean_raw(), "legal_access", value=None, sources=[]))
         hub.build("gappy", today=TODAY)
@@ -663,6 +666,7 @@ class CapEscalation(Base):
 # the golden test: 14338 Botetourt Rd must STOP, for the right reasons
 # ------------------------------------------------------------------------------------------------------------------------------
 
+@needs_fixture
 class Golden14338(Base):
     def setUp(self):
         super().setUp()

@@ -83,7 +83,7 @@ VOICE_SEEDS = [
     },
     {
         "user": "[text] Tell me about the Aurix project",
-        "aurix": "Aurix is a self-hosted AI workspace forked from Odysseus. Key components:\n\n- **7070**: Dell OptiPlex running the main stack (FastAPI, ChromaDB, Neo4j)\n- **Steammachine**: Windows PC with GTX 1660 SUPER for LLM inference\n- **Models**: qwen3.5:9b (deep) + llama3.2:3b (fast) via Ollama\n- **Voice**: openWakeWord + Whisper + Piper, all local\n\nEverything runs on your hardware. Nothing phones home.",
+        "aurix": "Aurix is a self-hosted AI workspace forked from Odysseus. Key components:\n\n- **7070**: Dell OptiPlex running the main stack (FastAPI, ChromaDB, Neo4j)\n- **the GPU PC**: Windows PC with GTX 1660 SUPER for LLM inference\n- **Models**: qwen3.5:9b (deep) + llama3.2:3b (fast) via Ollama\n- **Voice**: openWakeWord + Whisper + Piper, all local\n\nEverything runs on your hardware. Nothing phones home.",
     },
 ]
 

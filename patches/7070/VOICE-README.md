@@ -1,13 +1,13 @@
 # Aurix Voice Assistant — "Say Aurix"
 
-Voice-activate Aurix from Steammachine's mic and speakers. Say "Aurix", ask anything.
+Voice-activate Aurix from the GPU PC's mic and speakers. Say "Aurix", ask anything.
 
 ## How it works
 
 1. **Porcupine** listens for the wake word (custom "Aurix" model, or built-in fallback)
 2. **Faster-Whisper** transcribes your speech (GPU-accelerated on the GTX 1660)
 3. Text goes to **Aurix API** on the 7070
-4. Response plays through **Windows TTS** on Steammachine's speakers
+4. Response plays through **Windows TTS** on the GPU PC's speakers
 
 ## Setup
 
@@ -56,7 +56,7 @@ Edit the top of `aurix_voice.py`:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AURIX_API_URL` | `http://100.112.82.10:8000/api/chat` | 7070's chat endpoint (Tailscale) |
+| `AURIX_API_URL` | `http://<server-tailscale-ip>:8000/api/chat` | 7070's chat endpoint (Tailscale) |
 | `SILENCE_THRESHOLD` | `500` | RMS level for silence detection (lower = more sensitive) |
 | `SILENCE_DURATION` | `1.5` | Seconds of silence before stopping recording |
 | `MAX_RECORD_SECONDS` | `30` | Max recording length |
@@ -66,4 +66,4 @@ Edit the top of `aurix_voice.py`:
 - **"No mic found"**: Check Windows Sound Settings → Input. The Realtek mic must be enabled.
 - **Wake word not triggering**: Speak clearly. Porcupine needs ~1 second of audio. Check mic levels in Windows.
 - **Whisper slow**: Should use GPU automatically. If it's on CPU, check CUDA is installed.
-- **Aurix API unreachable**: Verify the 7070 is up and Tailscale is connected. Test with `curl http://100.112.82.10:8000/api/chat`.
+- **Aurix API unreachable**: Verify the 7070 is up and Tailscale is connected. Test with `curl http://<server-tailscale-ip>:8000/api/chat`.

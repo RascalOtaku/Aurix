@@ -11,7 +11,7 @@ training data, then fine-tunes a small student with QLoRA. This is how most succ
 ## Architecture
 
 ```
-Teacher: qwen3.5:9b (Ollama on Steammachine)
+Teacher: qwen3.5:9b (Ollama on the GPU PC)
     ↓ generates training data
 Student: Qwen2.5-0.5B-Instruct (0.5B params)
     ↓ QLoRA fine-tuning (4-bit base + LoRA adapters)
@@ -36,14 +36,14 @@ When and how to use Aurix's tools. Format:
 - User request → Thought (which tool) → Tool call → Result → Response
 
 ### 3. Aurix Domain Knowledge (~300 examples)
-- The 7070 setup, Steammachine, Tailscale network
+- The 7070 setup, the GPU PC, Tailscale network
 - Patches, goals, routines
 - "Where is X?" "How do I Y?" about the Aurix system
 
 ### 4. Task Patterns (~200 examples)
 - Health check workflow
 - Code audit workflow
-- Git push via Steammachine workflow
+- Git push via the GPU PC workflow
 
 **Total: ~1500 examples** (good for LoRA fine-tuning a 0.5B model)
 

@@ -326,6 +326,12 @@ class AutonomyNotificationTests(_Base):
             await self.f._maybe_freelance_search(ts(2026, 9, 20, 8, 0))
         nui.assert_not_awaited()
 
+    async def test_freelance_search_stays_quiet_when_the_feed_is_down(self):
+        with mock.patch.object(freelance, "find_lead", return_value="Could not check for real leads right now: could not reach it: URLError."), \
+             mock.patch.object(self.f, "notify_ui", new=mock.AsyncMock()) as nui:
+            await self.f._maybe_freelance_search(ts(2026, 9, 20, 8, 0))
+        nui.assert_not_awaited()
+
     async def test_freelance_search_runs_at_most_once_a_day(self):
         with mock.patch.object(freelance, "find_lead", return_value="🧰 found one") as fl, \
              mock.patch.object(self.f, "notify_ui", new=mock.AsyncMock()):

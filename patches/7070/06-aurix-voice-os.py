@@ -30,7 +30,7 @@ import numpy as np
 # Configuration
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CUSTOM_WAKE_MODEL = os.path.join(SCRIPT_DIR, "aurix.onnx")
-AURIX_API_URL = "http://100.112.82.10:8000/api/chat"  # 7070 Tailscale IP
+AURIX_API_URL = os.environ.get("AURIX_API_URL", "http://<server-tailscale-ip>:8000/api/chat")  # the 7070's chat endpoint
 AURIX_API_KEY = os.environ.get("AURIX_API_KEY", "")
 
 # Audio settings

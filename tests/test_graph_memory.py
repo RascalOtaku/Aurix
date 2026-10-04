@@ -181,10 +181,10 @@ class IngestTests(unittest.TestCase):
 
 class ReadTests(unittest.TestCase):
     def test_profile_text(self):
-        d = FakeDriver(results=[[{"core": {"full_name": "Rascal", "location": "Acres Green, CO", "philosophy": "build it right"},
+        d = FakeDriver(results=[[{"core": {"full_name": "Rascal", "location": "Springfield, CO", "philosophy": "build it right"},
                                    "projects": ["Bike rebuild", None], "prefs": ["concise", None]}]])
         text = gm.profile_context(gm.Graph(d))
-        self.assertEqual(text, "RASCAL LIVE PROFILE:\nOwner: Rascal · Acres Green, CO\nPhilosophy: build it right\n"
+        self.assertEqual(text, "RASCAL LIVE PROFILE:\nOwner: Rascal · Springfield, CO\nPhilosophy: build it right\n"
                                "Projects: Bike rebuild\nPrefs: concise")
 
     def test_no_profile_or_empty_profile_is_empty_string(self):

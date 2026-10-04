@@ -4,7 +4,7 @@ Aurix Voice Assistant — Say "Aurix" and ask anything.
 Pipeline:
 1. Porcupine wake word detection (custom "Aurix" model, or built-in fallback)
 2. Record audio until silence
-3. Faster-Whisper transcription (GPU-accelerated on Steammachine)
+3. Faster-Whisper transcription (GPU-accelerated on the GPU PC)
 4. Send to Aurix API on the 7070
 5. Speak response via Windows TTS
 
@@ -28,7 +28,7 @@ import numpy as np
 # Configuration
 PORCUPINE_ACCESS_KEY = os.environ.get("PORCUPINE_ACCESS_KEY", "")
 CUSTOM_WAKE_WORD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "aurix.ppn")
-AURIX_API_URL = "http://100.112.82.10:8000/api/chat"  # 7070 Tailscale IP
+AURIX_API_URL = os.environ.get("AURIX_API_URL", "http://<server-tailscale-ip>:8000/api/chat")  # the 7070's chat endpoint
 AURIX_API_KEY = os.environ.get("AURIX_API_KEY", "")
 
 # Audio settings

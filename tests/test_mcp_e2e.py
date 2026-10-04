@@ -33,6 +33,7 @@ class BuiltinMcpServerTests(unittest.TestCase):
 
             async def run():
                 m = McpManager()
+                m.set_disabled_map({})               # no tools disabled (the settings DB is not part of this test)
                 env = {"PYTHONPATH": str(ROOT), "AURIX_PAGE_INDEX_DIRS": str(wiki)}
                 ok = await m.connect_server("rag", "rag", "stdio", command=sys.executable,
                                             args=[str(ROOT / "mcp_servers" / "rag_server.py")], env=env)

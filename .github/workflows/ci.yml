@@ -35,7 +35,20 @@ jobs:
       - name: Scan every commit
         run: ./gitleaks git --log-opts="--all" --redact --no-banner --exit-code 1 .
       - name: Local secret guard (same rules as the pre-commit hook)
-        run: bash scripts/git-hooks/secret_guard.sh --tree
+        # The owner's private patterns (real IPs, hostnames, email) come from the AURIX_PRIVATE_PATTERNS repository
+        # secret, one regex per line, so a push from a machine without the pre-commit hook is still checked.
+        # The guard prints only file names, never the matched value; without the secret this step still runs.
+        env:
+          AURIX_PRIVATE_PATTERNS: ${{ secrets.AURIX_PRIVATE_PATTERNS }}
+        run: |
+          patterns="$(git rev-parse --git-dir)/info/aurix-private-patterns"
+          if [ -n "$AURIX_PRIVATE_PATTERNS" ]; then
+            printf '%s\n' "$AURIX_PRIVATE_PATTERNS" > "$patterns"
+            echo "private patterns: $(grep -cvE '^[[:space:]]*(#|$)' "$patterns") loaded from the repository secret"
+          else
+            echo "::notice::AURIX_PRIVATE_PATTERNS secret not set: private-pattern check skipped (tokens and key files are still checked)"
+          fi
+          bash scripts/git-hooks/secret_guard.sh --tree
 
   tests:
     name: Tests

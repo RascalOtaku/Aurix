@@ -192,12 +192,15 @@ def _mark_seen(job_id: str) -> None:
     _atomic(_data() / "seen_leads.json", seen[-KEEP_SEEN_LEADS:])
 
 
+def _default_fetch() -> bytes:
+    """The live feed read (tests replace this, so the suite never depends on the network)."""
+    req = urllib.request.Request(LEADS_URL, headers={"User-Agent": "AURIX/1.0 (freelance lead search; public listing read)"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        return r.read()
+
+
 def _fetch_leads(fetch: Optional[Callable[[], bytes]] = None) -> Tuple[List[dict], str]:
-    if fetch is None:
-        def fetch():
-            req = urllib.request.Request(LEADS_URL, headers={"User-Agent": "AURIX/1.0 (freelance lead search; public listing read)"})
-            with urllib.request.urlopen(req, timeout=15) as r:
-                return r.read()
+    fetch = fetch or _default_fetch
     try:
         data = json.loads(fetch().decode("utf-8", errors="replace"))
     except (urllib.error.URLError, OSError) as ex:

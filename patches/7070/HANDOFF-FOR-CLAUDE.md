@@ -1,21 +1,21 @@
 # Handoff for Claude — Muse's work 2026-10-03/04
 
-## The 9B brain is live on Steammachine
+## The 9B brain is live on the GPU PC
 
-**Endpoint:** `http://100.114.213.55:11434` (Ollama, listening on all interfaces, Tailscale-accessible)
+**Endpoint:** `http://<gpu-pc-tailscale-ip>:11434` (Ollama, listening on all interfaces, Tailscale-accessible)
 
 **Model:** `qwen3.5:9b` (6.6GB, already pulled, tested and responding)
 - First inference: 48s (model load). Subsequent calls will be faster.
 - Fits in GTX 1660 SUPER's 6GB VRAM with Q4 quantization.
 
 **What you need to do on the 7070:**
-1. Point `llm_core` at `http://100.114.213.55:11434` as the Ollama provider.
+1. Point `llm_core` at `http://<gpu-pc-tailscale-ip>:11434` as the Ollama provider.
 2. Set the model name to `qwen3.5:9b`.
 3. The provider matrix already has the local Ollama route (Muse fixed the bare-localhost:11434 misdetection in the agent-core audit — `llm_core` correctly identifies Ollama vs OpenAI now).
 
-**When PewDiePie's Ajax weights drop:** Swap the model name. No code changes needed — just `ollama pull` the new model on Steammachine and update the model name in config.
+**When PewDiePie's Ajax weights drop:** Swap the model name. No code changes needed — just `ollama pull` the new model on the GPU PC and update the model name in config.
 
-**Note:** The 7070 itself cannot run 9B (7.7GB RAM, no discrete GPU, CPU-only would be 1-2 tok/s). Steammachine is the inference host; 7070 stays as orchestrator.
+**Note:** The 7070 itself cannot run 9B (7.7GB RAM, no discrete GPU, CPU-only would be 1-2 tok/s). The GPU PC is the inference host; 7070 stays as orchestrator.
 
 ---
 
@@ -62,7 +62,7 @@ Muse set up two recurring jobs tied to the income goal:
 ## Still pending from your side
 
 1. **Apply patches 01–04** on the 7070
-2. **Wire llm_core** to Steammachine's Ollama (see above)
+2. **Wire llm_core** to the GPU PC's Ollama (see above)
 3. **Kill the looping LandPilot mission** (`m-2c74b3`) — the deterministic Land Watch supersedes it
 4. **User's identity items** for the income pipeline (business email, name/address, payout method, Fiverr/Upwork, Stripe/PayPal keys) — Rascal owns these
 

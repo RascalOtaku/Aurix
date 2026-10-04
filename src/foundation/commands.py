@@ -671,6 +671,9 @@ class Foundation:
         except Exception as e:
             audit.append("freelance_autonomy_failed", why=repr(e)[:200])
             return
+        if result.startswith("Could not check for real leads"):
+            audit.append("freelance_autonomy_unreachable", why=result[:200])   # a feed outage is not worth a daily ping
+            return
         if result and not result.startswith("Checked a real remote-jobs feed - nothing new"):
             await self.notify_ui(result, "freelance")
 
