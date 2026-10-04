@@ -1,0 +1,81 @@
+--- a/src/foundation/conductor_driver.py
++++ b/src/foundation/conductor_driver.py
+@@ -286,6 +286,74 @@ def validate_todos(raw: str, source: str) -> Tuple[Optional[List[str]], str]:
+     if len(out) > PLAN_MAX:
+         return None, "too_many"
+     return out, ""
++
++
++# Reasons that are *format* problems (the 7B model writes naturally but not to
++# spec), as opposed to *security* problems (hostile content). Format problems
++# get a lenient second chance; security problems never do.
++_FORMAT_REASONS = {"not_json", "wrong_shape", "item_not_text", "item_length",
++                   "too_few", "too_many"}
++
++
++def _security_only(text: str, source: str) -> Optional[str]:
++    """The hostile() checks that are truly security-critical, without the
++    over-broad _MONEY/_CONTACT filters that false-positive on natural 7B
++    output (e.g. 'pay attention to', 'send a test')."""
++    if _CTRL.search(text):
++        return "control_chars"
++    if _EMAIL.search(text):
++        return "email_address"
++    if _COMMAND.search(text):
++        return "command_or_injection"
++    if _PARSED_BY_REGISTRY.search(text):
++        return "registry_syntax"
++    hosts = [m.group(1).lower() for m in _URLISH.finditer(text)]
++    if _SCHEME.search(text) and not hosts:
++        return "url_unknown_host"
++    low_src = (source or "").lower()
++    for h in hosts:
++        if h not in low_src:
++            return "url_unknown_host"
++    return None
++
++
++def _extract_items(raw: str) -> List[str]:
++    """Pull list-like lines from non-JSON model output. Skips intro headers
++    (lines ending in ':'), requires a list marker or a substantial line."""
++    s = (raw or "").strip()
++    if s.startswith("```"):
++        s = re.sub(r"^```[a-zA-Z]*\s*|\s*```$", "", s).strip()
++    items = []
++    for ln in s.splitlines():
++        t = _squash(ln)
++        had_marker = bool(re.match(
++            r"^(?:\(proposed by aurix\)\s*)?(?:[-*•]|\d{1,2}[.)])\s+",
++            t, flags=re.I))
++        t = re.sub(
++            r"^(?:\(proposed by aurix\)\s*)?(?:(?:[-*•]|\d{1,2}[.)])\s*)?",
++            "", t, flags=re.I).strip()
++        if t.endswith(":"):  # intro header, not an item
++            continue
++        if len(t) >= ITEM_MIN and " " in t and (had_marker or len(t) >= 30):
++            items.append(t[:ITEM_MAX])
++    return items
++
++
++def validate_todos_with_fallback(raw: str, source: str) -> Tuple[Optional[List[str]], str]:
++    """Strict validate_todos first; on *format* failure (not security), try a
++    lenient extraction with security-critical checks only. Security rejections
++    are never retried or softened."""
++    items, why = validate_todos(raw, source)
++    if items is not None:
++        return items, ""
++    if why not in _FORMAT_REASONS:
++        return None, why  # security rejection: stop here
++    # Lenient path: salvage what we can from natural-language output.
++    out: List[str] = []
++    for t in _extract_items(raw):
++        if _security_only(t, source):
++            return None, _security_only(t, source) or "hostile"
++        if t.lower() not in [x.lower() for x in out]:
++            out.append(t)
++    if len(out) < PLAN_MIN:
++        return None, "too_few_after_repair"
++    return out[:PLAN_MAX], ""
+ 
+ 
+ def validate_note(raw: str, source: str) -> Tuple[Optional[Tuple[str, str]], str]:

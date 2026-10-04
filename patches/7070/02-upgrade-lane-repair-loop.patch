@@ -1,0 +1,83 @@
+--- a/src/foundation/upgrades.py
++++ b/src/foundation/upgrades.py
+@@ -365,6 +365,68 @@ def build_changes(obj: Any, root: Optional[Path] = None) -> Tuple[Optional[List[
+     return changes, ""
+ 
+ 
++# ---------------------------------------------------------------------------
++# Repair loop: when build_changes rejects a draft, give the model the specific
++# error and one focused chance to fix it, instead of discarding the draft.
++# This addresses the 54/67 discard rate (2026-10-03): most rejections are
++# fixable format issues (find-text matched N times, missing test file, bad
++# JSON) not bad ideas.
++# ---------------------------------------------------------------------------
++
++# Rejection reasons that a focused re-prompt can fix. Security rejections
++# (risky calls, protected paths) and judgement calls (nothing worth changing,
++# too big) are never retried.
++_REPAIRABLE = (
++    "the reply was not the JSON I asked for",
++    "a file entry had no path",
++    "appears twice",
++    "a malformed edit",
++    "an edit's `find` text matched",
++    "the edit changes nothing",
++    "does not parse",
++    "it did not include a new test file",
++    "existing files may only be changed with `edits`",
++    "a new file needs `content`",
++)
++
++REPAIR_MAX_TRIES = 2
++
++
++def _is_repairable(why: str) -> bool:
++    return any(marker in why for marker in _REPAIRABLE)
++
++
++def repair_prompt(original_task: str, bad_reply: str, why: str) -> str:
++    """A focused prompt: fix ONLY the stated problem, keep everything else."""
++    return (
++        "Your last reply was rejected for one specific reason. Fix ONLY that, "
++        "keep everything else identical.\n"
++        f"REJECTION REASON: {why}\n"
++        "RULES FOR THE FIX:\n"
++        "- Reply with ONLY the corrected JSON object, no other text.\n"
+        "- If the reason mentions `find` text matching wrong: pick a SHORTER, "
++        "more unique snippet from the file (copy it character-for-character).\n"
++        "- If the reason mentions a missing test file: add "
++        "`tests/test_upgrade_<short_name>.py` with a unittest that fails "
++        "without your change.\n"
++        "- If the reason mentions bad JSON: output valid JSON only.\n"
++        "- Do not change your approach, do not add files, do not enlarge the diff.\n"
++        f"ORIGINAL TASK: {original_task}\n"
++        f"YOUR REJECTED REPLY (fix this):\n{bad_reply}"
++    )
++
++
++def build_changes_with_repair(obj: Any, original_task: str, bad_reply: str,
++                              call_engineer: Any, root: Optional[Path] = None
++                              ) -> Tuple[Optional[List[dict]], str, int]:
++    """Try build_changes; on a repairable rejection, ask the model to fix it.
++    Returns (changes, why, tries_used). `call_engineer` is the _call_engineer
++    function (takes prompt text, returns reply text)."""
++    changes, why = build_changes(obj, root)
++    if changes is not None or not _is_repairable(why):
++        return changes, why, 0
++    for _ in range(REPAIR_MAX_TRIES):
++        fixed = call_engineer(repair_prompt(original_task, bad_reply, why))
++        try:
++            obj2 = json.loads(fixed)
++        except (ValueError, TypeError):
++            why = "the repair reply was not JSON"
++            continue
++        changes, why = build_changes(obj2, root)
++        if changes is not None or not _is_repairable(why):
++            return changes, why, 1
++        bad_reply = fixed
++    return None, why, REPAIR_MAX_TRIES
++
++
+ # ---------------------------------------------------------------------------------------------------------------------------------
+ # asking the engineer
+ # ---------------------------------------------------------------------------------------------------------------------------------
