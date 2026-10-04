@@ -332,6 +332,11 @@ def default_probes() -> Dict[str, Callable[[], Any]]:
     return {"memory": probe_memory, "skills": probe_skills, "tasks": probe_tasks}
 
 
+def _fabricate_panel() -> Dict[str, Any]:
+    from src.foundation import fabricate
+    return fabricate.panel()
+
+
 def snapshot(system_probes: Optional[Dict[str, Callable[[], Any]]] = None,
              extra_probes: Optional[Dict[str, Callable[[], Any]]] = None, now: Optional[float] = None,
              godseye_url: str = "", kuma_url: str = "",
@@ -406,6 +411,7 @@ def snapshot(system_probes: Optional[Dict[str, Callable[[], Any]]] = None,
         "transcription": safe("transcription", transcription.panel, {}),
         "earnings": safe("earnings", earnings.panel, {}),
         "freelance": safe("freelance", freelance.panel, {}),
+        "fabricate": safe("fabricate", _fabricate_panel, {}),
         "land": safe("land", land.panel, {"dossiers": [], "pending": []}),
         "evolve": safe("evolve", evolve.panel, {"domains": [], "pending": []}),
         "workers": safe("workers", fworkers.panel, {"workers": [], "routes": {}}),

@@ -33,6 +33,22 @@ RUN pip freeze > /tmp/constraints.txt \
 RUN npm install -g openclaw@latest --allow-scripts=openclaw \
     || echo "OpenClaw layer not installed (optional): missions with executor=openclaw fall back to the built-in agent"
 
+# OPTIONAL CAD + slicing layer (the fabrication lane: describe a part -> build123d model -> STL -> G-code).
+# build123d makes the solid; PrusaSlicer's command line turns it into G-code with the owner's own printer profile
+# (an exported .ini in data/fabricate/). Neither ever fails the build: without them the lane stops at the STL and
+# says so.
+COPY requirements-cad.txt /tmp/requirements-cad.txt
+RUN pip freeze > /tmp/constraints-cad.txt \
+    && pip install --no-cache-dir -c /tmp/constraints-cad.txt -r /tmp/requirements-cad.txt \
+    || echo "CAD layer not installed (optional): the fabrication lane will report it"
+# PrusaSlicer adds a few hundred MB (GUI libraries), so it is opt-in: AURIX_SANDBOX_SLICER=1 in .env, then
+# `docker compose build sandbox`. Its command line slices headless (no display needed).
+ARG WITH_SLICER=0
+RUN if [ "$WITH_SLICER" = "1" ]; then \
+      (apt-get update && apt-get install -y --no-install-recommends prusa-slicer && rm -rf /var/lib/apt/lists/*) \
+      || echo "PrusaSlicer not installed (optional): parts stop at STL"; \
+    fi
+
 # Bake a speech model so transcription works offline. Non-fatal if the download fails.
 RUN python -c "from faster_whisper import WhisperModel; WhisperModel('base', device='cpu', compute_type='int8', download_root='/models')" \
     || echo "whisper model not baked (transcription will need one added)"

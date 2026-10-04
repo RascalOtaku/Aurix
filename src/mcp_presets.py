@@ -11,7 +11,9 @@ deliberately, never by accident).
 """
 from __future__ import annotations
 
+import logging
 import os
+import re
 from typing import Any, Dict, List
 
 MCP_PRESETS: Dict[str, Dict[str, Any]] = {
@@ -45,7 +47,26 @@ MCP_PRESETS: Dict[str, Dict[str, Any]] = {
         "env": {},
         "needs": "Node.js; run `npx -y context-mode --version` once so the package is cached.",
     },
+    # Home Assistant's own MCP server (Settings -> Devices & services -> Model Context Protocol Server). Home Assistant's
+    # "exposed entities" setting decides what the agent may see and operate. Connected over SSE with the access token
+    # as a bearer header; URL and token come from .env.
+    "home-assistant": {
+        "name": "Home Assistant",
+        "upstream": "https://www.home-assistant.io/integrations/mcp_server/",
+        "license": "Apache-2.0",
+        "transport": "sse",
+        "url": "{AURIX_HA_URL}/mcp_server/sse",
+        "headers": {"Authorization": "Bearer {AURIX_HA_TOKEN}"},
+        "env": {},
+        "requires_env": ["AURIX_HA_URL", "AURIX_HA_TOKEN"],
+        "needs": "Home Assistant with the Model Context Protocol Server integration added; AURIX_HA_URL and AURIX_HA_TOKEN in .env.",
+    },
 }
+
+
+def _fill(text: str) -> str:
+    """'{NAME}' placeholders in preset args/env come from the environment (so URLs and tokens live in .env, not here)."""
+    return re.sub(r"\{([A-Z][A-Z0-9_]*)\}", lambda m: os.environ.get(m.group(1), "").rstrip("/"), text)
 
 
 def selected_presets(raw: str | None = None) -> List[str]:
@@ -63,14 +84,19 @@ def preset_servers(raw: str | None = None) -> List[Dict[str, Any]]:
     servers = []
     for key in selected_presets(raw):
         spec = MCP_PRESETS[key]
-        env = {k: os.environ.get(k, v) for k, v in spec["env"].items()}
+        missing = [k for k in spec.get("requires_env", []) if not os.environ.get(k, "").strip()]
+        if missing:
+            logging.getLogger(__name__).warning("MCP preset %s skipped: set %s in .env", key, ", ".join(missing))
+            continue
+        env = {k: _fill(os.environ.get(k, v)) for k, v in spec["env"].items()}
         servers.append({
             "id": f"builtin_preset_{key.replace('-', '_')}",
             "name": spec["name"],
             "transport": spec["transport"],
-            "url": "",
-            "command": spec["command"],
-            "args": list(spec["args"]),
+            "url": _fill(spec.get("url", "")),
+            "headers": {k: _fill(v) for k, v in spec.get("headers", {}).items()},
+            "command": spec.get("command", ""),
+            "args": [_fill(a) for a in spec.get("args", [])],
             "env": env,
             "is_enabled": True,
             "oauth_config": None,

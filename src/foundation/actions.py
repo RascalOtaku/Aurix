@@ -29,6 +29,7 @@ CID = re.compile(r"c-[0-9a-f]{6}")
 NID = re.compile(r"n-[0-9a-f]{6}")
 AID = re.compile(r"a-[0-9a-f]{6}")
 EVID = re.compile(r"e-[0-9a-f]{6}")
+DID = re.compile(r"d-[0-9a-f]{6}")
 
 
 def _plain(t: Any) -> str:
@@ -75,7 +76,7 @@ def _teach():
 
 
 def run_action(name: str, arg: str = "") -> Dict[str, Any]:
-    from src.foundation import announce, audit, content, fastlane, forge, freelance, gamepilot, gaming, learning, money, repos, shards, teacher, upgrades
+    from src.foundation import announce, audit, content, fabricate, fastlane, forge, freelance, gamepilot, gaming, learning, money, repos, shards, teacher, upgrades
     from src.foundation.land import hub as land
     from src.foundation import memory as fmemory
     from src.foundation import evolve
@@ -88,6 +89,7 @@ def run_action(name: str, arg: str = "") -> Dict[str, Any]:
         "mem_forget": (MEMID, fmemory.forget), "mem_pin": (MEMID, lambda a: fmemory.pin(a, True)), "mem_unpin": (MEMID, lambda a: fmemory.pin(a, False)),
         "lesson_approve": (LID, teacher.approve), "lesson_deny": (LID, teacher.deny), "lesson_retire": (LID, teacher.retire),
         "freelance_yes": (FID, freelance.approve), "freelance_no": (FID, freelance.decline),
+        "fab_yes": (DID, fabricate.approve), "fab_no": (DID, fabricate.decline),
         "content_yes": (CID, content.approve), "content_no": (CID, content.decline),
         "learn_yes": (NID, learning.approve), "learn_no": (NID, learning.decline),
         "approve_skill": (forge.NAME_RE, forge.approve), "deny_skill": (forge.NAME_RE, forge.deny),
@@ -176,13 +178,13 @@ def run_action(name: str, arg: str = "") -> Dict[str, Any]:
 ACTION_NAMES = ("fix_yes", "fix_no", "fix_undo", "lesson_approve", "lesson_deny", "lesson_retire", "fastlane_on", "fastlane_off", "teacher_on",
                 "teacher_off", "games_refresh", "ack", "evals_plan", "evals_all", "teach", "repo_add", "repo_yes", "repo_no", "mem_yes", "mem_no", "mem_forget", "mem_pin", "mem_unpin", "mem_add", "mem_unforget",
                 "upg_yes", "upg_no", "upg_undo", "upg_add", "upg_on", "upg_off", "upg_now", "money_set", "gp_arm", "gp_disarm", "gp_unpair", "gp_pair", "shard_pause", "shard_resume", "night_now",
-                "freelance_yes", "freelance_no", "content_yes", "content_no", "learn_yes", "learn_no", "approve_skill", "deny_skill",
+                "freelance_yes", "freelance_no", "fab_yes", "fab_no", "content_yes", "content_no", "learn_yes", "learn_no", "approve_skill", "deny_skill",
                 "land_yes", "land_no", "evolve_yes", "evolve_no")
 
 
 def decisions() -> List[Dict[str, Any]]:
     """Cards for everything waiting on the owner that a button can decide."""
-    from src.foundation import content, forge, freelance, gaming, learning, repos, teacher, upgrades
+    from src.foundation import content, fabricate, forge, freelance, gaming, learning, repos, teacher, upgrades
     from src.foundation.land import hub as land
     from src.foundation import memory as fmemory
     from src.foundation import evolve
@@ -220,6 +222,16 @@ def decisions() -> List[Dict[str, Any]]:
                     "lines": [_plain(j.get("explanation", "")), j["filename"]],
                     "risk": "keeping it does not deliver it; recording, editing and publishing stay yours",
                     "buttons": [{"label": "Keep it", "action": "freelance_yes", "arg": j["id"], "style": "approve"}, {"label": "Discard", "action": "freelance_no", "arg": j["id"], "style": "deny"}]})
+    for j in fabricate.pending():
+        r = j.get("report") or {}
+        will_print = fabricate.printer.configured() and fabricate.profile_path().is_file()
+        out.append({"kind": "fabricate", "id": j["id"], "icon": "📐", "title": "Part: " + j["title"],
+                    "lines": [_plain(j.get("explanation", "")), fabricate._size_line(r)] + ([_plain(j["home_cost"])] if j.get("home_cost") else [])
+                             + [_plain("⚠️ " + w) for w in (r.get("warnings") or [])[:2]],
+                    "risk": ("slices it and starts it on your printer, only if the printer reports idle" if will_print
+                             else "keeps the STL; nothing prints (no printer or slicer profile set up)"),
+                    "buttons": [{"label": "Print it" if will_print else "Keep STL", "action": "fab_yes", "arg": j["id"], "style": "approve"},
+                                {"label": "Discard", "action": "fab_no", "arg": j["id"], "style": "deny"}]})
     for p in content.pending():
         out.append({"kind": "content", "id": p["id"], "icon": "📝", "title": p["title"],
                     "lines": [f"{p['words']} words" + (f" · {p['verify_flags']} claim(s) marked [VERIFY]" if p["verify_flags"] else "")],

@@ -66,13 +66,14 @@ class McpManager:
         args: Optional[List[str]] = None,
         env: Optional[Dict[str, str]] = None,
         url: Optional[str] = None,
+        headers: Optional[Dict[str, str]] = None,
     ) -> bool:
-        """Connect to an MCP server via stdio or SSE transport."""
+        """Connect to an MCP server via stdio or SSE transport (SSE may carry headers, e.g. a bearer token)."""
         try:
             if transport == "stdio":
                 return await self._connect_stdio(server_id, name, command, args or [], env or {})
             elif transport == "sse":
-                return await self._connect_sse(server_id, name, url)
+                return await self._connect_sse(server_id, name, url, headers)
             else:
                 logger.error(f"Unknown MCP transport: {transport}")
                 return False
@@ -140,7 +141,7 @@ class McpManager:
             self._connections[server_id] = {"status": "error", "error": "mcp package not installed", "name": name}
             return False
 
-    async def _connect_sse(self, server_id: str, name: str, url: str) -> bool:
+    async def _connect_sse(self, server_id: str, name: str, url: str, headers: Optional[Dict[str, str]] = None) -> bool:
         """Connect to an MCP server via SSE transport."""
         try:
             from mcp import ClientSession
@@ -148,7 +149,7 @@ class McpManager:
             from contextlib import AsyncExitStack
 
             stack = AsyncExitStack()
-            transport = await stack.enter_async_context(sse_client(url))
+            transport = await stack.enter_async_context(sse_client(url, headers=headers or None))
             read_stream, write_stream = transport
             session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
 

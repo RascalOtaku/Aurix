@@ -186,6 +186,7 @@ async def register_builtin_servers(mcp_manager):
                 ok = await mcp_manager.connect_server(
                     server_id=srv["id"], name=srv["name"], transport=srv["transport"],
                     command=command, args=args, env=srv.get("env") or {}, url=srv.get("url") or None,
+                    headers=srv.get("headers") or None,
                 )
                 logger.info(f"Env MCP server {srv['name']}: {'registered' if ok else 'failed to connect'}")
             except asyncio.CancelledError:

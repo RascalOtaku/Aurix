@@ -1,69 +1,62 @@
-# Aurix Voice Assistant — "Say Aurix"
+# Aurix Voice
 
-Voice-activate Aurix from the GPU PC's mic and speakers. Say "Aurix", ask anything.
+Talk to Aurix from the GPU PC's mic and speakers. Say "Aurix", ask anything, hear the answer.
+
+**Use `06-aurix-voice-os.py`**: 100% open source, no accounts.
+- **Wake word:** openWakeWord.
+- **Speech-to-text:** Faster-Whisper.
+- **Text-to-speech:** Piper.
+
+`06-aurix-voice.py` is the older Porcupine version, which needs a Picovoice access key; it works the same way otherwise.
 
 ## How it works
 
-1. **Porcupine** listens for the wake word (custom "Aurix" model, or built-in fallback)
-2. **Faster-Whisper** transcribes your speech (GPU-accelerated on the GTX 1660)
-3. Text goes to **Aurix API** on the 7070
-4. Response plays through **Windows TTS** on the GPU PC's speakers
+1. **openWakeWord** listens for the wake word (your trained `aurix.onnx`, or the built-in "hey jarvis" for testing).
+2. **Faster-Whisper** transcribes what you say until you pause.
+3. The text goes to Aurix's chat API on the 7070 (`POST /api/chat`), into a chat called **Voice**.
+4. **Piper** speaks the answer.
 
-## Setup
+**Interrupting:** say the wake word while Aurix is talking and it stops mid-sentence and listens. It uses a stricter
+threshold while speaking, so its own voice from the speakers does not cut itself off.
 
-### 1. Train the "Aurix" wake word (5 minutes, free)
+## Setup (once)
 
-1. Go to https://console.picovoice.ai/ (free account)
-2. Go to Porcupine → Train custom wake word
-3. Enter "Aurix" as the phrase
-4. Download the `.ppn` file for Windows
-5. Save as `aurix.ppn` in the same folder as `aurix_voice.py`
-6. Copy your Access Key from the console
-
-Without this step, it falls back to the built-in "jarvis" wake word for testing.
-
-### 2. Set environment variables
+1. In the Aurix web UI, create an API token under **Settings → API tokens**. It starts with `ody_`.
+2. Start a chat named **Voice**; voice turns land there. Or set `AURIX_SESSION` to a chat's id.
+3. On the GPU PC:
 
 ```powershell
-# In PowerShell (or set permanently via System Properties)
-$env:PORCUPINE_ACCESS_KEY = "your-picovoice-access-key"
-$env:AURIX_API_KEY = "your-aurix-api-key"  # if Aurix requires auth
+pip install openwakeword faster-whisper piper-tts requests pyaudio numpy
+$env:AURIX_URL = "http://<server-tailscale-ip>:7000"
+$env:AURIX_API_KEY = "ody_..."
+python 06-aurix-voice-os.py
 ```
 
-### 3. Install dependencies
+To run it at login, create a shortcut with target `pythonw.exe C:\path\to\06-aurix-voice-os.py` and put it in
+`shell:startup`.
 
-```powershell
-pip install pvporcupine faster-whisper requests pyttsx3 PyAudio
-```
+## Settings (environment variables)
 
-### 4. Run it
+| Variable | Default | What |
+|---|---|---|
+| `AURIX_URL` | `http://<server-tailscale-ip>:7000` | Aurix on the 7070 (port 7000) |
+| `AURIX_API_KEY` | | API token (`ody_...`) |
+| `AURIX_SESSION` | | Chat id for voice turns; empty = the newest chat named `AURIX_SESSION_NAME` |
+| `AURIX_SESSION_NAME` | `Voice` | Name of that chat |
 
-```powershell
-python aurix_voice.py
-```
+## Training an "Aurix" wake word
 
-Say "Aurix" (or "jarvis" if using fallback), wait for "Yes?", then ask your question.
-
-### 5. Run on startup (optional)
-
-Create a scheduled task or place a shortcut in the Startup folder:
-- Target: `pythonw.exe C:\path\to\aurix_voice.py`
-- Use `pythonw.exe` (not `python.exe`) to run without a console window
-
-## Configuration
-
-Edit the top of `aurix_voice.py`:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AURIX_API_URL` | `http://<server-tailscale-ip>:8000/api/chat` | 7070's chat endpoint (Tailscale) |
-| `SILENCE_THRESHOLD` | `500` | RMS level for silence detection (lower = more sensitive) |
-| `SILENCE_DURATION` | `1.5` | Seconds of silence before stopping recording |
-| `MAX_RECORD_SECONDS` | `30` | Max recording length |
+- **openWakeWord's training pipeline:** about 50 two-second recordings of you saying "Aurix", then a few hours of
+  training on the GPU. Save the result as `aurix.onnx` next to the script.
+- **Faster option:** [ivnsell/custom-wake-word](https://github.com/ivnsell/custom-wake-word) trains from fewer samples.
+- **License note:** openWakeWord's code is Apache-2.0, but its bundled pretrained wake words (like "hey jarvis") are for
+  non-commercial use. A model you train yourself is yours.
 
 ## Troubleshooting
 
-- **"No mic found"**: Check Windows Sound Settings → Input. The Realtek mic must be enabled.
-- **Wake word not triggering**: Speak clearly. Porcupine needs ~1 second of audio. Check mic levels in Windows.
-- **Whisper slow**: Should use GPU automatically. If it's on CPU, check CUDA is installed.
-- **Aurix API unreachable**: Verify the 7070 is up and Tailscale is connected. Test with `curl http://<server-tailscale-ip>:8000/api/chat`.
+- **"I need a chat to talk in"**: start a chat named Voice in the web UI, or set `AURIX_SESSION`.
+- **"Aurix refused the API token"**: make a new token in Settings → API tokens.
+- **Aurix unreachable**: check that the 7070 is up and Tailscale is connected:
+  `curl http://<server-tailscale-ip>:7000/api/health`.
+- **Wake word not triggering**: speak clearly and check the mic level in Windows. `WAKE_THRESHOLD` at the top of the
+  script trades misses for false triggers.

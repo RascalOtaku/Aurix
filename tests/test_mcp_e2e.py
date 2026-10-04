@@ -96,6 +96,53 @@ class BuiltinMcpServerTests(unittest.TestCase):
         self.assertEqual(tools, ["aurix_chat", "aurix_remember", "aurix_search", "aurix_shell", "aurix_status"])
         self.assertIn('"error"', text)                               # the AURIX API is down: reported, not a crash
 
+    def test_sse_connection_sends_headers(self):
+        """The Home Assistant preset authenticates with a bearer header over SSE: McpManager must actually send it."""
+        import importlib.util
+        import socket
+        import threading
+        import uvicorn
+        from src.mcp_manager import McpManager
+
+        spec = importlib.util.spec_from_file_location("_bridge_hdr", ROOT / "mcp_servers" / "aurix_sse_bridge.py")
+        bridge = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bridge)
+        seen = []
+
+        async def app(scope, receive, send):                     # records the Authorization header, then serves normally
+            if scope["type"] == "http":
+                seen.append(dict(scope["headers"]).get(b"authorization", b"").decode())
+            await bridge.app(scope, receive, send)
+
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error"))
+        thread = threading.Thread(target=server.run, daemon=True)
+        thread.start()
+
+        async def run():
+            for _ in range(100):
+                if server.started:
+                    break
+                await asyncio.sleep(0.05)
+            m = McpManager()
+            m.set_disabled_map({})
+            ok = await m.connect_server("ha", "ha", "sse", url=f"http://127.0.0.1:{port}/sse",
+                                        headers={"Authorization": "Bearer test-token"})
+            try:
+                return ok, sorted(t["name"] for t in m.get_all_tools())
+            finally:
+                await m.disconnect_all()
+        try:
+            ok, tools = asyncio.run(asyncio.wait_for(run(), timeout=60))
+        finally:
+            server.should_exit = True
+            thread.join(timeout=10)
+        self.assertTrue(ok)
+        self.assertIn("aurix_status", tools)
+        self.assertTrue(seen and all(h == "Bearer test-token" for h in seen), seen)
+
 
 if __name__ == "__main__":
     unittest.main()

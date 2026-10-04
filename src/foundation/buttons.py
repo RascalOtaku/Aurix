@@ -18,7 +18,7 @@ ALLOWED_KINDS = frozenset({
     "fix_yes", "fix_no", "fix_undo", "approve_lesson", "deny_lesson", "retire_lesson", "approve_mission", "deny_mission",
     "approve_standing", "deny_standing", "approve_skill", "deny_skill", "run_all", "dashboard", "games", "fixes", "games_refresh",
     "lessons", "evals", "teach", "fastlane", "teacher", "timeline", "menu", "trades", "level", "doctor", "disk", "homelab", "help", "status",
-    "history", "todos", "projects", "ack", "trust", "repo", "repos", "repo_yes", "repo_no", "mem_yes", "mem_no", "memory", "recall", "unforget", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrade_now", "upgrade_openhands", "upgrades", "money", "money_show", "money_set", "unwrap", "night_now", "transcripts", "earnings", "freelance_status", "freelance_find", "content_status", "learn_status", "subscriptions_status", "lab", "gp_status", "gp_disarm", "shards", "land", "land_show", "land_yes", "land_no", "workers", "integ_adopt", "integ_skip", "integrations", "version",
+    "history", "todos", "projects", "ack", "trust", "repo", "repos", "repo_yes", "repo_no", "mem_yes", "mem_no", "memory", "recall", "unforget", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrade_now", "upgrade_openhands", "upgrades", "money", "money_show", "money_set", "unwrap", "night_now", "transcripts", "earnings", "freelance_status", "freelance_find", "fab_status", "printer", "content_status", "learn_status", "subscriptions_status", "lab", "gp_status", "gp_disarm", "shards", "land", "land_show", "land_yes", "land_no", "workers", "integ_adopt", "integ_skip", "integrations", "version",
 })
 
 MAIN_MENU: List[List[Tuple[str, str]]] = [

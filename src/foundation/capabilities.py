@@ -96,6 +96,13 @@ REGISTRY: Dict[str, Capability] = {c.id: c for c in [
                f"tcp:{os.environ.get('AURIX_GPU_HOST', '100.64.0.10')}:11434", aliases=("gpu", "3431")),
     Capability("claude-fallback", "Claude last-resort drafter (needs ANTHROPIC_API_KEY, off by default)",
                "credential", "ANTHROPIC_API_KEY", aliases=("claude",)),
+    # fabrication lane (src/foundation/fabricate.py): CAD and slicing live in the sandbox's optional CAD layer
+    Capability("build123d", "Parametric CAD (build123d), runs inside the isolated sandbox", "python_pkg", "build123d",
+               InstallPlan("dockerfile", "docker compose build sandbox  (optional layer: mission_sandbox/requirements-cad.txt)"),
+               ("cad",)),
+    Capability("prusa-slicer", "PrusaSlicer command line (STL -> G-code), in the sandbox", "binary", "prusa-slicer",
+               InstallPlan("dockerfile", "docker compose build sandbox  (optional apt layer in mission_sandbox/Dockerfile)"),
+               ("slicer",)),
     # coding agent: OpenHands' Python SDK, run INSIDE the sandbox (optional layer of its image)
     Capability("openhands", "OpenHands coding-agent SDK, runs inside the isolated sandbox", "python_pkg",
                "openhands.sdk",

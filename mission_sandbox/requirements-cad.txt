@@ -1,0 +1,4 @@
+# OPTIONAL CAD layer (mission_sandbox/tools/cad_build.py): parametric parts from build123d scripts.
+# Installed against a constraints file of everything already in the image, so it can never change what the
+# mission tools were built with; if it conflicts, this layer is skipped and the CAD lane reports it.
+build123d>=0.13,<0.14

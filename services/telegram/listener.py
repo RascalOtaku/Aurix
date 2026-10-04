@@ -116,6 +116,18 @@ class TelegramListener:
         ack = await loop.run_in_executor(None, transcription.request, file_id, filename, duration, notify_sync, send_file_sync)
         await loop.run_in_executor(None, self._service.send, ack)
 
+    async def _handle_photo(self, msg: dict) -> None:
+        """A photo (or image file): answered by the LOCAL vision model, the caption is the question (src/foundation/vision.py)."""
+        from src.foundation import vision
+        sizes = msg.get("photo") or []
+        file_id = (max(sizes, key=lambda p: p.get("file_size") or p.get("width", 0)).get("file_id") if sizes
+                   else (msg.get("document") or {}).get("file_id"))
+        if not file_id:
+            return
+        loop = asyncio.get_event_loop()
+        reply = await loop.run_in_executor(None, vision.photo, file_id, (msg.get("caption") or "").strip())
+        await loop.run_in_executor(None, self._service.send, reply)
+
     def _cancel_in_flight(self) -> None:
         for task in list(self._in_flight):
             task.cancel()
@@ -285,6 +297,11 @@ class TelegramListener:
                         self._control_tasks.add(atask)
                         atask.add_done_callback(self._control_tasks.discard)
                         continue
+                    if msg.get("photo") or str(doc.get("mime_type", "")).startswith("image/"):
+                        ptask = asyncio.create_task(self._handle_photo(msg))
+                        self._control_tasks.add(ptask)
+                        ptask.add_done_callback(self._control_tasks.discard)
+                        continue
                     text = (msg.get("text") or "").strip()
                     if not text:
                         continue
@@ -320,6 +337,14 @@ class TelegramListener:
                         await asyncio.get_event_loop().run_in_executor(
                             None, self._service.send, hint)
                         continue
+                    from src.foundation import intent    # optional tiny local router: plain speech -> a SAFE command
+                    if intent.enabled():
+                        routed = await asyncio.get_event_loop().run_in_executor(None, intent.route, text)
+                        if routed:
+                            rtask = asyncio.create_task(self._handle_foundation(*routed))
+                            self._control_tasks.add(rtask)
+                            rtask.add_done_callback(self._control_tasks.discard)
+                            continue
                     task = asyncio.create_task(self._process_message(text))
                     self._in_flight.add(task)
                     task.add_done_callback(self._in_flight.discard)

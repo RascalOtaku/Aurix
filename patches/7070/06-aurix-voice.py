@@ -20,15 +20,33 @@ import os
 import sys
 import time
 import wave
-import audioop
 import threading
 import requests
 import numpy as np
 
+
+def _rms(pcm_bytes):
+    """Loudness of 16-bit mono PCM (audioop is gone in Python 3.13)."""
+    samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float64)
+    return float(np.sqrt(np.mean(samples * samples))) if samples.size else 0.0
+
+
+def _session(headers):
+    """AURIX_SESSION, else the newest chat named AURIX_SESSION_NAME (POST /api/chat needs a session id)."""
+    if AURIX_SESSION:
+        return AURIX_SESSION
+    rows = requests.get(AURIX_URL + "/api/sessions", headers=headers, timeout=15).json()
+    hits = [r for r in rows if str(r.get("name", "")).strip().lower() == AURIX_SESSION_NAME.lower()]
+    hits.sort(key=lambda r: str(r.get("last_message_at") or r.get("updated_at") or ""), reverse=True)
+    return hits[0]["id"] if hits else None
+
 # Configuration
 PORCUPINE_ACCESS_KEY = os.environ.get("PORCUPINE_ACCESS_KEY", "")
 CUSTOM_WAKE_WORD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "aurix.ppn")
-AURIX_API_URL = os.environ.get("AURIX_API_URL", "http://<server-tailscale-ip>:8000/api/chat")  # the 7070's chat endpoint
+AURIX_URL = os.environ.get("AURIX_URL", "http://<server-tailscale-ip>:7000").rstrip("/")   # the 7070's Aurix (port 7000)
+AURIX_API_URL = os.environ.get("AURIX_API_URL", AURIX_URL + "/api/chat")
+AURIX_SESSION = os.environ.get("AURIX_SESSION", "")         # a chat session id; or leave empty and name a chat "Voice"
+AURIX_SESSION_NAME = os.environ.get("AURIX_SESSION_NAME", "Voice")
 AURIX_API_KEY = os.environ.get("AURIX_API_KEY", "")
 
 # Audio settings
@@ -149,7 +167,7 @@ class AurixVoice:
             data = stream.read(CHUNK_SIZE, exception_on_overflow=False)
             frames.append(data)
             # Check volume
-            rms = audioop.rms(data, 2)
+            rms = _rms(data)
             if rms < SILENCE_THRESHOLD:
                 silent_chunks += 1
                 if silent_chunks > silence_limit and len(frames) > 10:
@@ -184,7 +202,7 @@ class AurixVoice:
         try:
             resp = requests.post(
                 AURIX_API_URL,
-                json={"message": text, "stream": False},
+                json={"message": text, "session": _session(headers) or ""},
                 headers=headers,
                 timeout=120,
             )

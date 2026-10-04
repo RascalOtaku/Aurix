@@ -32,6 +32,11 @@ from src.foundation import nightshift
 from src.foundation import transcription
 from src.foundation import earnings
 from src.foundation import freelance
+from src.foundation import fabricate
+from src.foundation import printer as fprinter
+from src.foundation import smarthome
+from src.foundation import vision
+from src.foundation import frigate
 from src.foundation.land import hub as land
 from src.foundation import evolve
 from src.foundation import evolve_domains  # noqa: F401 - import-time side effect: registers the "forge_guidance" domain
@@ -143,6 +148,13 @@ _PATTERNS = [
     ("freelance_yes", re.compile(r"^\s*/?(?:yes|approve|keep)(?:\s+freelance)?\s+(f-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
     ("freelance_no", re.compile(r"^\s*/?(?:no|discard|deny)(?:\s+freelance)?\s+(f-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
     ("freelance_status", re.compile(r"^\s*/?(?:freelance|freelance\s+drafts?)\s*\??\s*$", re.I)),
+    ("fab_yes", re.compile(r"^\s*/?(?:yes|approve|print)\s+(d-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
+    ("fab_no", re.compile(r"^\s*/?(?:no|discard|deny)\s+(d-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
+    ("fab_status", re.compile(r"^\s*/?(?:parts|cad|fabricate|my\s+parts)\s*\??\s*$", re.I)),
+    ("printer", re.compile(r"^\s*/?(?:printer|print\s+status|3d\s*printer)\s*\??\s*$", re.I)),
+    ("look", re.compile(r"^\s*/?(?:look|look\s+at\s+(?:the\s+)?screen|what'?s\s+on\s+(?:the\s+|my\s+)?screen)(?:\s*:\s*(.{2,1000}))?\s*\??\s*$", re.I | re.S)),
+    ("home", re.compile(r"^\s*/?(?:lights|home|smart\s*home|devices)\s*\??\s*$", re.I)),
+    ("fab", re.compile(r"^\s*/?(?:cad|fabricate):?\s+(.{8,2000})$", re.I | re.S)),
     ("freelance_find", re.compile(r"^\s*/?(?:freelance\s+find|find\s+(?:me\s+)?(?:a\s+)?(?:freelance\s+)?(?:job|gig|lead))\s*\??\s*$", re.I)),
     ("freelance", re.compile(r"^\s*/?freelance:?\s+(.{8,4000})$", re.I | re.S)),
     ("earned", re.compile(r"^\s*/?earned\s+\$?(\d+(?:\.\d{1,2})?)\s+([a-z][a-z0-9_]{2,30})(?:\s+(.+))?\s*$", re.I)),
@@ -295,14 +307,36 @@ def parse(text: str) -> Optional[Tuple[str, str]]:
             lowered = ("approve_mission", "deny_mission", "revoke", "approve_standing", "deny_standing",
                        "pause_standing", "resume_standing", "retire_standing", "show", "files", "send_files",
                        "todo_done", "skill_show", "approve_skill", "deny_skill", "retire_skill",
-                       "teacher", "lesson_show", "approve_lesson", "deny_lesson", "retire_lesson", "fix_yes", "fix_no", "fix_undo", "repo_yes", "repo_no", "mem_yes", "mem_no", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrades_cfg", "money_set", "shard_pause", "shard_resume", "freelance_yes", "freelance_no", "content_yes", "content_no", "learn_yes", "learn_no", "land_yes", "land_no", "integ_adopt", "integ_skip", "evolve_yes", "evolve_no", "evolve_run", "evolve_propose")
+                       "teacher", "lesson_show", "approve_lesson", "deny_lesson", "retire_lesson", "fix_yes", "fix_no", "fix_undo", "repo_yes", "repo_no", "mem_yes", "mem_no", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrades_cfg", "money_set", "shard_pause", "shard_resume", "freelance_yes", "freelance_no", "fab_yes", "fab_no", "content_yes", "content_no", "learn_yes", "learn_no", "land_yes", "land_no", "integ_adopt", "integ_skip", "evolve_yes", "evolve_no", "evolve_run", "evolve_propose")
             return kind, (arg.lower() if kind in lowered else arg)
     bare = _bare_skill_decision(text) or _bare_fix_decision(text) or _bare_ack(text) or _bare_repo_link(text)
     if bare:
         return bare
+    home = _home_switch(text) if smarthome.configured() else None   # only claimed when Home Assistant is set up; otherwise chat
+    if home:
+        return home
     m = _GAMES_ASK.match(text or "")
     if m and not (text or "").lstrip().lower().startswith(("mission", "standing", "forge", "project", "todo", "approve", "deny")):
         return "games_ask", m.group(1).strip()
+    return None
+
+
+_HOME_VERB_FIRST = re.compile(r"^\s*/?(?:turn|switch)\s+(on|off)\s+(?:the\s+)?(.{1,60}?)\s*[.!]*\s*$", re.I)
+_HOME_VERB_LAST = re.compile(r"^\s*/?(?:turn|switch)\s+(?:the\s+)?(.{1,60}?)\s+(on|off)\s*[.!]*\s*$", re.I)
+_HOME_TOGGLE = re.compile(r"^\s*/?toggle\s+(?:the\s+)?(.{1,60}?)\s*[.!]*\s*$", re.I)
+
+
+def _home_switch(text: str) -> Optional[Tuple[str, str]]:
+    """'turn on desk lamp' / 'turn the desk lamp off' / 'toggle fan' -> ("home_switch", "on desk lamp")."""
+    m = _HOME_VERB_FIRST.match(text or "")
+    if m:
+        return "home_switch", f"{m.group(1).lower()} {m.group(2).strip()}"
+    m = _HOME_VERB_LAST.match(text or "")
+    if m:
+        return "home_switch", f"{m.group(2).lower()} {m.group(1).strip()}"
+    m = _HOME_TOGGLE.match(text or "")
+    if m:
+        return "home_switch", f"toggle {m.group(1).strip()}"
     return None
 
 
@@ -470,6 +504,12 @@ class Foundation:
             pass
         try:                                    # freelance checking its own job feed must never break scheduling either
             await self._maybe_freelance_search(now or time.time())
+        except Exception:
+            pass
+        try:                                    # camera alerts (Frigate) must never break scheduling either
+            if frigate.configured():
+                for text in await asyncio.to_thread(frigate.poll, now, None, frigate.default_describer()):
+                    await self.notify_ui(text, "frigate")
         except Exception:
             pass
         try:                                    # the learning flywheel + "what's new" (both read-only on existing records)
@@ -967,6 +1007,23 @@ class Foundation:
             return await asyncio.to_thread(evolve.approve_any, arg)
         if kind == "evolve_no":
             return await asyncio.to_thread(evolve.decline_any, arg)
+        if kind == "fab":
+            return await asyncio.to_thread(fabricate.request, arg)
+        if kind == "fab_yes":
+            return await asyncio.to_thread(fabricate.approve, arg)
+        if kind == "fab_no":
+            return await asyncio.to_thread(fabricate.decline, arg)
+        if kind == "fab_status":
+            return await asyncio.to_thread(fabricate.status_text)
+        if kind == "printer":
+            return await asyncio.to_thread(fprinter.status_text)
+        if kind == "look":
+            return await asyncio.to_thread(vision.look, arg)
+        if kind == "home":
+            return await asyncio.to_thread(smarthome.overview)
+        if kind == "home_switch":
+            action, _, name = arg.partition(" ")
+            return await asyncio.to_thread(smarthome.switch, action, name)
         if kind == "freelance_find":
             return await asyncio.to_thread(freelance.find_lead)
         if kind == "content":
