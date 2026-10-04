@@ -1,0 +1,99 @@
+--- a/static/command.html
++++ b/static/command.html
+@@ -398,6 +398,95 @@
+     if (c.border) r.setProperty("--border", c.border); if (c.red) r.setProperty("--red", c.red); }
+ } catch (e) { /* default theme */ }
+
++/* ---- Business tab polish: copy buttons, board filter, collapsible drafts ---- */
++(function () {
++  "use strict";
++
++  // Copy-to-clipboard helper with toast feedback.
++  function copyText(t) {
++    if (navigator.clipboard && navigator.clipboard.writeText) {
++      navigator.clipboard.writeText(t).then(
++        function () { if (typeof toast === "function") toast("Copied"); },
++        function () { if (typeof toast === "function") toast("Copy failed"); }
++      );
++    } else {
++      var ta = document.createElement("textarea");
++      ta.value = t; document.body.appendChild(ta); ta.select();
++      try { document.execCommand("copy"); if (typeof toast === "function") toast("Copied"); }
++      catch (e) { if (typeof toast === "function") toast("Copy failed"); }
++      document.body.removeChild(ta);
++    }
++  }
++
++  // Add copy buttons to outbox draft IDs (delegated, works with dynamic content).
++  document.addEventListener("click", function (ev) {
++    var btn = ev.target.closest("[data-copy]");
++    if (btn) { copyText(btn.getAttribute("data-copy")); ev.preventDefault(); return; }
++    var tg = ev.target.closest("[data-toggle-collapse]");
++    if (tg) {
++      var body = document.getElementById(tg.getAttribute("data-toggle-collapse"));
++      if (body) {
++        var hidden = body.style.display === "none";
++        body.style.display = hidden ? "" : "none";
++        tg.textContent = hidden ? "Show less" : "Show more";
++      }
++      ev.preventDefault();
++    }
++  });
++
++  // Auto-enhance: add data-copy to draft ID elements and collapse to long drafts.
++  // Runs on a timer to catch dynamically rendered content.
++  function enhance() {
++    // Draft IDs: elements that look like IDs in the outbox.
++    document.querySelectorAll("#outbox [data-draft-id]:not([data-copy-added])").forEach(function (n) {
++      n.setAttribute("data-copy-added", "1");
++      var b = document.createElement("button");
++      b.type = "button"; b.className = "btn small"; b.textContent = "Copy ID";
++      b.setAttribute("data-copy", n.getAttribute("data-draft-id"));
++      b.style.marginLeft = "8px";
++      n.appendChild(b);
++    });
++    // Long draft bodies: add collapse toggle if over ~600 chars.
++    document.querySelectorAll("#outbox .draft-body:not([data-collapse-added])").forEach(function (n) {
++      n.setAttribute("data-collapse-added", "1");
++      if ((n.textContent || "").length > 600) {
++        var id = "draft-" + Math.random().toString(36).slice(2, 9);
++        n.id = id;
++        var full = n.textContent;
++        n.textContent = full.slice(0, 600) + "…";
++        var t = document.createElement("button");
++        t.type = "button"; t.className = "btn small";
++        t.textContent = "Show more";
++        t.setAttribute("data-toggle-collapse", id);
++        t.onclick = function () {
++          var showing = n.getAttribute("data-full") === "1";
++          n.textContent = showing ? full.slice(0, 600) + "…" : full;
++          n.setAttribute("data-full", showing ? "0" : "1");
++          t.textContent = showing ? "Show more" : "Show less";
++        };
++        n.parentNode.insertBefore(t, n.nextSibling);
++      }
++    });
++  }
++  setInterval(enhance, 2000);
++  enhance();
++
++  // Board filter: text input filters avenues by title/status.
++  function addBoardFilter() {
++    var board = document.getElementById("board");
++    if (!board || document.getElementById("board-filter")) return;
++    var input = document.createElement("input");
++    input.id = "board-filter"; input.type = "search";
++    input.placeholder = "Filter avenues…";
++    input.style.cssText = "width:100%;margin-bottom:8px;padding:6px 10px;background:var(--card);color:var(--fg);border:1px solid var(--border);border-radius:8px;font:inherit;";
++    input.addEventListener("input", function () {
++      var q = input.value.toLowerCase();
++      board.querySelectorAll(".row").forEach(function (r) {
++        r.style.display = (r.textContent || "").toLowerCase().indexOf(q) >= 0 ? "" : "none";
++      });
++    });
++    board.parentNode.insertBefore(input, board);
++  }
++  setInterval(addBoardFilter, 2000);
++})();
++
+ </script>
