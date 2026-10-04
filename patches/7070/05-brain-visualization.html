@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aurix Brain — Living Process Map</title>
+<style>
+  :root {
+    --bg: #0a0e1a; --fg: #e0e6f0; --accent: #6b9fff; --fire: #ff9f43;
+    --card: rgba(20,28,48,.92); --border: rgba(107,159,255,.3);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, sans-serif; overflow: hidden; height: 100vh; }
+  #brain-canvas { position: fixed; inset: 0; cursor: grab; }
+  #brain-canvas:active { cursor: grabbing; }
+  #hud { position: fixed; top: 16px; left: 16px; z-index: 10; pointer-events: none; }
+  #hud h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+  #hud .sub { font-size: 12px; opacity: 0.6; }
+  #legend { position: fixed; bottom: 16px; left: 16px; z-index: 10; font-size: 11px; opacity: 0.7; background: var(--card); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); }
+  #legend span { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+  #detail { position: fixed; top: 16px; right: 16px; z-index: 10; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; max-width: 280px; display: none; backdrop-filter: blur(8px); }
+  #detail h3 { font-size: 14px; margin-bottom: 6px; color: var(--accent); }
+  #detail .row { font-size: 12px; margin: 3px 0; opacity: 0.85; }
+  #detail .close { position: absolute; top: 8px; right: 10px; cursor: pointer; opacity: 0.5; font-size: 16px; background: none; border: none; color: var(--fg); }
+  #detail .close:hover { opacity: 1; }
+  #stats { position: fixed; bottom: 16px; right: 16px; z-index: 10; font-size: 11px; opacity: 0.7; text-align: right; background: var(--card); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); }
+  #search { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 10; padding: 8px 14px; background: var(--card); border: 1px solid var(--border); border-radius: 20px; color: var(--fg); font-size: 13px; width: 220px; outline: none; }
+  #search::placeholder { opacity: 0.5; }
+  #search:focus { border-color: var(--accent); }
+  #help { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 10; font-size: 11px; opacity: 0.5; }
+  #help kbd { background: rgba(255,255,255,.1); padding: 1px 5px; border-radius: 4px; font-size: 10px; }
+  #tooltip { position: fixed; z-index: 20; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12px; pointer-events: none; display: none; }
+  #loading { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 14px; opacity: 0.8; }
+  #activity-graph { position: fixed; bottom: 70px; right: 16px; z-index: 10; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+  /* Pass 13: minimap */
+  #minimap { position: fixed; bottom: 70px; left: 16px; z-index: 10; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 4px; cursor: pointer; }
+  #help-overlay { position: fixed; inset: 0; z-index: 40; background: rgba(10,14,26,.9); display: none; align-items: center; justify-content: center; }
+  #help-overlay .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 28px 32px; max-width: 420px; }
+  #help-overlay h2 { margin-bottom: 12px; }
+  #help-overlay .row { font-size: 13px; margin: 6px 0; }
+  #help-overlay kbd { background: rgba(255,255,255,.12); padding: 2px 7px; border-radius: 5px; font-size: 11px; }
+  @media (max-width: 600px) {
+    #hud h1 { font-size: 16px; }
+    #search { width: 160px; font-size: 12px; }
+    #legend { font-size: 10px; padding: 6px 8px; }
+    #detail { max-width: 220px; }
+  }
+</style>
+</head>
+<body>
+<div id="loading">Waking up the brain…</div>
+<canvas id="brain-canvas" role="img" aria-label="Interactive visualization of Aurix processes as a neural network"></canvas>
+<div id="hud">
+  <h1>🧠 Aurix Brain</h1>
+  <div class="sub">Living process map — neurons fire as services work</div>
+</div>
+<input id="search" type="search" placeholder="Search neurons…" aria-label="Search neurons">
+<div id="legend" aria-hidden="true">
+  <div><span style="background:#6b9fff"></span> Core &nbsp; <span style="background:#9f6bff"></span> Memory &nbsp; <span style="background:#43d9a3"></span> Senses</div>
+  <div style="margin-top:4px"><span style="background:#ff9f43"></span> Action &nbsp; <span style="background:#ff6b8a"></span> Signals &nbsp; <span style="background:#ffd743"></span> LLM</div>
+</div>
+<div id="detail" role="dialog" aria-label="Neuron details">
+  <button class="close" onclick="document.getElementById('detail').style.display='none'" aria-label="Close">×</button>
+  <h3 id="detail-name"></h3>
+  <div id="detail-rows"></div>
+</div>
+<div id="stats" aria-live="polite">
+  <div id="stat-fires">0 fires</div>
+  <div id="stat-ideas">0 ideas formed</div>
+</div>
+<canvas id="activity-graph" width="180" height="50" aria-hidden="true"></canvas>
+<!-- Pass 13: minimap -->
+<canvas id="minimap" width="120" height="90" aria-hidden="true" title="Minimap — click to reset view"></canvas>
+<!-- Pass 17: full help overlay -->
+<div id="help-overlay" role="dialog" aria-label="Help">
+  <div class="card">
+    <h2>🧠 Aurix Brain Help</h2>
+    <div class="row"><kbd>drag</kbd> — pan the brain</div>
+    <div class="row"><kbd>scroll</kbd> / <kbd>pinch</kbd> — zoom in/out</div>
+    <div class="row"><kbd>click</kbd> a neuron — inspect it (makes it fire!)</div>
+    <div class="row"><kbd>/</kbd> — search neurons</div>
+    <div class="row"><kbd>0</kbd> — reset view</div>
+    <div class="row"><kbd>Esc</kbd> — close panels</div>
+    <div class="row"><kbd>Ctrl+S</kbd> — export snapshot as PNG</div>
+    <div class="row"><kbd>?</kbd> — this help</div>
+    <div class="row" style="margin-top:12px;opacity:.6">Neurons are Aurix services. They fire spontaneously and propagate to connected neurons. Dashed gold lines are new "ideas" forming between services.</div>
+    <div class="row" style="margin-top:8px"><button onclick="document.getElementById('help-overlay').style.display='none'" style="padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:8px;cursor:pointer">Got it</button></div>
+  </div>
+</div>
+<div id="help"><kbd>drag</kbd> pan &nbsp; <kbd>scroll</kbd> zoom &nbsp; <kbd>click</kbd> inspect &nbsp; <kbd>Esc</kbd> close</div>
+<div id="tooltip"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ── Pass 1: Robust color utilities (fix hex glow bug) ──
+  function hexToRgb(hex) {
+    var h = hex.replace("#", "");
+    return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+  }
+  function rgba(hex, alpha) {
+    var c = hexToRgb(hex);
+    return "rgba(" + c[0] + "," + c[1] + "," + c[2] + "," + alpha + ")";
+  }
+
+  var canvas = document.getElementById("brain-canvas");
+  var ctx = canvas.getContext("2d");
+  var W, H, CX, CY;
+  var scale = 1, offsetX = 0, offsetY = 0; // Pass 6: pan/zoom state
+
+  // ── Pass 3: Improved layout with force-directed-ish placement ──
+  function resize() {
+    W = canvas.width = window.innerWidth;
+    H = canvas.height = window.innerHeight;
+    CX = W / 2; CY = H / 2;
+    layout();
+  }
+  window.addEventListener("resize", resize);
+
+  var NEURONS = [
+    { id: "odysseus", label: "Aurix Core", group: "core", desc: "Main app — routes, agent loop, conductor", uptime: "live", region: 0 },
+    { id: "chromadb", label: "ChromaDB", group: "memory", desc: "Vector memory — embeddings, RAG", uptime: "4 days", region: 1 },
+    { id: "neo4j", label: "Neo4j", group: "memory", desc: "Graph memory — relationships", uptime: "4 days", region: 1 },
+    { id: "searxng", label: "SearXNG", group: "senses", desc: "Web search — eyes on the internet", uptime: "healthy", region: 2 },
+    { id: "gods-eye", label: "God's Eye", group: "senses", desc: "Monitoring — watches everything", uptime: "4 days", region: 2 },
+    { id: "sandbox", label: "Sandbox", group: "action", desc: "Code execution — hands that build", uptime: "8 hours", region: 3 },
+    { id: "egress", label: "Egress Proxy", group: "action", desc: "Controlled internet — gate to world", uptime: "8 hours", region: 3 },
+    { id: "ntfy", label: "ntfy", group: "signals", desc: "Push notifications — nerve impulses", uptime: "4 days", region: 4 },
+    { id: "vaultwarden", label: "Vaultwarden", group: "signals", desc: "Secrets — protected memories", uptime: "4 days", region: 4 },
+    { id: "uptime", label: "Uptime Kuma", group: "signals", desc: "Health checks — pain receptors", uptime: "4 days", region: 4 },
+    { id: "llm-gateway", label: "LLM Gateway", group: "llm", desc: "Model router — thalamus", uptime: "25 hours", region: 5 },
+    { id: "ajax-9b", label: "Ajax 9B", group: "llm", desc: "qwen3.5:9b on Steammachine — deep thought", uptime: "live", region: 5, external: true },
+    { id: "fly-3b", label: "Fly Brain 3B", group: "llm", desc: "llama3.2:3b on Steammachine — fast reflexes", uptime: "live", region: 5, external: true },
+  ];
+
+  var GROUP_COLORS = {
+    core: "#6b9fff", memory: "#9f6bff", senses: "#43d9a3",
+    action: "#ff9f43", signals: "#ff6b8a", llm: "#ffd743"
+  };
+
+  var SYNAPSES = [
+    ["odysseus","chromadb"],["odysseus","neo4j"],["odysseus","searxng"],
+    ["odysseus","gods-eye"],["odysseus","sandbox"],["odysseus","egress"],
+    ["odysseus","ntfy"],["odysseus","vaultwarden"],["odysseus","llm-gateway"],
+    ["llm-gateway","ajax-9b"],["llm-gateway","fly-3b"],
+    ["sandbox","egress"],["searxng","chromadb"],["gods-eye","uptime"],
+    ["gods-eye","ntfy"],["chromadb","neo4j"],["vaultwarden","odysseus"],
+  ];
+
+  var ideas = [], fireCount = 0, ideaCount = 0;
+  var fireHistory = []; // Pass 4: firing history for graph
+  var searchQuery = ""; // Pass 7: search state
+
+  function layout() {
+    var R = Math.min(W, H) * 0.32;
+    var groups = {};
+    NEURONS.forEach(function (n) {
+      if (n.id === "odysseus") return;
+      (groups[n.group] = groups[n.group] || []).push(n);
+    });
+    var groupNames = Object.keys(groups);
+    NEURONS.forEach(function (n) {
+      if (n.id === "odysseus") { n.x = CX; n.y = CY; n.r = 22; n.fire = 0; n.pulse = 0; return; }
+      var gi = groupNames.indexOf(n.group);
+      var angle = (gi / groupNames.length) * Math.PI * 2 - Math.PI / 2;
+      var siblings = groups[n.group];
+      var si = siblings.indexOf(n);
+      angle += (si - (siblings.length - 1) / 2) * 0.45;
+      var rad = R * (n.external ? 1.4 : 1.0);
+      // Pass 3: add slight jitter to avoid perfect symmetry
+      var jitter = (Math.sin(n.id.length * 12.9898) * 0.5 + 0.5) * 20 - 10;
+      n.x = CX + Math.cos(angle) * rad + jitter;
+      n.y = CY + Math.sin(angle) * rad * 0.85 + jitter * 0.5;
+      n.r = n.external ? 16 : 13;
+      n.fire = n.fire || 0;
+      n.pulse = n.pulse || Math.random() * Math.PI * 2;
+    });
+  }
+
+  function neuronById(id) { return NEURONS.find(function (n) { return n.id === id; }); }
+
+  // Pass 6: coordinate transforms for pan/zoom
+  function toScreen(x, y) { return [CX + (x - CX) * scale + offsetX, CY + (y - CY) * scale + offsetY]; }
+  function toWorld(sx, sy) { return [CX + (sx - CX - offsetX) / scale, CY + (sy - CY - offsetY) / scale]; }
+
+  function simulate() {
+    var firesThisFrame = 0;
+    NEURONS.forEach(function (n) {
+      n.pulse += 0.05;
+      // Pass 7: dim non-matching neurons during search
+      n.dimmed = searchQuery && (n.label + " " + n.desc).toLowerCase().indexOf(searchQuery) < 0;
+      if (Math.random() < 0.008) {
+        n.fire = 1; fireCount++; firesThisFrame++;
+        SYNAPSES.forEach(function (s) {
+          if (s[0] === n.id && Math.random() < 0.4) {
+            var t = neuronById(s[1]);
+            if (t) setTimeout(function () { t.fire = Math.max(t.fire, 0.7); }, 150);
+          }
+        });
+      }
+      if (n.id === "odysseus" && Math.random() < 0.02) { n.fire = 1; fireCount++; firesThisFrame++; }
+      if (n.group === "llm" && Math.random() < 0.015) { n.fire = 1; fireCount++; firesThisFrame++; }
+      n.fire *= 0.94;
+    });
+    if (Math.random() < 0.003 && ideas.length < 5) {
+      var a = NEURONS[Math.floor(Math.random() * NEURONS.length)];
+      var b = NEURONS[Math.floor(Math.random() * NEURONS.length)];
+      if (a !== b) { ideas.push({ a: a, b: b, life: 1.0 }); ideaCount++; }
+    }
+    ideas = ideas.filter(function (i) { i.life -= 0.01; return i.life > 0; });
+
+    // Pass 4 & 15: record fire history for activity graph
+    fireHistory.push(firesThisFrame);
+    if (fireHistory.length > 60) fireHistory.shift();
+    document.getElementById("stat-fires").textContent = fireCount + " fires";
+    document.getElementById("stat-ideas").textContent = ideaCount + " ideas formed";
+    drawActivityGraph();
+  }
+
+  // Pass 15: mini activity graph
+  var graphCanvas = document.getElementById("activity-graph");
+  var gtx = graphCanvas.getContext("2d");
+  function drawActivityGraph() {
+    gtx.clearRect(0, 0, 180, 50);
+    gtx.fillStyle = "rgba(107,159,255,.1)";
+    gtx.fillRect(0, 0, 180, 50);
+    if (fireHistory.length < 2) return;
+    var max = Math.max.apply(null, fireHistory.concat([1]));
+    gtx.strokeStyle = "#6b9fff"; gtx.lineWidth = 1.5; gtx.beginPath();
+    fireHistory.forEach(function (v, i) {
+      var x = (i / 59) * 180, y = 50 - (v / max) * 45 - 2;
+      if (i === 0) gtx.moveTo(x, y); else gtx.lineTo(x, y);
+    });
+    gtx.stroke();
+    gtx.fillStyle = "rgba(224,230,240,.6)"; gtx.font = "9px system-ui";
+    gtx.fillText("activity", 4, 10);
+  }
+
+  // Pass 8: cache gradients per neuron per fire level (bucketed)
+  var gradientCache = {};
+  function getGlowGradient(n, buckets) {
+    var key = n.id + "_" + buckets;
+    if (!gradientCache[key]) {
+      var sx = n.x, sy = n.y; // world coords, transformed at draw
+      gradientCache[key] = true; // mark cached (actual gradient created at draw time due to transform)
+    }
+    return key;
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.save();
+    ctx.translate(CX + offsetX, CY + offsetY);
+    ctx.scale(scale, scale);
+    ctx.translate(-CX, -CY);
+
+    // Synapses
+    SYNAPSES.forEach(function (s) {
+      var a = neuronById(s[0]), b = neuronById(s[1]);
+      if (!a || !b) return;
+      if (a.dimmed || b.dimmed) return; // Pass 7: hide during search
+      var activity = (a.fire + b.fire) / 2;
+      ctx.strokeStyle = rgba("#6b9fff", 0.08 + activity * 0.4);
+      ctx.lineWidth = 1 + activity * 2;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y);
+      var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      var dx = b.x - a.x, dy = b.y - a.y, len = Math.sqrt(dx*dx + dy*dy) || 1;
+      ctx.quadraticCurveTo(mx - dy/len*20, my + dx/len*20, b.x, b.y);
+      ctx.stroke();
+      if (activity > 0.3) {
+        var t = (Date.now() / 1200 + a.pulse) % 1;
+        ctx.fillStyle = rgba("#ffc864", activity);
+        ctx.beginPath(); ctx.arc(a.x + (b.x-a.x)*t, a.y + (b.y-a.y)*t, 3, 0, Math.PI*2); ctx.fill();
+      }
+    });
+
+    // Ideas
+    ideas.forEach(function (idea) {
+      ctx.strokeStyle = rgba("#ffd743", idea.life * 0.8);
+      ctx.lineWidth = 2; ctx.setLineDash([5,5]);
+      ctx.beginPath(); ctx.moveTo(idea.a.x, idea.a.y); ctx.lineTo(idea.b.x, idea.b.y); ctx.stroke();
+      ctx.setLineDash([]);
+      // Pass 14: idea label at midpoint
+      if (idea.life > 0.7) {
+        ctx.fillStyle = rgba("#ffd743", idea.life);
+        ctx.font = "10px system-ui"; ctx.textAlign = "center";
+        ctx.fillText("💡", (idea.a.x + idea.b.x)/2, (idea.a.y + idea.b.y)/2 - 8);
+      }
+    });
+
+    // Neurons
+    NEURONS.forEach(function (n) {
+      if (n.dimmed) return;
+      var color = GROUP_COLORS[n.group];
+      var glow = n.fire;
+      // Pass 1: proper glow using rgba()
+      if (glow > 0.05) {
+        var grad = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 3);
+        grad.addColorStop(0, rgba(color, glow * 0.5));
+        grad.addColorStop(1, rgba(color, 0));
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r * 3, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.fillStyle = color;
+      ctx.globalAlpha = n.dimmed ? 0.15 : (0.25 + glow * 0.75);
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI*2); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = glow > 0.5 ? 2.5 : 1.5;
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI*2); ctx.stroke();
+      // External indicator
+      if (n.external) {
+        ctx.fillStyle = rgba("#ffffff", 0.7); ctx.font = "9px system-ui"; ctx.textAlign = "center";
+        ctx.fillText("↗", n.x + n.r - 2, n.y - n.r + 6);
+      }
+      ctx.fillStyle = "#e0e6f0"; ctx.font = "11px system-ui"; ctx.textAlign = "center";
+      ctx.fillText(n.label, n.x, n.y + n.r + 14);
+      var breathe = Math.sin(n.pulse) * 2;
+      ctx.strokeStyle = color; ctx.globalAlpha = 0.2;
+      ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 4 + breathe, 0, Math.PI*2); ctx.stroke();
+      ctx.globalAlpha = 1;
+    });
+
+    ctx.restore();
+  }
+
+  // Pass 6: pan and zoom
+  var dragging = false, lastX = 0, lastY = 0;
+  canvas.addEventListener("mousedown", function (e) { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+  window.addEventListener("mousemove", function (e) {
+    if (dragging) { offsetX += e.clientX - lastX; offsetY += e.clientY - lastY; lastX = e.clientX; lastY = e.clientY; }
+    // Pass 10: hover tooltip
+    showTooltip(e);
+  });
+  window.addEventListener("mouseup", function () { dragging = false; });
+  canvas.addEventListener("wheel", function (e) {
+    e.preventDefault();
+    var factor = e.deltaY < 0 ? 1.1 : 0.9;
+    scale = Math.max(0.5, Math.min(3, scale * factor));
+  }, { passive: false });
+  // Touch support (Pass 5)
+  var lastTouchDist = 0;
+  canvas.addEventListener("touchstart", function (e) {
+    if (e.touches.length === 2) lastTouchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  }, { passive: true });
+  canvas.addEventListener("touchmove", function (e) {
+    if (e.touches.length === 2) {
+      var d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+      if (lastTouchDist > 0) scale = Math.max(0.5, Math.min(3, scale * (d / lastTouchDist)));
+      lastTouchDist = d; e.preventDefault();
+    }
+  }, { passive: false });
+
+  // Pass 10: tooltip on hover
+  var tooltip = document.getElementById("tooltip");
+  function showTooltip(e) {
+    if (dragging) { tooltip.style.display = "none"; return; }
+    var rect = canvas.getBoundingClientRect();
+    var wx = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+    var hit = NEURONS.find(function (n) {
+      var dx = wx[0] - n.x, dy = wx[1] - n.y;
+      return Math.sqrt(dx*dx + dy*dy) < (n.r + 8) / scale;
+    });
+    if (hit && !hit.dimmed) {
+      tooltip.textContent = hit.label + " — " + hit.desc;
+      tooltip.style.display = "block";
+      tooltip.style.left = (e.clientX + 12) + "px";
+      tooltip.style.top = (e.clientY + 12) + "px";
+    } else tooltip.style.display = "none";
+  }
+
+  // Click for details
+  canvas.addEventListener("click", function (e) {
+    if (Math.abs(offsetX) > 3 || Math.abs(offsetY) > 3) return; // was dragging
+    var rect = canvas.getBoundingClientRect();
+    var wx = toWorld(e.clientX - rect.left, e.clientY - rect.top);
+    var hit = NEURONS.find(function (n) {
+      var dx = wx[0] - n.x, dy = wx[1] - n.y;
+      return Math.sqrt(dx*dx + dy*dy) < (n.r + 8) / scale;
+    });
+    if (hit && !hit.dimmed) {
+      document.getElementById("detail-name").textContent = hit.label;
+      var conns = SYNAPSES.filter(function (s) { return s[0] === hit.id || s[1] === hit.id; }).length;
+      document.getElementById("detail-rows").innerHTML =
+        "<div class='row'>" + hit.desc + "</div>" +
+        "<div class='row' style='margin-top:6px;opacity:.6'>Status: " + hit.uptime + "</div>" +
+        "<div class='row' style='opacity:.6'>Connections: " + conns + "</div>" +
+        (hit.external ? "<div class='row' style='opacity:.6'>📍 Steammachine (external)</div>" : "<div class='row' style='opacity:.6'>📍 7070 (local)</div>");
+      document.getElementById("detail").style.display = "block";
+      hit.fire = 1;
+    } else document.getElementById("detail").style.display = "none";
+  });
+
+  // Pass 7: search
+  document.getElementById("search").addEventListener("input", function (e) {
+    searchQuery = e.target.value.toLowerCase().trim();
+  });
+
+  // Pass 11: keyboard shortcuts
+  document.addEventListener("keydown", function (e) {
+    if (e.target.tagName === "INPUT") { if (e.key === "Escape") e.target.blur(); return; }
+    if (e.key === "Escape") document.getElementById("detail").style.display = "none";
+    if (e.key === "0") { scale = 1; offsetX = 0; offsetY = 0; } // reset view
+    if (e.key === "/" ) { e.preventDefault(); document.getElementById("search").focus(); }
+  });
+
+  // Pass 16: export snapshot
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "s" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      var link = document.createElement("a");
+      link.download = "aurix-brain-" + Date.now() + ".png";
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    }
+  });
+
+  // Pass 12: stub for live data (fetches /api/brain when available)
+  function fetchLiveData() {
+    // When the backend exposes /api/brain/status, this will light up
+    // neurons based on real container CPU/activity instead of simulation.
+    // For now, simulation drives the visualization.
+    if (window.AURIX_BRAIN_API) {
+      fetch(window.AURIX_BRAIN_API).then(function (r) { return r.json(); })
+        .then(function (data) {
+          (data.neurons || []).forEach(function (live) {
+            var n = neuronById(live.id);
+            if (n) { n.fire = Math.max(n.fire, live.activity || 0); n.uptime = live.uptime || n.uptime; }
+          });
+        }).catch(function () { /* stay in simulation mode */ });
+    }
+  }
+  setInterval(fetchLiveData, 5000);
+
+  // Pass 13: minimap rendering
+  var minimap = document.getElementById("minimap");
+  var mtx = minimap.getContext("2d");
+  function drawMinimap() {
+    mtx.clearRect(0, 0, 120, 90);
+    // Find bounds
+    var xs = NEURONS.map(function (n) { return n.x; });
+    var ys = NEURONS.map(function (n) { return n.y; });
+    var minX = Math.min.apply(null, xs), maxX = Math.max.apply(null, xs);
+    var minY = Math.min.apply(null, ys), maxY = Math.max.apply(null, ys);
+    function mm(x, y) {
+      return [((x - minX) / (maxX - minX || 1)) * 112 + 4, ((y - minY) / (maxY - minY || 1)) * 82 + 4];
+    }
+    SYNAPSES.forEach(function (s) {
+      var a = neuronById(s[0]), b = neuronById(s[1]);
+      if (!a || !b) return;
+      var pa = mm(a.x, a.y), pb = mm(b.x, b.y);
+      mtx.strokeStyle = "rgba(107,159,255,.25)"; mtx.lineWidth = 0.5;
+      mtx.beginPath(); mtx.moveTo(pa[0], pa[1]); mtx.lineTo(pb[0], pb[1]); mtx.stroke();
+    });
+    NEURONS.forEach(function (n) {
+      var p = mm(n.x, n.y);
+      mtx.fillStyle = GROUP_COLORS[n.group];
+      mtx.globalAlpha = 0.4 + n.fire * 0.6;
+      mtx.beginPath(); mtx.arc(p[0], p[1], 2.5, 0, Math.PI * 2); mtx.fill();
+      mtx.globalAlpha = 1;
+    });
+    // Viewport indicator
+    mtx.strokeStyle = "rgba(255,255,255,.4)"; mtx.lineWidth = 1;
+    var vw = 120 / scale, vh = 90 / scale;
+    mtx.strokeRect(60 - vw/2 - offsetX/8, 45 - vh/2 - offsetY/8, vw, vh);
+  }
+  minimap.addEventListener("click", function () { scale = 1; offsetX = 0; offsetY = 0; });
+  setInterval(drawMinimap, 500);
+
+  // Pass 17: help overlay toggle
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "?" && e.target.tagName !== "INPUT") {
+      var h = document.getElementById("help-overlay");
+      h.style.display = h.style.display === "flex" ? "none" : "flex";
+    }
+  });
+  document.getElementById("help-overlay").addEventListener("click", function (e) {
+    if (e.target.id === "help-overlay") e.target.style.display = "none";
+  });
+
+  function loop() { simulate(); draw(); requestAnimationFrame(loop); }
+
+  // Pass 19: hide loading, start
+  resize();
+  document.getElementById("loading").style.display = "none";
+  loop();
+
+  // Pass 18: expose for accessibility/debugging
+  window.AurixBrain = { neurons: NEURONS, fire: function (id) { var n = neuronById(id); if (n) n.fire = 1; } };
+})();
+</script>
+</body>
+</html>
