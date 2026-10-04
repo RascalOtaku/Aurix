@@ -5,12 +5,21 @@ Uses qwen3.5:9b (teacher) via Ollama to generate training data for the
 Aurix 0.5B student model.
 
 Phase 1: Seed examples (hand-written, high quality)
-Phase 2: Teacher expansion (5x variations per seed)
+Phase 2: Teacher expansion (3x variations per seed)
 Phase 3: Filter and format as ChatML
+
+Covers: personality, tools, domain, tasks, JSON reliability,
+error recovery, code review, conductor, voice/text styles, brevity.
 """
 import json
 import requests
 import random
+import sys
+import os
+
+# Import ecosystem seeds
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ecosystem_seeds import ALL_ECOSYSTEM_SEEDS
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 TEACHER_MODEL = "qwen3.5:9b"
@@ -150,6 +159,9 @@ def main():
         (DOMAIN_SEEDS, "domain"),
         (TASK_SEEDS, "tasks"),
     ]
+    # Add ecosystem seeds (gap coverage)
+    for category, seed_list in ALL_ECOSYSTEM_SEEDS.items():
+        seeds.append((seed_list, category))
     for seed_list, category in seeds:
         print(f"\nCategory: {category} ({len(seed_list)} seeds)")
         for seed in seed_list:
