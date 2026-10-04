@@ -36,6 +36,16 @@ Everything new is **opt-in**: nothing below starts, downloads or calls out until
 | ada_local: wake word + Whisper + Piper; Pipecat-style barge-in | The voice script (openWakeWord + Faster-Whisper + Piper) now works on Python 3.13+, talks to the real chat API (session + token), and stops talking when you say the wake word | `patches/7070/06-aurix-voice-os.py`, `patches/7070/VOICE-README.md` | see the README |
 | [Frigate NVR](https://github.com/blakeblackshear/frigate) (MIT) | Camera detections as alerts with a per-camera cooldown, optionally described by the vision model; read-only | `src/foundation/frigate.py` | `AURIX_FRIGATE_URL` |
 
+### The homelab apps already running
+
+| App | From chat | Where | Turn it on |
+|---|---|---|---|
+| Pi-hole (v6 API) | `ads` stats, `pause ads 10m` (capped at an hour, switches itself back on), `resume ads`; every login session is closed again | `src/foundation/homeapps.py` | `AURIX_PIHOLE_URL`, `AURIX_PIHOLE_PASSWORD` |
+| Jellyfin | `tv`: what is playing on which device; `pause tv` / `resume tv` | same | `AURIX_JELLYFIN_URL`, `AURIX_JELLYFIN_API_KEY` |
+| Uptime Kuma | `kuma`: up/down and 24 h uptime of every monitor on a status page (read-only; Kuma keeps doing its own alerts) | same | `AURIX_KUMA_URL`, `AURIX_KUMA_STATUS_PAGE` |
+
+The tiny intent router knows these too ("is the TV paused?", "kill the ads for ten minutes").
+
 ## Overlapping projects: the best idea from each, added
 
 | Starred repo | Idea taken | Where | Turn it on |

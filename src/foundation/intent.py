@@ -21,7 +21,8 @@ import urllib.request
 from typing import Callable, Optional, Tuple
 
 ROUTABLE = frozenset({"look", "home", "home_switch", "printer", "fab_status", "disk", "homelab", "status", "doctor", "level",
-                      "games", "version", "unwrap", "earnings", "dashboard"})
+                      "games", "version", "unwrap", "earnings", "dashboard", "pihole", "pihole_pause", "pihole_resume", "tv",
+                      "tv_pause", "tv_resume", "kuma"})
 TIMEOUT = 8
 MIN_CONFIDENCE = 0.75
 SYSTEM = """You map one chat message to at most one command from this list, or to nothing.
@@ -31,6 +32,9 @@ Commands:
 - lights                    (list lights, plugs, fans and their state)
 - turn on <device name>     / turn off <device name> / toggle <device name>
 - printer                   (3D printer status / progress)
+- ads                       (Pi-hole ad-blocking stats)  / pause ads <minutes> / resume ads
+- tv                        (what is playing on Jellyfin) / pause tv / resume tv
+- kuma                      (Uptime Kuma: which services are up or down)
 - parts                     (3D parts designed so far)
 - disk                      (server disk space)
 - homelab                   (are the home servers up)

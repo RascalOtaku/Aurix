@@ -550,24 +550,58 @@ def _model_label(source: Optional[str]) -> str:
     return "AURIX's free local model" if source == "local" else config()["model"]
 
 
+# Rejections a focused re-prompt can fix (format problems). Everything else - a risky call, a protected path, too big, too many
+# files, nothing worth changing - is a safety or judgement call and is never retried (Muse's repair-loop patch, 2026-10-03: 54 of
+# 67 rejected drafts were thrown away, most for fixable format problems).
+REPAIRABLE = ("the reply was not the JSON I asked for", "a file entry had no path", "appears twice", "a malformed edit",
+              "an edit's `find` text matched", "the edit changes nothing", "does not parse", "it did not include a new test file",
+              "existing files may only be changed with `edits`", "a new file needs `content`")
+REPAIR_MAX_TRIES = 2
+
+
+def is_repairable(why: str) -> bool:
+    return any(marker in (why or "") for marker in REPAIRABLE)
+
+
+def repair_hint(why: str) -> str:
+    """The rejection reason plus the one concrete instruction that fixes that kind of rejection."""
+    tip = ""
+    if "`find` text matched" in why:
+        tip = " Pick a SHORTER, more distinctive `find` snippet, copied character for character from the file, that occurs exactly once."
+    elif "new test file" in why:
+        tip = " Add a new file tests/test_upgrade_<short_name>.py with a unittest that fails without your change."
+    elif "not the JSON" in why:
+        tip = " Output one valid JSON object and nothing else (no prose, no code fences)."
+    elif "does not parse" in why:
+        tip = " Fix the syntax error at the line given."
+    return (f"That cannot be used: {why}.{tip} Fix ONLY that - same approach, no extra files, no bigger diff. "
+            "Reply again with ONLY the corrected JSON object.")
+
+
 def _repair_or_drop(item, user_text, text, why, post, run, now, model_used):
-    """The reply did not validate: give the engineer ONE chance, with the reason."""
-    meta: Dict[str, str] = {}
-    reply, err = _call_engineer(user_text, post, [{"role": "assistant", "content": text[:6000]},
-                                                  {"role": "user", "content": f"That cannot be used: {why}. Reply again with ONLY the corrected JSON object."}],
-                                 meta=meta)
-    _record_usage(len(user_text), len(reply or ""), False)
-    if reply is None:
+    """The reply did not validate: up to REPAIR_MAX_TRIES focused rounds for a fixable FORMAT problem; safety and judgement
+    rejections are dropped at once."""
+    if not is_repairable(why):
         audit.append("upgrade_discarded", item=item["id"], why=why[:80])
         return None, why
-    model_used = _model_label(meta.get("source"))                               # the repair round can answer from a different source than the first attempt
-    from src.foundation.planner import extract_json
-    obj = extract_json(reply)
-    changes, why2 = build_changes(obj)
-    if changes is None:
-        audit.append("upgrade_discarded", item=item["id"], why=why2[:80])
-        return None, why2
-    return _test_and_file(item, obj, changes, run, now, user_text, reply, post, repaired=True, model_used=model_used)
+    for _ in range(REPAIR_MAX_TRIES):
+        meta: Dict[str, str] = {}
+        reply, err = _call_engineer(user_text, post, [{"role": "assistant", "content": text[:6000]},
+                                                      {"role": "user", "content": repair_hint(why)}], meta=meta)
+        _record_usage(len(user_text), len(reply or ""), False)
+        if reply is None:
+            break
+        model_used = _model_label(meta.get("source"))                           # a repair round can answer from a different source
+        from src.foundation.planner import extract_json
+        obj = extract_json(reply)
+        changes, why = build_changes(obj)
+        if changes is not None:
+            return _test_and_file(item, obj, changes, run, now, user_text, reply, post, repaired=True, model_used=model_used)
+        if not is_repairable(why):                                              # the "fix" introduced a safety problem: stop
+            break
+        text = reply
+    audit.append("upgrade_discarded", item=item["id"], why=why[:80])
+    return None, why
 
 
 def _test_and_file(item, obj, changes, run, now, user_text, text, post, repaired, model_used):

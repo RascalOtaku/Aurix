@@ -37,6 +37,7 @@ from src.foundation import printer as fprinter
 from src.foundation import smarthome
 from src.foundation import vision
 from src.foundation import frigate
+from src.foundation import homeapps
 from src.foundation.land import hub as land
 from src.foundation import evolve
 from src.foundation import evolve_domains  # noqa: F401 - import-time side effect: registers the "forge_guidance" domain
@@ -125,6 +126,14 @@ _PATTERNS = [
     ("games", re.compile(r"^\s*/?(?:games|steam|my\s+games)\s*$", re.I)),
     ("fixes", re.compile(r"^\s*/?(?:fixes|game\s+fixes)\s*$", re.I)),
     ("shards", re.compile(r"^\s*/?(?:shards|helpers|workers|what(?:'s| is)\s+running|autonomy)\s*\??\s*$", re.I)),
+    # homelab apps (before the generic pause/resume <helper> patterns, which would otherwise take "pause pihole")
+    ("pihole_pause", re.compile(r"^\s*/?(?:pause|disable)\s+(?:the\s+)?(?:ads|ad\s*block(?:ing|er)?|pi-?hole)(?:\s+(?:for\s+)?(\d{1,3})\s*(?:m|min|mins|minutes?)?)?\s*$", re.I)),
+    ("pihole_resume", re.compile(r"^\s*/?(?:resume|enable|unpause)\s+(?:the\s+)?(?:ads|ad\s*block(?:ing|er)?|pi-?hole)\s*$", re.I)),
+    ("pihole", re.compile(r"^\s*/?(?:pi-?hole|ads|ad\s*block(?:ing|er)?)\s*\??\s*$", re.I)),
+    ("tv_pause", re.compile(r"^\s*/?pause\s+(?:the\s+)?(?:tv|jellyfin|movie|show|playback)\s*$", re.I)),
+    ("tv_resume", re.compile(r"^\s*/?(?:resume|unpause|play)\s+(?:the\s+)?(?:tv|jellyfin|movie|show|playback)\s*$", re.I)),
+    ("tv", re.compile(r"^\s*/?(?:tv|jellyfin|what'?s\s+playing|now\s+playing)\s*\??\s*$", re.I)),
+    ("kuma", re.compile(r"^\s*/?(?:kuma|uptime(?:\s+kuma)?)\s*\??\s*$", re.I)),
     ("shard_pause", re.compile(r"^\s*/?pause\s+(all|(?!standing\b)[a-z][a-z_]{2,20})\s*$", re.I)),
     ("shard_resume", re.compile(r"^\s*/?resume\s+(all|(?!standing\b)[a-z][a-z_]{2,20})\s*$", re.I)),
     ("gp_pair", re.compile(r"^\s*/?pair\s+(\d{6})\s*$", re.I)),
@@ -1019,6 +1028,18 @@ class Foundation:
             return await asyncio.to_thread(fprinter.status_text)
         if kind == "look":
             return await asyncio.to_thread(vision.look, arg)
+        if kind == "pihole":
+            return await asyncio.to_thread(homeapps.pihole_status)
+        if kind == "pihole_pause":
+            return await asyncio.to_thread(homeapps.pihole_pause, int(arg) if arg.isdigit() else 5)
+        if kind == "pihole_resume":
+            return await asyncio.to_thread(homeapps.pihole_resume)
+        if kind == "tv":
+            return await asyncio.to_thread(homeapps.tv_status)
+        if kind in ("tv_pause", "tv_resume"):
+            return await asyncio.to_thread(homeapps.tv_control, kind[3:])
+        if kind == "kuma":
+            return await asyncio.to_thread(homeapps.kuma_status)
         if kind == "home":
             return await asyncio.to_thread(smarthome.overview)
         if kind == "home_switch":

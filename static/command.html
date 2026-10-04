@@ -352,6 +352,14 @@ try {
   const wanted = localStorage.getItem("aurix-command-tab");
   if (wanted && document.querySelector(`.tabpanel[data-tab="${wanted}"]`)) showTab(wanted);
 } catch (e) { /* private mode: stay on the default tab */ }
+// Keyboard (Muse's QoL patch): 1-6 switch tabs, r refreshes now. Ignored while typing in a field.
+document.addEventListener("keydown", (ev) => {
+  if (ev.ctrlKey || ev.metaKey || ev.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test((ev.target && ev.target.tagName) || "")) return;
+  const tabs = [...document.querySelectorAll(".tabbtn")];
+  const n = parseInt(ev.key, 10);
+  if (n >= 1 && n <= tabs.length) { showTab(tabs[n - 1].dataset.tab); ev.preventDefault(); }
+  else if (ev.key === "r" || ev.key === "R") { if (typeof poll === "function") { poll(); ev.preventDefault(); } }
+});
 
 let state = null;
 

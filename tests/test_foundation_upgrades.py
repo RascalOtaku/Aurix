@@ -280,6 +280,31 @@ class DraftTests(_Base):
         self.assertIn("did not include a new test", why2)
         self.assertEqual(len([x for x in upgrades.all_proposals()]), 1)
 
+    def test_two_repair_rounds_for_a_format_problem_with_a_concrete_hint(self):
+        self.on()
+        bad = dict(GOOD, files=[GOOD["files"][0]])                                                     # no test file
+        seen = []
+        inner = fake_post(bad, bad, GOOD)
+
+        def post(url, headers, body, timeout):
+            seen.append(body["messages"][-1]["content"])
+            return inner(url, headers, body, timeout)
+        p, why = upgrades.draft(upgrades.next_item(), post, sandbox_ok())
+        self.assertIsNotNone(p, why)                                                                    # rescued on the 2nd repair round
+        self.assertEqual(len(seen), 3)
+        self.assertIn("tests/test_upgrade_", seen[1])                                                  # the hint says exactly what to add
+
+    def test_safety_rejections_are_never_retried(self):
+        self.on()
+        self.assertFalse(upgrades.is_repairable("src/x.py: new code uses `subprocess`, which I do not allow in an automatic upgrade"))
+        self.assertFalse(upgrades.is_repairable("the change is 900 lines (limit 120); too big to review from a phone"))
+        self.assertTrue(upgrades.is_repairable("src/x.py: an edit's `find` text matched 3 times (must be exactly once)"))
+        with mock.patch.object(upgrades, "build_changes", return_value=(None, "src/x.py is a protected component")):
+            calls = []
+            p, why = upgrades.draft(upgrades.next_item(), lambda *a: calls.append(1) or (200, {"content": [{"type": "text", "text": "{}"}]}), sandbox_ok())
+        self.assertIsNone(p)
+        self.assertEqual(len(calls), 1)                                                                 # the first draft only: no repair call
+
     def test_a_change_that_breaks_a_passing_test_is_repaired_once_or_thrown_away(self):
         self.on()
         broke = sandbox_ok(after_failed=["test_double (tests.test_foundation_toy.T.test_double)"])
