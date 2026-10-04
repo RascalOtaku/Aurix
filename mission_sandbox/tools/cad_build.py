@@ -2,7 +2,7 @@
 """cad_build.py - a parametric part from a build123d script -> printable STL + report.json (the idea of
 nazirlouis/ada_v2's CAD agent, MIT: describe a part, get an editable model, not a mesh guessed by an AI).
 
-    python3 cad_build.py --script part.py --output part.stl --report report.json [--bed 220x220x250]
+    /opt/cad/bin/python cad_build.py --script part.py --output part.stl --report report.json [--bed 220x220x250]
     python3 cad_build.py --selftest        # builds a bracket; proves build123d + trimesh work
 
 The script is ordinary build123d code and must leave the finished solid in a variable named `result`, e.g.
@@ -121,7 +121,11 @@ def main(argv=None):
     ap.add_argument("--selftest", action="store_true")
     a = ap.parse_args(argv)
     if a.selftest:
-        return selftest()
+        try:
+            return selftest()
+        except ImportError as e:
+            print(f"ERROR: the CAD layer is not installed in this sandbox image ({e}); rebuild with the CAD layer", file=sys.stderr)
+            return 2
     if not (a.script and a.output):
         ap.error("--script and --output are required")
     try:

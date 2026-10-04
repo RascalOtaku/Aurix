@@ -99,7 +99,7 @@ jobs:
         # The CAD layer is optional in the Dockerfile (never fails the build), so this is what notices if it broke.
         run: |
           docker run --rm --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 \
-            -e HOME=/tmp aurix-sandbox:ci python3 /opt/tools/cad_build.py --selftest
+            -e HOME=/tmp aurix-sandbox:ci /opt/cad/bin/python /opt/tools/cad_build.py --selftest
       - name: Boot the sandbox (fail-closed token, read-only, no capabilities) and wait for /health
         run: |
           docker run -d --name sbx -p 127.0.0.1:8765:8765 -e SANDBOX_TOKEN="$(openssl rand -hex 16)" \

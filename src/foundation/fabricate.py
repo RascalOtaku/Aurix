@@ -191,7 +191,8 @@ def _build(ws_id: str, ws: Path, code: str, run: Runner) -> Tuple[Optional[dict]
     (ws / "part.py").write_text(code, encoding="utf-8")
     for stale in ("part.stl", "report.json", "cost.md"):
         (ws / stale).unlink(missing_ok=True)
-    res = run(ws_id, "bash", "python3 /opt/tools/cad_build.py --script part.py --output part.stl --report report.json"
+    res = run(ws_id, "bash", "CAD_PY=/opt/cad/bin/python; [ -x \"$CAD_PY\" ] || CAD_PY=python3; "        # the CAD layer's own venv
+                             "\"$CAD_PY\" /opt/tools/cad_build.py --script part.py --output part.stl --report report.json"
                              " && python3 /opt/tools/print_cost.py --report report.json --out cost.md", BUILD_TIMEOUT)
     report = _read(ws / "report.json", None)
     if res.get("exit_code", 1) != 0 or not isinstance(report, dict) or not (ws / "part.stl").is_file():

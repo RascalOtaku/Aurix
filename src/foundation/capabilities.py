@@ -97,7 +97,7 @@ REGISTRY: Dict[str, Capability] = {c.id: c for c in [
     Capability("claude-fallback", "Claude last-resort drafter (needs ANTHROPIC_API_KEY, off by default)",
                "credential", "ANTHROPIC_API_KEY", aliases=("claude",)),
     # fabrication lane (src/foundation/fabricate.py): CAD and slicing live in the sandbox's optional CAD layer
-    Capability("build123d", "Parametric CAD (build123d), runs inside the isolated sandbox", "python_pkg", "build123d",
+    Capability("build123d", "Parametric CAD (build123d, its own venv), runs inside the isolated sandbox", "binary", "/opt/cad/bin/python",
                InstallPlan("dockerfile", "docker compose build sandbox  (optional layer: mission_sandbox/requirements-cad.txt)"),
                ("cad",)),
     Capability("prusa-slicer", "PrusaSlicer command line (STL -> G-code), in the sandbox", "binary", "prusa-slicer",

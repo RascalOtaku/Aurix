@@ -38,9 +38,8 @@ RUN npm install -g openclaw@latest --allow-scripts=openclaw \
 # (an exported .ini in data/fabricate/). Neither ever fails the build: without them the lane stops at the STL and
 # says so.
 COPY requirements-cad.txt /tmp/requirements-cad.txt
-RUN pip freeze > /tmp/constraints-cad.txt \
-    && pip install --no-cache-dir -c /tmp/constraints-cad.txt -r /tmp/requirements-cad.txt \
-    || echo "CAD layer not installed (optional): the fabrication lane will report it"
+RUN (python -m venv /opt/cad && /opt/cad/bin/pip install --no-cache-dir -r /tmp/requirements-cad.txt) \
+    || (rm -rf /opt/cad; echo "CAD layer not installed (optional): the fabrication lane will report it")
 # PrusaSlicer adds a few hundred MB (GUI libraries), so it is opt-in: AURIX_SANDBOX_SLICER=1 in .env, then
 # `docker compose build sandbox`. Its command line slices headless (no display needed).
 ARG WITH_SLICER=0
