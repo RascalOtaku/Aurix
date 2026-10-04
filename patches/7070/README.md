@@ -47,6 +47,21 @@ retried.
 switch to `build_changes_with_repair(obj, task_text, raw_reply, _call_engineer)`.
 Returns `(changes, why, tries_used)`.
 
+## 3. Command center QoL: keyboard shortcuts, tab persistence, auto-refresh
+
+**File:** `03-command-center-qol.patch`
+
+**Problem:** The command center (7 tabs) has no keyboard shortcuts, forgets
+the active tab on reload, and data goes stale with no auto-refresh.
+
+**Fix:** Additive JS snippet (no existing logic touched):
+- `1-7` switches tabs, `r` triggers refresh
+- Active tab persisted to localStorage, restored on load
+- Auto-refresh every 60s, toggleable via `window.aurixAutoRefresh(bool)`,
+  persisted; off by default. Add `<button id="autorefresh-toggle">` in the
+  header and wire its click to `aurixAutoRefresh(toggle)`.
+- Refresh hooks: calls `window.aurixRefresh(quiet)` if defined, else `loadAll(quiet)`.
+
 ## 2. LandPilot mission m-2c74b3 still looping (P0) — MANUAL STEP
 
 **Problem:** The mission keeps issuing multiple tool calls per message and
