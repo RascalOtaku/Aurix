@@ -18,17 +18,33 @@ Records are emitted through the standard `logging` module with the marker
 ``silenced_failure`` as the first token, so they can be found with a plain
 text search (e.g. ``grep silenced_failure``) or any log aggregator query.
 `record()` never raises: logging must not break the scheduler it instruments.
+
+Each record is ALSO captured in a bounded in-memory ring (`_store`,
+newest evicted last, max 200 entries) holding only timestamp, module,
+exc_type, exc_msg, context, and level name — again no payloads or secrets.
+`get_records()` exposes the ring for the user-visible surface
+(`GET /api/scheduler/failures`).
 """
 
 from __future__ import annotations
 
 import logging
+import threading
 import traceback
+from collections import deque
+from datetime import datetime, timezone
 
 MARKER = "silenced_failure"
 
 # Bound the traceback so one pathological failure can't flood the log.
 _MAX_TRACEBACK_CHARS = 4000
+
+# In-memory ring of the most recent failure records. Bounded so a failure
+# storm can't grow memory without limit; thread-safe because scheduler loops
+# and the web handler run on different threads.
+_STORE_MAXLEN = 200
+_store: deque = deque(maxlen=_STORE_MAXLEN)
+_store_lock = threading.Lock()
 
 
 def record(
@@ -43,8 +59,28 @@ def record(
     `logger` should be the swallowing module's own logger (its name becomes
     the `module=` field). `level` is WARNING for genuine failures and DEBUG
     for expected control-flow swallows (e.g. CancelledError, TaskNoop) and
-    routine malformed-input skips. Never raises.
+    routine malformed-input skips. The record is appended to the in-memory
+    store as well as logged. Never raises.
     """
+    # Capture into the in-memory store first, so the record survives even
+    # if the logging machinery itself fails below.
+    try:
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "module": logger.name,
+            "exc_type": type(exc).__name__,
+            "exc_msg": str(exc),
+            "context": context,
+            "level": logging.getLevelName(level),
+        }
+    except Exception:
+        entry = None
+    if entry is not None:
+        try:
+            with _store_lock:
+                _store.append(entry)
+        except Exception:
+            pass
     try:
         tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
         if len(tb) > _MAX_TRACEBACK_CHARS:
@@ -64,3 +100,30 @@ def record(
         # one deliberate silent guard in the codebase: if the logging
         # machinery itself fails, there is nothing left to report to.
         pass
+
+
+def get_records(limit: int = 50, level: str | None = None) -> list[dict]:
+    """Return stored failure records, most recent first. Never raises.
+
+    `limit` is clamped to [0, 200]. `level` optionally filters to a level
+    name such as "warning" or "debug" (case-insensitive). Returned dicts
+    are copies; mutating them does not affect the store.
+    """
+    try:
+        n = max(0, min(int(limit), _STORE_MAXLEN))
+    except Exception:
+        n = 50
+    want = ""
+    try:
+        want = (level or "").strip().upper()
+    except Exception:
+        want = ""
+    try:
+        with _store_lock:
+            items = list(_store)
+    except Exception:
+        return []
+    items.reverse()  # oldest-first deque -> most-recent-first
+    if want:
+        items = [r for r in items if r.get("level") == want]
+    return [dict(r) for r in items[:n]]
