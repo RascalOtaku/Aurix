@@ -18,9 +18,15 @@ def detect_resource_mode() -> str:
     """'ultra-low' (<4GB RAM) | 'low' (4-8GB) | 'normal' (8-16GB) | 'gpu' (>=16GB with a local CUDA GPU) |
     'high' (>=16GB, no local GPU). Never raises: psutil is a hard dependency (requirements.txt) but a local GPU
     is not expected on this container - the real GPU lives on a separate machine, reached over the network."""
-    import psutil
+    try:
+        import psutil
 
-    total_mem_gb = psutil.virtual_memory().total / (1024 ** 3)
+        total_mem_gb = psutil.virtual_memory().total / (1024 ** 3)
+    except Exception:
+        # Contract is "never raises": a missing/broken psutil must not take down startup.
+        logger.warning("psutil unavailable; defaulting resource mode to 'normal'")
+        return "normal"
+
     has_gpu = False
     try:
         import torch
