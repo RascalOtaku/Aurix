@@ -16,6 +16,8 @@ import logging
 
 from src import bg_jobs
 
+from src.failure_log import record
+
 logger = logging.getLogger(__name__)
 
 _monitor_task = None
@@ -23,6 +25,22 @@ POLL_INTERVAL_S = 5
 # The follow-up agent run is allowed a few rounds to actually continue the task
 # (e.g. after `pip install` finishes, run the transcription).
 _FOLLOWUP_MAX_ROUNDS = 12
+
+
+def _decode_sse_body(body: str):
+    """Parse one SSE response body from the follow-up agent stream.
+
+    Returns the decoded dict, or None when the chunk is malformed or not a
+    dict — both are routine in a streaming protocol and simply skipped.
+    Extracted from `_drain_agent` so the failure path is unit-testable.
+    """
+    try:
+        d = json.loads(body)
+    except (ValueError, TypeError) as e:
+        record(logger, e, context="bg-monitor followup stream: skipping malformed chunk",
+               level=logging.DEBUG)
+        return None
+    return d if isinstance(d, dict) else None
 
 
 async def _drain_agent(sess, messages):
@@ -46,11 +64,8 @@ async def _drain_agent(sess, messages):
         body = chunk[6:].strip()
         if not body or body == "[DONE]":
             continue
-        try:
-            d = json.loads(body)
-        except (ValueError, TypeError):
-            continue
-        if not isinstance(d, dict):
+        d = _decode_sse_body(body)
+        if d is None:
             continue
         if "delta" in d:
             full += d["delta"]
@@ -66,6 +81,25 @@ async def _drain_agent(sess, messages):
                 "exit_code": d.get("exit_code"),
             })
     return full, tool_events
+
+
+def _should_defer(sess_id: str, job_id) -> bool:
+    """True if the session is mid-stream (the follow-up must wait a tick).
+
+    A failing liveness check is treated as "not busy" — the follow-up
+    proceeds rather than stalling forever. Extracted from `_run_followup`
+    so the failure path is unit-testable.
+    """
+    try:
+        from src import agent_runs
+        if agent_runs.is_active(sess_id):
+            logger.info("bg-followup: session %s busy (live turn) — deferring job %s",
+                        sess_id, job_id)
+            return True
+    except Exception as e:
+        record(logger, e, context="bg-followup defer check failed; proceeding without deferral",
+               level=logging.WARNING)
+    return False
 
 
 async def _run_followup(rec: dict) -> bool:
@@ -89,13 +123,8 @@ async def _run_followup(rec: dict) -> bool:
     # history + save_sessions(); a concurrent live turn does the same, and with
     # no per-session lock the two interleave (reordered/clobbered messages).
     # Defer — return False so we retry on the next tick once the turn finishes.
-    try:
-        from src import agent_runs
-        if agent_runs.is_active(sess.id):
-            logger.info("bg-followup: session %s busy (live turn) — deferring job %s", sess.id, rec.get("id"))
-            return False
-    except Exception:
-        pass
+    if _should_defer(sess.id, rec.get("id")):
+        return False
 
     inject = (
         f"[Background job {rec['id']} finished]\n\n"
