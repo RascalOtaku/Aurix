@@ -22,7 +22,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.foundation import audit
 
@@ -70,11 +70,27 @@ def _load() -> dict:
 
 
 def _save(state: dict) -> None:
-    p = _state_path()
-    p.parent.mkdir(parents=True, exist_ok=True)
-    tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state), encoding="utf-8")
-    os.replace(tmp, p)
+    """Best-effort atomic state write. Never raises: poll() documents
+    "Never raises", and a full disk or read-only data dir must degrade to
+    re-alerting, not a standing-tick crash. _load() already tolerates a
+    missing state file, so the write side matches."""
+    try:
+        p = _state_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state), encoding="utf-8")
+        os.replace(tmp, p)
+    except OSError:
+        pass
+
+
+def _num(v: Any) -> float:
+    """float(v) or 0.0. Frigate payloads and the on-disk state are external
+    input; a malformed number must not break the poll (see "Never raises")."""
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _get(url: str) -> Tuple[int, bytes]:
@@ -100,7 +116,7 @@ def poll(now: Optional[float] = None, get: Optional[Get] = None, describe: Optio
     if "after" not in state:                                   # first run: start from now, never replay history
         _save({"after": now, "last": {}})
         return []
-    params = {"after": f"{float(state['after']):.3f}", "labels": ",".join(_labels()), "limit": str(MAX_EVENTS), "has_snapshot": "1"}
+    params = {"after": f"{_num(state.get('after')):.3f}", "labels": ",".join(_labels()), "limit": str(MAX_EVENTS), "has_snapshot": "1"}
     cams = _cameras()
     if cams:
         params["cameras"] = ",".join(sorted(cams))
@@ -112,16 +128,16 @@ def poll(now: Optional[float] = None, get: Optional[Get] = None, describe: Optio
     if not isinstance(events, list):
         return []
     last: Dict[str, float] = state.get("last") or {}
-    newest = float(state["after"])
+    newest = _num(state.get("after"))
     out: List[str] = []
-    for ev in sorted((x for x in events if isinstance(x, dict)), key=lambda x: float(x.get("start_time") or 0)):
-        start = float(ev.get("start_time") or 0)
+    for ev in sorted((x for x in events if isinstance(x, dict)), key=lambda x: _num(x.get("start_time"))):
+        start = _num(ev.get("start_time"))
         newest = max(newest, start)
         cam, label = str(ev.get("camera", "?")), str(ev.get("label", "?")).lower()
         if label not in _labels() or (cams and cam not in cams):
             continue
         key = f"{cam}/{label}"
-        if key in last and start - float(last[key]) < _cooldown():
+        if key in last and start - _num(last[key]) < _cooldown():
             continue
         last[key] = start
         score = _score(ev)
@@ -131,7 +147,11 @@ def poll(now: Optional[float] = None, get: Optional[Get] = None, describe: Optio
             try:
                 code, jpg = get(f"{base_url()}/api/events/{urllib.parse.quote(str(ev['id']))}/snapshot.jpg")
                 if code == 200 and jpg:
-                    text += "\n" + describe(jpg)
+                    try:
+                        text += "\n" + describe(jpg)
+                    except Exception:  # noqa: BLE001 - a failing vision model must not break the poll;
+                                       # the alert still goes out, minus the one-line description
+                        pass
             except (urllib.error.URLError, OSError):
                 pass
         text += f"\n{e(base_url())}/review"
