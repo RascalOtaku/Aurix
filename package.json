@@ -2,7 +2,7 @@
   "name": "aurix",
   "version": "0.9.1",
   "devDependencies": {
-    "@antithesishq/bombadil": "^0.7.7"
+    "@antithesishq/bombadil": "^0.7.8"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0"
