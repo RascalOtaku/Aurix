@@ -18,6 +18,8 @@ import asyncio
 import logging
 from typing import AsyncGenerator, Dict, Optional
 
+from src.failure_log import record
+
 logger = logging.getLogger(__name__)
 
 
@@ -89,8 +91,10 @@ async def _drain(session_id: str, agen: AsyncGenerator[str, None],
             await asyncio.wait({prev_task})
         except asyncio.CancelledError:
             raise            # our own cancellation — propagate
-        except Exception:
-            pass
+        except Exception as e:
+            record(logger, e,
+                   context=f"agent run {session_id}: previous run drain failed",
+                   level=logging.WARNING)
     try:
         async for ev in agen:
             run.buffer.append(ev)
@@ -98,8 +102,10 @@ async def _drain(session_id: str, agen: AsyncGenerator[str, None],
             for q in list(run.subscribers):
                 try:
                     q.put_nowait((seq, ev))
-                except Exception:
-                    pass
+                except Exception as e:
+                    record(logger, e,
+                           context=f"agent run {session_id}: subscriber fanout failed",
+                           level=logging.DEBUG)
         if run.status == "running":
             run.status = "done"
     except asyncio.CancelledError:
@@ -108,8 +114,10 @@ async def _drain(session_id: str, agen: AsyncGenerator[str, None],
         # the partial response to the session).
         try:
             await agen.aclose()
-        except Exception:
-            pass
+        except Exception as e:
+            record(logger, e,
+                   context=f"agent run {session_id}: generator aclose failed",
+                   level=logging.WARNING)
     except Exception as e:
         logger.error("[agent-run] %s failed: %s", session_id, e, exc_info=True)
         run.status = "error"
@@ -118,8 +126,10 @@ async def _drain(session_id: str, agen: AsyncGenerator[str, None],
         for q in list(run.subscribers):
             try:
                 q.put_nowait((None, None))
-            except Exception:
-                pass
+            except Exception as e:
+                record(logger, e,
+                       context=f"agent run {session_id}: end-sentinel delivery failed",
+                       level=logging.DEBUG)
         # Run is terminal — arm the grace timer so it (and its buffer) is
         # eventually freed even if nobody ever reconnects. subscribe() cancels
         # this on connect and re-arms on disconnect.

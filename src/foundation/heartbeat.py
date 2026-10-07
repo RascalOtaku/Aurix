@@ -8,6 +8,7 @@ noticed (the file alone cannot show that).
 from __future__ import annotations
 
 import html
+import logging
 import time
 from typing import Optional
 
@@ -18,7 +19,11 @@ from src.foundation import audit
 from src.foundation import mission as ms
 from src.foundation import standing as st
 
+from src.failure_log import record
+
 _AUDIT_TS = "%Y-%m-%dT%H:%M:%S%z"
+
+logger = logging.getLogger(__name__)
 
 
 def activity_summary(hours: int = 24, now_ts: Optional[float] = None) -> str:
@@ -29,7 +34,9 @@ def activity_summary(hours: int = 24, now_ts: Optional[float] = None) -> str:
         try:
             if datetime.strptime(rec.get("ts", ""), _AUDIT_TS).timestamp() >= since:
                 counts[rec.get("event", "?")] += 1
-        except ValueError:
+        except ValueError as e:
+            record(logger, e, context="heartbeat activity summary: skipping bad timestamp",
+                   level=logging.DEBUG)
             continue
     if not counts:
         return f"Last {hours}h: nothing recorded."
@@ -52,34 +59,36 @@ def waiting_for_you(limit: int = 6) -> str:
     e = html.escape
     lines = []
 
-    def add(fn, render):
+    def add(fn, render, label):
         try:
             for x in fn()[:limit]:
                 lines.append(render(x))
-        except Exception:
-            pass
+        except Exception as e:
+            record(logger, e, context=f"heartbeat waiting-for-you: section {label} failed",
+                   level=logging.WARNING)
     from src.foundation import content, forge, freelance, gaming, learning, memory, repos, teacher, upgrades
     from src.foundation.land import hub as land
     from src.foundation import evolve
-    add(gaming.pending, lambda p: f"🎮 {e(p['title'][:70])} - <code>yes {p['id']}</code> / <code>no {p['id']}</code>")
-    add(lambda: [u for u in upgrades.all_proposals() if u["status"] == "review"], lambda u: f"🛠️ Upgrade: {e(u['title'][:60])} - <code>yes {u['id']}</code> / <code>no {u['id']}</code>")
-    add(repos.pending, lambda r: f"📥 {e(r['owner'])}/{e(r['repo'])} - <code>yes {r['id']}</code> / <code>no {r['id']}</code>")
-    add(memory.pending, lambda k: f"🧠 {'Forget' if k.get('kind') == 'forget' else 'Remember'}: {e(k.get('text', '')[:60])} - <code>yes {k['id']}</code> / <code>no {k['id']}</code>")
-    add(lambda: [l for l in teacher.all_lessons() if l.get("status") == "pending"], lambda l: f"🎓 Lesson: {e(l['title'][:60])} - <code>approve lesson {l['id']}</code> / <code>deny lesson {l['id']}</code>")
-    add(freelance.pending, lambda j: f"🧰 {e(j['title'][:60])} - <code>yes {j['id']}</code> / <code>no {j['id']}</code>")
-    add(content.pending, lambda p: f"📝 {e(p['title'][:60])} - <code>yes {p['id']}</code> / <code>no {p['id']}</code>")
-    add(learning.pending, lambda r: f"📚 {e(r['title'][:60])} - <code>yes {r['id']}</code> / <code>no {r['id']}</code>")
-    add(forge.pending, lambda s: f"🛠️ Skill: {e(s['name'])} - <code>approve skill {s['name']}</code> / <code>deny skill {s['name']}</code>")
-    add(land.pending, lambda c: f"🏞️ Land: {e(c.get('label', c.get('property', ''))[:60])} - <code>yes land {c['id']}</code> / <code>no land {c['id']}</code>")
-    add(evolve.all_pending, lambda c: f"🧬 Evolved {e(c['domain'])} (fitness {c['fitness']:.3f}) - <code>yes evolve {c['id']}</code> / <code>no evolve {c['id']}</code>")
+    add(gaming.pending, lambda p: f"🎮 {e(p['title'][:70])} - <code>yes {p['id']}</code> / <code>no {p['id']}</code>", 'gaming')
+    add(lambda: [u for u in upgrades.all_proposals() if u["status"] == "review"], lambda u: f"🛠️ Upgrade: {e(u['title'][:60])} - <code>yes {u['id']}</code> / <code>no {u['id']}</code>", 'upgrades')
+    add(repos.pending, lambda r: f"📥 {e(r['owner'])}/{e(r['repo'])} - <code>yes {r['id']}</code> / <code>no {r['id']}</code>", 'repos')
+    add(memory.pending, lambda k: f"🧠 {'Forget' if k.get('kind') == 'forget' else 'Remember'}: {e(k.get('text', '')[:60])} - <code>yes {k['id']}</code> / <code>no {k['id']}</code>", 'memory')
+    add(lambda: [l for l in teacher.all_lessons() if l.get("status") == "pending"], lambda l: f"🎓 Lesson: {e(l['title'][:60])} - <code>approve lesson {l['id']}</code> / <code>deny lesson {l['id']}</code>", 'teacher')
+    add(freelance.pending, lambda j: f"🧰 {e(j['title'][:60])} - <code>yes {j['id']}</code> / <code>no {j['id']}</code>", 'freelance')
+    add(content.pending, lambda p: f"📝 {e(p['title'][:60])} - <code>yes {p['id']}</code> / <code>no {p['id']}</code>", 'content')
+    add(learning.pending, lambda r: f"📚 {e(r['title'][:60])} - <code>yes {r['id']}</code> / <code>no {r['id']}</code>", 'learning')
+    add(forge.pending, lambda s: f"🛠️ Skill: {e(s['name'])} - <code>approve skill {s['name']}</code> / <code>deny skill {s['name']}</code>", 'forge')
+    add(land.pending, lambda c: f"🏞️ Land: {e(c.get('label', c.get('property', ''))[:60])} - <code>yes land {c['id']}</code> / <code>no land {c['id']}</code>", 'land')
+    add(evolve.all_pending, lambda c: f"🧬 Evolved {e(c['domain'])} (fitness {c['fitness']:.3f}) - <code>yes evolve {c['id']}</code> / <code>no evolve {c['id']}</code>", 'evolve')
     try:
         from src.foundation import shards as _shards
         for r in _shards.stale():
             lines.append(f"⚠️ {e(r['name'])}: {e(r['detail'][:90])}")
         for pid in _shards.paused_ids():
             lines.append(f"⏸️ Paused by you: <code>{pid}</code> (<code>resume {pid}</code>)")
-    except Exception:
-        pass
+    except Exception as e:
+        record(logger, e, context="heartbeat waiting-for-you: shards section failed",
+               level=logging.WARNING)
     if not lines:
         return "✅ <b>Nothing is waiting on you.</b>"
     return "🙋 <b>Waiting for your yes / no</b>\n" + "\n".join(lines[:limit * 2])
@@ -149,15 +158,17 @@ def pulse_digest() -> str:
         yours = projects.Registry().digest_line()
         if yours:
             parts.append(yours)
-    except Exception:
-        pass
+    except Exception as e:
+        record(logger, e, context="heartbeat digest: projects section failed",
+               level=logging.WARNING)
 
     try:
         waiting = waiting_for_you()
         if "Nothing is waiting" not in waiting:
             parts.append(waiting)
-    except Exception:
-        pass
+    except Exception as e:
+        record(logger, e, context="heartbeat digest: waiting-for-you section failed",
+               level=logging.WARNING)
 
     return "\n\n".join(parts)
 
@@ -207,8 +218,9 @@ def self_report(store: Optional[ms.MissionStore] = None, events: int = 5) -> str
         pending = ag.pending_ids()
         lines.append(f"<b>Waiting on you:</b> {', '.join(pending) if pending else 'nothing'}")
         lines.append(f"<b>Gate:</b> mode={ag.gate_mode()}" + (" ⛔ STOP engaged" if ag.stop_engaged() else ""))
-    except Exception:
-        pass
+    except Exception as e:
+        record(logger, e, context="heartbeat self-report: approval-gate section failed",
+               level=logging.WARNING)
 
     v = audit.verify()
     seq, head = audit.head()

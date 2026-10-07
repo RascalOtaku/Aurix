@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import html
 import json
+import logging
 import os
 import shutil
 import time
@@ -18,6 +19,11 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from src.foundation import audit
+
+from src.failure_log import record
+
+logger = logging.getLogger(__name__)
+
 
 e = html.escape
 KEEP_SHIFTS = 30
@@ -65,8 +71,9 @@ def _gift_health(now: float, st: dict) -> Optional[dict]:
     try:
         d = shutil.disk_usage(str(Path(os.getenv("AURIX_PROJECT_ROOT", "/app")) / "data"))
         lines.append(f"disk {round(100 * d.used / d.total)}% used, {round(d.free / 1e9)} GB free")
-    except OSError:
-        pass
+    except OSError as e:
+        record(logger, e, context="nightshift health gift: disk usage check failed",
+               level=logging.WARNING)
     v = audit.verify()
     lines.append(f"audit chain {'intact' if v.ok else 'BROKEN at #' + str(v.bad_seq)} ({v.records} records)")
     try:
@@ -74,14 +81,16 @@ def _gift_health(now: float, st: dict) -> Optional[dict]:
         hist = evals.load_history(1)
         if hist:
             lines.append("self-check " + ", ".join(f"{k} {x['passed']}/{x['total']}" for k, x in hist[-1].get("tiers", {}).items()))
-    except Exception:
-        pass
+    except Exception as e:
+        record(logger, e, context="nightshift health gift: eval history failed",
+               level=logging.WARNING)
     try:
         from src.foundation import shards
         bad = shards.stale(now)
         lines.append("all helpers healthy" if not bad else "needs attention: " + "; ".join(f"{r['name']} ({r['detail'][:60]})" for r in bad[:3]))
-    except Exception:
-        pass
+    except Exception as e:
+        record(logger, e, context="nightshift health gift: helper health check failed",
+               level=logging.WARNING)
     return {"id": "health", "icon": "🩺", "title": "Overnight health check", "body": " · ".join(lines)}
 
 
@@ -176,8 +185,9 @@ def run_shift(now: Optional[float] = None, force: bool = False) -> Dict[str, Any
         from src.foundation import shards
         if shards.is_paused("nightshift"):
             return {"skipped": "paused"}
-    except Exception:
-        pass
+    except Exception as e:
+        record(logger, e, context="nightshift run: pause check failed; running anyway",
+               level=logging.WARNING)
     day = time.strftime("%Y-%m-%d", time.localtime(now))
     st = state()
     if st.get("last_shift_day") == day and not force:
@@ -227,8 +237,9 @@ def unwrap(now: Optional[float] = None, mark_opened: bool = True, waiting: bool 
         try:
             from src.foundation import heartbeat
             lines.append("\n" + heartbeat.waiting_for_you(4))
-        except Exception:
-            pass
+        except Exception as e:
+            record(logger, e, context="nightshift unwrap: waiting-for-you section failed",
+                   level=logging.WARNING)
     if mark_opened:
         log = shifts()
         for s in log:

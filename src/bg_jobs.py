@@ -21,6 +21,7 @@ in the caller (so this stays import-light and unit-testable).
 from __future__ import annotations
 
 import json
+import logging
 import os
 import signal
 import subprocess
@@ -30,6 +31,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core.atomic_io import atomic_write_json
+
+from src.failure_log import record
+
+logger = logging.getLogger(__name__)
+
 
 _DATA_DIR = Path(os.environ.get("DATA_DIR", "data"))
 _JOBS_DIR = _DATA_DIR / "bg_jobs"
@@ -50,8 +56,9 @@ def _load() -> Dict[str, Dict[str, Any]]:
     try:
         if _STORE.exists():
             return json.loads(_STORE.read_text()) or {}
-    except Exception:
-        pass
+    except Exception as e:
+        record(logger, e, context="bg_jobs store load failed; starting with empty store",
+               level=logging.WARNING)
     return {}
 
 
@@ -150,8 +157,9 @@ def _prune(jobs: Dict[str, Dict[str, Any]], now: float) -> bool:
         for p in _JOBS_DIR.glob(f"{jid}.*"):   # .sh .cmd.sh .log .exit
             try:
                 p.unlink()
-            except Exception:
-                pass
+            except Exception as e:
+                record(logger, e, context=f"bg_jobs prune: could not delete {p.name}",
+                       level=logging.WARNING)
     return bool(stale)
 
 
@@ -205,8 +213,9 @@ def _kill(pid: Optional[int]) -> None:
     except Exception:
         try:
             os.kill(pid, signal.SIGTERM)
-        except Exception:
-            pass
+        except Exception as e:
+            record(logger, e, context=f"bg_jobs kill failed for pid {pid}",
+                   level=logging.WARNING)
 
 
 def pending_followups() -> List[Dict[str, Any]]:

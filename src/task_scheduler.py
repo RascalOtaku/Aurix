@@ -10,6 +10,8 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Awaitable, Callable, Dict, Tuple
 
+from src.failure_log import record
+
 logger = logging.getLogger(__name__)
 
 
@@ -235,6 +237,32 @@ RETIRED_HOUSEKEEPING_ACTIONS = frozenset({
 })
 
 
+def _accumulate_stream_chunk(event_str: str, full_text: str, tool_results: list) -> str:
+    """Fold one SSE `data:` chunk from the agent stream into the running text.
+
+    Malformed chunks can never be fatal to a task run: they are recorded as
+    structured failures (DEBUG — routine in a streaming protocol) and skipped.
+    Extracted from `_run_agent_loop` so the failure path is unit-testable.
+    """
+    if not (event_str.startswith("data: ") and not event_str.startswith("data: [DONE]")):
+        return full_text
+    try:
+        data = json.loads(event_str[6:])
+        # Capture text from all event types, not just delta
+        if "delta" in data:
+            full_text += data["delta"]
+        elif data.get("type") == "tool_output":
+            # Tool results — capture summary so we have SOMETHING even
+            # if the model never produces a final text response
+            tool_summary = data.get("stdout") or data.get("output") or data.get("result") or ""
+            if isinstance(tool_summary, str) and tool_summary.strip():
+                tool_results.append(f"[{data.get('tool', '?')}] {tool_summary[:500]}")
+    except (json.JSONDecodeError, KeyError) as e:
+        record(logger, e, context="scheduler agent stream: skipping malformed chunk",
+               level=logging.DEBUG)
+    return full_text
+
+
 class TaskScheduler:
     def __init__(self, session_manager):
         self._session_manager = session_manager
@@ -410,14 +438,17 @@ class TaskScheduler:
             self._task.cancel()
             try:
                 await self._task
-            except asyncio.CancelledError:
-                pass
+            except asyncio.CancelledError as e:
+                record(logger, e, context="scheduler stop: main task already cancelled",
+                       level=logging.DEBUG)
         for attr in ("_note_pings_task", "_event_pings_task"):
             t = getattr(self, attr, None)
             if t:
                 t.cancel()
                 try: await t
-                except asyncio.CancelledError: pass
+                except asyncio.CancelledError as e:
+                    record(logger, e, context="scheduler stop: ping task already cancelled",
+                           level=logging.DEBUG)
         logger.info("Task scheduler stopped")
 
     async def _note_pings_loop(self):
@@ -434,8 +465,9 @@ class TaskScheduler:
             for ow in (owners or [""]):
                 try:
                     await action_ping_notes(owner=ow)
-                except TaskNoop:
-                    pass
+                except TaskNoop as e:
+                    record(logger, e, context="note ping scanner: task chose no-op",
+                           level=logging.DEBUG)
                 except Exception as e:
                     logger.warning(f"ping_notes background scanner errored for owner={ow!r}: {e}")
             await asyncio.sleep(60)  # 1 min
@@ -454,8 +486,9 @@ class TaskScheduler:
             for ow in (owners or [""]):
                 try:
                     await action_ping_events(owner=ow)
-                except TaskNoop:
-                    pass
+                except TaskNoop as e:
+                    record(logger, e, context="event ping scanner: task chose no-op",
+                           level=logging.DEBUG)
                 except Exception as e:
                     logger.warning(f"ping_events background scanner errored for owner={ow!r}: {e}")
             await asyncio.sleep(600)  # 10 min
@@ -1490,20 +1523,7 @@ class TaskScheduler:
             relevant_tools=relevant_tools,
             fallbacks=_task_fallbacks,
         ):
-            if event_str.startswith("data: ") and not event_str.startswith("data: [DONE]"):
-                try:
-                    data = json.loads(event_str[6:])
-                    # Capture text from all event types, not just delta
-                    if "delta" in data:
-                        full_text += data["delta"]
-                    elif data.get("type") == "tool_output":
-                        # Tool results — capture summary so we have SOMETHING even
-                        # if the model never produces a final text response
-                        tool_summary = data.get("stdout") or data.get("output") or data.get("result") or ""
-                        if isinstance(tool_summary, str) and tool_summary.strip():
-                            tool_results.append(f"[{data.get('tool', '?')}] {tool_summary[:500]}")
-                except (json.JSONDecodeError, KeyError):
-                    pass
+            full_text = _accumulate_stream_chunk(event_str, full_text, tool_results)
 
         # Grace summarization — if the model exhausted rounds on tool calls
         # without producing a final text response, do one last LLM call

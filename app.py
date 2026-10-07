@@ -739,6 +739,18 @@ async def runtime_info() -> Dict[str, object]:
         "ollama_base_url": ollama_url,
     }
 
+@app.get("/api/scheduler/failures")
+async def scheduler_failures(limit: int = 50, level: str = "") -> Dict[str, object]:
+    """Recent silenced-failure records from the scheduler subsystem.
+
+    Most recent first. Auth-protected like every non-exempt route (this
+    path is intentionally absent from the AUTH_EXEMPT sets). `limit`
+    defaults to 50 and caps at 200; `level` optionally filters to
+    "warning" or "debug".
+    """
+    from src import failure_log
+    return {"records": failure_log.get_records(limit=limit, level=level or None)}
+
 # ========= LIFECYCLE =========
 
 @app.on_event("startup")
