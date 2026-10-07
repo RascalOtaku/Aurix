@@ -23,7 +23,7 @@ from typing import Callable, Optional, Tuple
 
 ROUTABLE = frozenset({"look", "home", "home_switch", "printer", "fab_status", "disk", "homelab", "status", "doctor", "level",
                       "games", "version", "unwrap", "earnings", "dashboard", "pihole", "pihole_pause", "pihole_resume", "tv",
-                      "tv_pause", "tv_resume", "kuma"})
+                      "tv_pause", "tv_resume", "kuma", "gpu"})
 TIMEOUT = 8
 MIN_CONFIDENCE = 0.75
 # High-stakes words (from the triage prototype's human-escalation guard): such a message is never shortcut by the tiny
@@ -41,6 +41,7 @@ Commands:
 - ads                       (Pi-hole ad-blocking stats)  / pause ads <minutes> / resume ads
 - tv                        (what is playing on Jellyfin) / pause tv / resume tv
 - kuma                      (Uptime Kuma: which services are up or down)
+- gpu                       (is the GPU PC on, which Ollama models it has, how often it went off)
 - parts                     (3D parts designed so far)
 - disk                      (server disk space)
 - homelab                   (are the home servers up)

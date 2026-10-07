@@ -59,6 +59,7 @@ HELP = """<b>AURIX - what you can say</b>
 • <code>lights</code> · <code>turn on|off &lt;name&gt;</code> · <code>toggle &lt;name&gt;</code> - lights, plugs and fans through Home Assistant (locks, doors, alarms and heating are read-only from chat)
 • <code>look</code> · <code>look: &lt;question&gt;</code> · or just send a photo (caption = question) - a LOCAL vision model on your GPU PC answers; <code>look</code> sees the PC screen only while a game or Steam is in front
 • <code>ads</code> · <code>pause ads 10m</code> · <code>resume ads</code> (Pi-hole) · <code>tv</code> · <code>pause tv</code> · <code>resume tv</code> (Jellyfin) · <code>kuma</code> (Uptime Kuma) - the homelab apps you run, from chat
+• <code>gpu</code> · <code>gpu forget &lt;model&gt;</code> - the GPU PC: on or off, its Ollama models, what is loaded, how often it went offline this week; I message you if its models go missing
 • Camera alerts from Frigate arrive on their own when <code>AURIX_FRIGATE_URL</code> is set (person at the door, with a one-line description if you want)
 • <code>version</code> · <code>reviewed vX.Y.Z</code> - AURIX's version history; a big shift in the code opens a review ticket for Claude Code
 • <code>integrations</code> · <code>adopt|skip i-xxxxxx</code> - after a repo is absorbed, AURIX's own models plan what to take from it; adopting queues the idea into the upgrade lane or skill forge, which draft, test and ask you again

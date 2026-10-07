@@ -38,6 +38,7 @@ from src.foundation import smarthome
 from src.foundation import vision
 from src.foundation import frigate
 from src.foundation import homeapps
+from src.foundation import gpu_watch
 from src.foundation.land import hub as land
 from src.foundation import evolve
 from src.foundation import evolve_domains  # noqa: F401 - import-time side effect: registers the "forge_guidance" domain
@@ -133,6 +134,8 @@ _PATTERNS = [
     ("tv_pause", re.compile(r"^\s*/?pause\s+(?:the\s+)?(?:tv|jellyfin|movie|show|playback)\s*$", re.I)),
     ("tv_resume", re.compile(r"^\s*/?(?:resume|unpause|play)\s+(?:the\s+)?(?:tv|jellyfin|movie|show|playback)\s*$", re.I)),
     ("tv", re.compile(r"^\s*/?(?:tv|jellyfin|what'?s\s+playing|now\s+playing)\s*\??\s*$", re.I)),
+    ("gpu_forget", re.compile(r"^\s*/?gpu\s+forget\s+(\S{1,120})\s*$", re.I)),
+    ("gpu", re.compile(r"^\s*/?(?:gpu|gpu\s+pc|gaming\s+pc|ollama)\s*\??\s*$", re.I)),
     ("kuma", re.compile(r"^\s*/?(?:kuma|uptime(?:\s+kuma)?)\s*\??\s*$", re.I)),
     ("shard_pause", re.compile(r"^\s*/?pause\s+(all|(?!standing\b)[a-z][a-z_]{2,20})\s*$", re.I)),
     ("shard_resume", re.compile(r"^\s*/?resume\s+(all|(?!standing\b)[a-z][a-z_]{2,20})\s*$", re.I)),
@@ -513,6 +516,12 @@ class Foundation:
             pass
         try:                                    # freelance checking its own job feed must never break scheduling either
             await self._maybe_freelance_search(now or time.time())
+        except Exception:
+            pass
+        try:                                    # the GPU PC's Ollama: models gone missing (never pages for it being off)
+            if gpu_watch.configured():
+                for text in await asyncio.to_thread(gpu_watch.check, now):
+                    await self.notify_ui(text, "gpu")
         except Exception:
             pass
         try:                                    # camera alerts (Frigate) must never break scheduling either
@@ -1038,6 +1047,10 @@ class Foundation:
             return await asyncio.to_thread(homeapps.tv_status)
         if kind in ("tv_pause", "tv_resume"):
             return await asyncio.to_thread(homeapps.tv_control, kind[3:])
+        if kind == "gpu":
+            return await asyncio.to_thread(gpu_watch.status_text)
+        if kind == "gpu_forget":
+            return await asyncio.to_thread(gpu_watch.forget, arg)
         if kind == "kuma":
             return await asyncio.to_thread(homeapps.kuma_status)
         if kind == "home":

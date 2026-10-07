@@ -76,6 +76,24 @@ $p = "first-pattern`nsecond-pattern`n"
 The sync script also scans the whole tree before any push, so a commit made on the server by hand, or by an agent,
 without the hook is caught before it leaves the machine.
 
+## The GPU PC (Windows, Ollama)
+
+If it "keeps turning off" or "loses its models", run `scripts/windows/aurix-gpu-pc-setup.ps1` on it in an admin PowerShell:
+
+- **No flags (diagnose only, changes nothing):**
+  - why it went off over the last 14 days: lost power or crashed, a planned restart (and which program asked for it), or sleep
+  - every Ollama models folder on the PC, and how many models each holds
+- **`-Apply`:**
+  - never sleeps or hibernates on AC; wake-on-LAN stays on
+  - Windows Update restarts only between 02:00 and 08:00
+  - one models folder pinned machine-wide
+  - a startup task that brings Ollama back headless after any restart, before anyone logs in, and every 10 minutes
+  - `-RequiredModels "qwen3.5:9b,llama3.2:3b"` also re-pulls those if they are really missing
+- **`-Undo`** reverts it.
+
+On the Aurix side, `gpu` shows whether the PC is on, its models, what is loaded and how often it went offline this week.
+Aurix messages you once if models it has seen there go missing. It never pages for the PC simply being off.
+
 ## Dependency updates
 
 Dependabot opens weekly pull requests (pip, npm, Docker, GitHub Actions); CI tests each one. Major versions
