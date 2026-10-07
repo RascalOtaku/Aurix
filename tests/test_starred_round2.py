@@ -422,6 +422,36 @@ class GitSyncToBranchTests(unittest.TestCase):
 
 
 @unittest.skipUnless(shutil.which("git") and shutil.which("bash"), "needs git and bash")
+class GitSyncCommittedOutsideTheSyncTests(unittest.TestCase):
+    """A commit made on the server by hand (or by an agent) without the hook must not ride along on the next sync's push."""
+
+    def test_a_private_value_committed_outside_the_sync_stops_the_push(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+            git = lambda cwd, *a: subprocess.run(["git", *a], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout
+            github = d / "RascalOtaku" / "Aurix.git"; github.parent.mkdir()
+            subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(github)], check=True)
+            seed = d / "seed"
+            subprocess.run(["git", "clone", "-q", str(github), str(seed)], check=True, capture_output=True)
+            (seed / "scripts" / "git-hooks").mkdir(parents=True)
+            shutil.copy(ROOT / "scripts" / "aurix_git_sync.sh", seed / "scripts")
+            shutil.copy(ROOT / "scripts" / "git-hooks" / "secret_guard.sh", seed / "scripts" / "git-hooks")
+            (seed / "app.py").write_text("a\n")
+            git(seed, "add", "-A"); git(seed, "commit", "-qm", "init"); git(seed, "push", "-q", "origin", "main")
+            srv = d / "server"
+            subprocess.run(["git", "clone", "-q", str(github), str(srv)], check=True, capture_output=True)
+            (srv / ".git" / "info" / "aurix-private-patterns").write_text("my-secret-host\n")
+            (srv / "notes.md").write_text("ollama at http://My-Secret-Host:11434\n")
+            git(srv, "add", "notes.md"); git(srv, "commit", "-q", "--no-verify", "-m", "by hand")     # skipped the hook
+            r = subprocess.run(["bash", "scripts/aurix_git_sync.sh", "sync"], cwd=srv, env=env, capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("nothing was pushed", r.stdout)
+            self.assertNotIn("notes.md", git(github, "ls-tree", "-r", "--name-only", "main"))
+            self.assertNotIn("My-Secret-Host", r.stdout + r.stderr)                                 # named by file, never by value
+
+
+@unittest.skipUnless(shutil.which("git") and shutil.which("bash"), "needs git and bash")
 class GitSyncConflictResumeTests(unittest.TestCase):
     """Follow the script's own conflict instructions (edit, git add, sync again) and it must finish and push."""
 

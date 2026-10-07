@@ -55,6 +55,27 @@ The repository is public. The same rules run in four places:
 
 Files to keep local without touching `.gitignore` go in `.git/info/exclude`.
 
+### Every machine that pushes
+
+Three things push to GitHub: the server (`scripts/aurix_git_sync.sh`), the Windows PC (`scripts/aurix-push.ps1`), and
+cloud sessions. The rules only hold if each one has them:
+
+| Where | Needs | Check |
+|---|---|---|
+| Server | `git config core.hooksPath scripts/git-hooks` (the sync sets it) and `.git/info/aurix-private-patterns` | `git config core.hooksPath` prints `scripts/git-hooks` |
+| Windows PC | the same two, in the checkout `aurix-push.ps1` pushes from; it copies your patterns into its temporary clone and runs the guard before pushing | `git config core.hooksPath` in that folder |
+| GitHub CI | the `AURIX_PRIVATE_PATTERNS` repository secret (Settings → Secrets and variables → Actions) | the CI log says `private patterns: N loaded` |
+
+On Windows, write the patterns file with Unix line endings; with Windows line endings the patterns never match:
+
+```powershell
+$p = "first-pattern`nsecond-pattern`n"
+[IO.File]::WriteAllText((Join-Path (git rev-parse --absolute-git-dir) 'info/aurix-private-patterns'), $p)
+```
+
+The sync script also scans the whole tree before any push, so a commit made on the server by hand, or by an agent,
+without the hook is caught before it leaves the machine.
+
 ## Dependency updates
 
 Dependabot opens weekly pull requests (pip, npm, Docker, GitHub Actions); CI tests each one. Major versions

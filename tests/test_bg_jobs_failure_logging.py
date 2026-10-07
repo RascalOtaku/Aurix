@@ -12,12 +12,15 @@ import types
 
 import pytest
 
-_core_pkg = types.ModuleType("core")
-_core_pkg.__path__ = []
-sys.modules.setdefault("core", _core_pkg)
-_atomic_io = types.ModuleType("core.atomic_io")
-_atomic_io.atomic_write_json = lambda *a, **k: None
-sys.modules.setdefault("core.atomic_io", _atomic_io)
+try:                                    # the real module when it imports (CI, the server); a stub only on a
+    import core.atomic_io  # noqa: F401   # bare workbench, so other tests' JSON saves are never no-ops
+except Exception:
+    _core_pkg = types.ModuleType("core")
+    _core_pkg.__path__ = []
+    sys.modules.setdefault("core", _core_pkg)
+    _atomic_io = types.ModuleType("core.atomic_io")
+    _atomic_io.atomic_write_json = lambda *a, **k: None
+    sys.modules.setdefault("core.atomic_io", _atomic_io)
 
 from src import bg_jobs as bj
 

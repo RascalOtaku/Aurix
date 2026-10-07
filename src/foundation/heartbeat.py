@@ -34,8 +34,8 @@ def activity_summary(hours: int = 24, now_ts: Optional[float] = None) -> str:
         try:
             if datetime.strptime(rec.get("ts", ""), _AUDIT_TS).timestamp() >= since:
                 counts[rec.get("event", "?")] += 1
-        except ValueError as e:
-            record(logger, e, context="heartbeat activity summary: skipping bad timestamp",
+        except ValueError as exc:
+            record(logger, exc, context="heartbeat activity summary: skipping bad timestamp",
                    level=logging.DEBUG)
             continue
     if not counts:
@@ -63,8 +63,8 @@ def waiting_for_you(limit: int = 6) -> str:
         try:
             for x in fn()[:limit]:
                 lines.append(render(x))
-        except Exception as e:
-            record(logger, e, context=f"heartbeat waiting-for-you: section {label} failed",
+        except Exception as exc:
+            record(logger, exc, context=f"heartbeat waiting-for-you: section {label} failed",
                    level=logging.WARNING)
     from src.foundation import content, forge, freelance, gaming, learning, memory, repos, teacher, upgrades
     from src.foundation.land import hub as land
@@ -86,8 +86,8 @@ def waiting_for_you(limit: int = 6) -> str:
             lines.append(f"⚠️ {e(r['name'])}: {e(r['detail'][:90])}")
         for pid in _shards.paused_ids():
             lines.append(f"⏸️ Paused by you: <code>{pid}</code> (<code>resume {pid}</code>)")
-    except Exception as e:
-        record(logger, e, context="heartbeat waiting-for-you: shards section failed",
+    except Exception as exc:
+        record(logger, exc, context="heartbeat waiting-for-you: shards section failed",
                level=logging.WARNING)
     if not lines:
         return "✅ <b>Nothing is waiting on you.</b>"
@@ -158,16 +158,16 @@ def pulse_digest() -> str:
         yours = projects.Registry().digest_line()
         if yours:
             parts.append(yours)
-    except Exception as e:
-        record(logger, e, context="heartbeat digest: projects section failed",
+    except Exception as exc:
+        record(logger, exc, context="heartbeat digest: projects section failed",
                level=logging.WARNING)
 
     try:
         waiting = waiting_for_you()
         if "Nothing is waiting" not in waiting:
             parts.append(waiting)
-    except Exception as e:
-        record(logger, e, context="heartbeat digest: waiting-for-you section failed",
+    except Exception as exc:
+        record(logger, exc, context="heartbeat digest: waiting-for-you section failed",
                level=logging.WARNING)
 
     return "\n\n".join(parts)
@@ -218,8 +218,8 @@ def self_report(store: Optional[ms.MissionStore] = None, events: int = 5) -> str
         pending = ag.pending_ids()
         lines.append(f"<b>Waiting on you:</b> {', '.join(pending) if pending else 'nothing'}")
         lines.append(f"<b>Gate:</b> mode={ag.gate_mode()}" + (" ⛔ STOP engaged" if ag.stop_engaged() else ""))
-    except Exception as e:
-        record(logger, e, context="heartbeat self-report: approval-gate section failed",
+    except Exception as exc:
+        record(logger, exc, context="heartbeat self-report: approval-gate section failed",
                level=logging.WARNING)
 
     v = audit.verify()

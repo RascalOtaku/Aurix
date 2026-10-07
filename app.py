@@ -740,14 +740,15 @@ async def runtime_info() -> Dict[str, object]:
     }
 
 @app.get("/api/scheduler/failures")
-async def scheduler_failures(limit: int = 50, level: str = "") -> Dict[str, object]:
+async def scheduler_failures(request: Request, limit: int = 50, level: str = "") -> Dict[str, object]:
     """Recent silenced-failure records from the scheduler subsystem.
 
-    Most recent first. Auth-protected like every non-exempt route (this
-    path is intentionally absent from the AUTH_EXEMPT sets). `limit`
-    defaults to 50 and caps at 200; `level` optionally filters to
-    "warning" or "debug".
+    Most recent first. Admin only: exception messages can carry URLs, paths or another user's details, so a logged-in
+    non-admin must not read them (and the path stays out of the AUTH_EXEMPT sets). `limit` defaults to 50 and caps at
+    200; `level` optionally filters to "warning" or "debug".
     """
+    from core.middleware import require_admin
+    require_admin(request)
     from src import failure_log
     return {"records": failure_log.get_records(limit=limit, level=level or None)}
 

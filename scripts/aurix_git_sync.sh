@@ -215,7 +215,14 @@ if [ -n "$staged_files" ]; then
     say "Committed $(printf '%s\n' "$staged_files" | grep -c .) local file(s)."
 fi
 
+# Everything about to be published, not just this run's edits: commits made on this machine outside the sync (by hand,
+# by an agent, from a checkout without the hook) are checked here too, before anything leaves the machine.
+guard_tree_or_die() {
+    bash "$GUARD" --tree || die "the secret guard found something in what would be pushed (see above); nothing was pushed"
+}
+
 if [ -n "$TO_BRANCH" ]; then
+    guard_tree_or_die
     # Hand the local state over for merging elsewhere: push it to its own branch, merge nothing here.
     git push -q "$REMOTE" "HEAD:refs/heads/$TO_BRANCH" || die "push to branch $TO_BRANCH failed"
     say "Pushed this machine's state to GitHub branch '$TO_BRANCH' ($(git rev-parse --short HEAD)); nothing merged here. Once it is merged into $BRANCH, run: sync"
@@ -232,6 +239,7 @@ for ref in "$REMOTE/$BRANCH" $(for b in $EXTRA; do echo "$REMOTE/$b"; done); do
 done
 
 if [ "$(git rev-list --count "$REMOTE/$BRANCH..HEAD")" -gt 0 ]; then
+    guard_tree_or_die
     git push -q "$REMOTE" "HEAD:$BRANCH" || die "push failed (credentials? someone pushed meanwhile? just run sync again)"
     say "Pushed: GitHub $BRANCH now matches this machine ($(git rev-parse --short HEAD))."
 else

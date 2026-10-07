@@ -1,10 +1,11 @@
 <#
 .SYNOPSIS
-    One-command Aurix push routine for Steammachine.
+    One-command Aurix push routine for the Windows PC.
 .DESCRIPTION
     Runs the verified push sequence: fresh clone, transfer-bundle fetch,
-    rebase onto latest main, compile + content checks, push, remote
-    verification, and cleanup. Stops loudly at the first failed stage.
+    rebase onto latest main, compile + content checks, the secret guard
+    (same rules as the pre-commit hook and CI, with your private patterns),
+    push, remote verification, and cleanup. Stops loudly at the first failed stage.
     Manual trigger only — nothing here runs on a schedule.
 .PARAMETER Branch
     Local branch holding the commits to push.
@@ -17,6 +18,10 @@
     branch name to push a branch as-is.
 .PARAMETER Markers
     Optional content markers; each must appear in the rebased diff (grep check).
+.PARAMETER GitKey
+    SSH key for GitHub. Default: $env:AURIX_GIT_KEY, else ~/.ssh/id_ed25519_aurix_claude.
+.PARAMETER PythonExe
+    Python used for the compile check. Default: $env:AURIX_PYTHON, else `py -3` / `python` on PATH.
 .PARAMETER DryRun
     Print the planned commands without executing them.
 .EXAMPLE
@@ -31,15 +36,23 @@ param(
     [string]$SourceDir = (Get-Location).Path,
     [string]$PushTarget = "main",
     [string[]]$Markers = @(),
+    [string]$GitKey = $(if ($env:AURIX_GIT_KEY) { $env:AURIX_GIT_KEY } else { Join-Path $HOME ".ssh/id_ed25519_aurix_claude" }),
+    [string]$PythonExe = $(if ($env:AURIX_PYTHON) { $env:AURIX_PYTHON } else { (Get-Command python -ErrorAction SilentlyContinue).Source }),
     [switch]$DryRun
 )
 
 $ErrorActionPreference = "Stop"
 
+# Paths come from parameters / the environment, never from this file: the repository is public.
 # Forward slashes: Git for Windows runs ssh through sh.exe, which eats backslashes.
-$GitKey = "C:/Users/winte/.ssh/id_ed25519_aurix_claude"
-$PythonExe = "C:\Users\winte\AppData\Local\Programs\Python\Python312\python.exe"
+$GitKey = $GitKey -replace '\\', '/'
 $RepoUrl = "git@github.com:RascalOtaku/Aurix.git"
+# Git for Windows' own bash runs the secret guard (scripts/git-hooks/secret_guard.sh).
+# (git --exec-path is <Git>/mingw64/libexec/git-core on Windows, so <Git>/bin/bash.exe is three levels up.)
+$GitBash = $null
+$gitRoot = Split-Path (Split-Path (Split-Path (git --exec-path) -Parent) -Parent) -Parent
+if ($gitRoot -and (Test-Path (Join-Path $gitRoot "bin/bash.exe"))) { $GitBash = Join-Path $gitRoot "bin/bash.exe" }
+if (-not $GitBash) { $GitBash = (Get-Command bash -ErrorAction SilentlyContinue).Source }
 
 function Invoke-Step {
     param([string]$Name, [scriptblock]$Action)
@@ -56,7 +69,9 @@ function Assert-File([string]$Path, [string]$Label) {
 # ---- Preconditions (always run, even in DryRun) ----
 Assert-File $GitKey "GitHub SSH key"
 Assert-File (Join-Path $SourceDir ".git") "git repo at SourceDir"
-Assert-File $PythonExe "Python 3.12"
+if (-not $PythonExe) { throw "Precondition failed: no Python found (set AURIX_PYTHON or pass -PythonExe)" }
+Assert-File $PythonExe "Python"
+if (-not $GitBash) { throw "Precondition failed: Git for Windows' bash not found (needed for the secret guard)" }
 $env:GIT_SSH_COMMAND = "ssh -i $GitKey -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o BatchMode=yes"
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -108,6 +123,16 @@ try {
         }
     }
 
+    Invoke-Step "Secret guard (tokens, key files, your private patterns)" {
+        # A fresh clone has no hook and no private patterns: copy yours in, then scan what would be published.
+        $patterns = Join-Path (git -C $SourceDir rev-parse --absolute-git-dir) "info/aurix-private-patterns"
+        if (-not (Test-Path $patterns)) { throw "no private patterns at $patterns - create it first (see docs/OPERATIONS.md)" }
+        Copy-Item $patterns (Join-Path $cloneDir ".git/info/aurix-private-patterns")
+        git -C $cloneDir checkout --quiet $Branch
+        Push-Location $cloneDir
+        try { & $GitBash scripts/git-hooks/secret_guard.sh --tree } finally { Pop-Location }
+    }
+
     Invoke-Step "Push $Branch to origin/$PushTarget" {
         git -C $cloneDir push origin "$Branch`:$PushTarget"
     }
@@ -115,7 +140,7 @@ try {
     Invoke-Step "Remote verification (ls-remote tip matches)" {
         $localSha = (git -C $cloneDir rev-parse $Branch).Trim()
         if ($LASTEXITCODE -ne 0) { throw "git rev-parse failed" }
-        $remoteLine = (git ls-remote origin $PushTarget).Trim()
+        $remoteLine = (git -C $cloneDir ls-remote origin "refs/heads/$PushTarget").Trim()
         if ($LASTEXITCODE -ne 0) { throw "git ls-remote failed" }
         $remoteSha = ($remoteLine -split "\s+")[0]
         if ([string]::IsNullOrWhiteSpace($remoteSha)) { throw "empty ls-remote result for $PushTarget" }

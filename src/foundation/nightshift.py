@@ -71,8 +71,8 @@ def _gift_health(now: float, st: dict) -> Optional[dict]:
     try:
         d = shutil.disk_usage(str(Path(os.getenv("AURIX_PROJECT_ROOT", "/app")) / "data"))
         lines.append(f"disk {round(100 * d.used / d.total)}% used, {round(d.free / 1e9)} GB free")
-    except OSError as e:
-        record(logger, e, context="nightshift health gift: disk usage check failed",
+    except OSError as exc:
+        record(logger, exc, context="nightshift health gift: disk usage check failed",
                level=logging.WARNING)
     v = audit.verify()
     lines.append(f"audit chain {'intact' if v.ok else 'BROKEN at #' + str(v.bad_seq)} ({v.records} records)")
@@ -81,15 +81,15 @@ def _gift_health(now: float, st: dict) -> Optional[dict]:
         hist = evals.load_history(1)
         if hist:
             lines.append("self-check " + ", ".join(f"{k} {x['passed']}/{x['total']}" for k, x in hist[-1].get("tiers", {}).items()))
-    except Exception as e:
-        record(logger, e, context="nightshift health gift: eval history failed",
+    except Exception as exc:
+        record(logger, exc, context="nightshift health gift: eval history failed",
                level=logging.WARNING)
     try:
         from src.foundation import shards
         bad = shards.stale(now)
         lines.append("all helpers healthy" if not bad else "needs attention: " + "; ".join(f"{r['name']} ({r['detail'][:60]})" for r in bad[:3]))
-    except Exception as e:
-        record(logger, e, context="nightshift health gift: helper health check failed",
+    except Exception as exc:
+        record(logger, exc, context="nightshift health gift: helper health check failed",
                level=logging.WARNING)
     return {"id": "health", "icon": "🩺", "title": "Overnight health check", "body": " · ".join(lines)}
 
@@ -185,8 +185,8 @@ def run_shift(now: Optional[float] = None, force: bool = False) -> Dict[str, Any
         from src.foundation import shards
         if shards.is_paused("nightshift"):
             return {"skipped": "paused"}
-    except Exception as e:
-        record(logger, e, context="nightshift run: pause check failed; running anyway",
+    except Exception as exc:
+        record(logger, exc, context="nightshift run: pause check failed; running anyway",
                level=logging.WARNING)
     day = time.strftime("%Y-%m-%d", time.localtime(now))
     st = state()
@@ -237,8 +237,8 @@ def unwrap(now: Optional[float] = None, mark_opened: bool = True, waiting: bool 
         try:
             from src.foundation import heartbeat
             lines.append("\n" + heartbeat.waiting_for_you(4))
-        except Exception as e:
-            record(logger, e, context="nightshift unwrap: waiting-for-you section failed",
+        except Exception as exc:
+            record(logger, exc, context="nightshift unwrap: waiting-for-you section failed",
                    level=logging.WARNING)
     if mark_opened:
         log = shifts()

@@ -216,3 +216,10 @@ def test_endpoint_stays_auth_protected():
     assert path not in exact, "endpoint must not be auth-exempt"
     assert not any(path.startswith(p) for p in prefixes), \
         "endpoint must not match an auth-exempt prefix"
+
+
+def test_endpoint_is_admin_only():
+    """Exception messages can carry URLs, paths or another user's details: only admins may read them."""
+    handler = _failures_handler(_app_tree())
+    calls = [n.func.id for n in ast.walk(handler) if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)]
+    assert "require_admin" in calls
