@@ -8,13 +8,13 @@ Stack (all open source, all local, no accounts, no cloud):
 - Brain: Aurix API on the 7070
 
 Setup:
-1. pip install openwakeword faster-whisper piper-tts requests pyaudio numpy
+1. pip install -r voice/requirements.txt
 2. Train "Aurix" wake word OR use built-in "hey_jarvis" for testing
    - Custom training: https://github.com/dscripka/openWakeWord#training-new-models
    - Save as aurix.onnx in the same directory as this script
 3. In the Aurix web UI: Settings -> API tokens -> create one; start a chat named "Voice" (replies land there)
 4. Set AURIX_URL=http://<server-tailscale-ip>:7000 and AURIX_API_KEY=ody_... (environment variables), then
-   python aurix_voice.py
+   python voice/aurix_voice.py
 
 While Aurix is talking, say the wake word again to interrupt it: it stops mid-sentence and listens (barge-in).
 

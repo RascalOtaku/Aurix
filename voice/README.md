@@ -2,12 +2,12 @@
 
 Talk to Aurix from the GPU PC's mic and speakers. Say "Aurix", ask anything, hear the answer.
 
-**Use `06-aurix-voice-os.py`**: 100% open source, no accounts.
+**Use `aurix_voice.py`**: 100% open source, no accounts.
 - **Wake word:** openWakeWord.
 - **Speech-to-text:** Faster-Whisper.
 - **Text-to-speech:** Piper.
 
-`06-aurix-voice.py` is the older Porcupine version, which needs a Picovoice access key; it works the same way otherwise.
+`aurix_voice_porcupine.py` is the older Porcupine version, which needs a Picovoice access key; it works the same way otherwise.
 
 ## How it works
 
@@ -26,13 +26,13 @@ threshold while speaking, so its own voice from the speakers does not cut itself
 3. On the GPU PC:
 
 ```powershell
-pip install openwakeword faster-whisper piper-tts requests pyaudio numpy
+pip install -r voice/requirements.txt
 $env:AURIX_URL = "http://<server-tailscale-ip>:7000"
 $env:AURIX_API_KEY = "ody_..."
-python 06-aurix-voice-os.py
+python voice/aurix_voice.py
 ```
 
-To run it at login, create a shortcut with target `pythonw.exe C:\path\to\06-aurix-voice-os.py` and put it in
+To run it at login, create a shortcut with target `pythonw.exe C:\path\to\Aurix\voice\aurix_voice.py` and put it in
 `shell:startup`.
 
 ## Settings (environment variables)

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -25,6 +26,11 @@ ROUTABLE = frozenset({"look", "home", "home_switch", "printer", "fab_status", "d
                       "tv_pause", "tv_resume", "kuma"})
 TIMEOUT = 8
 MIN_CONFIDENCE = 0.75
+# High-stakes words (from the triage prototype's human-escalation guard): such a message is never shortcut by the tiny
+# model, however confident it is - it goes to the agent, whose approval gates exist for exactly these.
+HIGH_STAKES = re.compile(r"\b(pay|payment|paid|buy|purchase|order|refund|invoice|transfer|send\s+(?:an?\s+|the\s+)?e-?mail|"
+                         r"publish|post\s+to|tweet|delete|remove|wipe|erase|legal|lawyer|contract|sign|password|passcode|"
+                         r"api\s+key|token|unlock|open\s+the\s+(?:door|garage))\b", re.I)
 SYSTEM = """You map one chat message to at most one command from this list, or to nothing.
 Commands:
 - look                      (what is on the PC screen / in the game right now)
@@ -76,6 +82,8 @@ def route(text: str, post: Optional[Post] = None) -> Optional[Tuple[str, str]]:
         return None
     msg = " ".join((text or "").split())
     if not msg or len(msg) > 300:                              # long messages are real requests for the agent
+        return None
+    if HIGH_STAKES.search(msg):                                # money, publishing, deleting, secrets, doors: the agent decides
         return None
     post = post or _post
     body = {"model": model(), "stream": False, "format": "json", "options": {"temperature": 0},

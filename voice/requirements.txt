@@ -1,0 +1,8 @@
+# The voice assistant runs on the PC with the mic and speakers, not in the Aurix container.
+#   pip install -r voice/requirements.txt
+openwakeword
+faster-whisper
+piper-tts
+requests
+pyaudio
+numpy

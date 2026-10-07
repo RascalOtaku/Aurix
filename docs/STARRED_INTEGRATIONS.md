@@ -33,7 +33,7 @@ Everything new is **opt-in**: nothing below starts, downloads or calls out until
 | ada_v2: smart home (python-kasa) | Through **Home Assistant** instead (python-kasa is GPL-3; Home Assistant already speaks Kasa and hundreds more): `lights`, `turn on|off <name>`; locks, doors, alarms and heating are read-only from chat. The full tool set reaches the agent as MCP preset `home-assistant` (SSE + bearer token) | `src/foundation/smarthome.py`, `src/mcp_presets.py` | `AURIX_HA_URL`, `AURIX_HA_TOKEN` |
 | [nazirlouis/ada](https://github.com/nazirlouis/ada): live camera/screen context | Send a photo (caption = question) or `look`: answered by a **local** Ollama vision model; `look` sees the PC only while a game or Steam is in front (GamePilot's rule) | `src/foundation/vision.py`, Telegram listener | `AURIX_VISION_MODEL` |
 | [nazirlouis/ada_local](https://github.com/nazirlouis/ada_local): FunctionGemma router | A tiny local model maps plain speech to one of a few **safe** commands before the big model; its answer must pass the normal command parser and can never approve or start anything | `src/foundation/intent.py`, Telegram listener | `AURIX_ROUTER_MODEL` |
-| ada_local: wake word + Whisper + Piper; Pipecat-style barge-in | The voice script (openWakeWord + Faster-Whisper + Piper) now works on Python 3.13+, talks to the real chat API (session + token), and stops talking when you say the wake word | `patches/7070/06-aurix-voice-os.py`, `patches/7070/VOICE-README.md` | see the README |
+| ada_local: wake word + Whisper + Piper; Pipecat-style barge-in | The voice script (openWakeWord + Faster-Whisper + Piper) now works on Python 3.13+, talks to the real chat API (session + token), and stops talking when you say the wake word | `voice/aurix_voice.py`, `voice/README.md` | see the README |
 | [Frigate NVR](https://github.com/blakeblackshear/frigate) (MIT) | Camera detections as alerts with a per-camera cooldown, optionally described by the vision model; read-only | `src/foundation/frigate.py` | `AURIX_FRIGATE_URL` |
 
 ### The homelab apps already running
@@ -79,5 +79,5 @@ worktree crews (OpenHands missions in the sandbox), Pixel Agents' live activity 
 | [oblien/openship](https://github.com/oblien/openship) | Deployment platform; Aurix deploys with compose + `scripts/aurix_deploy.sh`. |
 | [debpalash/VoiceStudio](https://github.com/debpalash/VoiceStudio) | Heavy GPU app; no stable HTTP API to point `services/tts` at yet. |
 | [anthropics/financial-services](https://github.com/anthropics/financial-services) | Claude-specific plugins; the trading pack stays paper-only by design. |
-| [hwx3z/Jarvis-by-Nazlouis](https://github.com/hwx3z/Jarvis-by-Nazlouis) | A standalone voice assistant; Aurix's voice script (`patches/7070/06-aurix-voice-os.py`) covers it. |
+| [hwx3z/Jarvis-by-Nazlouis](https://github.com/hwx3z/Jarvis-by-Nazlouis) | A standalone voice assistant; Aurix's voice script (`voice/aurix_voice.py`) covers it. |
 | [InkboxSoftware/pokemonMiniAmbulation](https://github.com/InkboxSoftware/pokemonMiniAmbulation), [InkboxSoftware/tronForDOS](https://github.com/InkboxSoftware/tronForDOS) | Retro assembly games. |

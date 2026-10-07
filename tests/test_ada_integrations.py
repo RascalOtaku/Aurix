@@ -207,6 +207,19 @@ class IntentRouterTests(_Env):
         self.assertIsNone(intent.route("lights?", self.reply("lights", confidence=0.4)))
         self.assertIsNone(intent.route("write me a poem", self.reply("")))
 
+    def test_high_stakes_messages_never_reach_the_tiny_model(self):
+        calls = []
+
+        def post(url, body, timeout):
+            calls.append(body)
+            return {"message": {"content": json.dumps({"command": "lights", "confidence": 1.0})}}
+        for msg in ("pay the electric bill", "delete my old photos", "send an email to the landlord",
+                    "what's my wifi password", "open the garage", "publish the post", "sign the contract"):
+            with self.subTest(msg=msg):
+                self.assertIsNone(intent.route(msg, post))
+        self.assertEqual(calls, [])                                          # not even asked
+        self.assertEqual(intent.route("lights please", post), ("home", ""))  # ordinary requests still route
+
     def test_off_or_broken_falls_through(self):
         with mock.patch.dict(os.environ, {"AURIX_ROUTER_MODEL": ""}):
             self.assertIsNone(intent.route("lights", self.reply("lights")))
@@ -219,13 +232,13 @@ class IntentRouterTests(_Env):
 
 class VoiceScriptTests(unittest.TestCase):
     def load(self, name):
-        spec = importlib.util.spec_from_file_location("voice_" + name.replace("-", "_"), ROOT / "patches" / "7070" / name)
+        spec = importlib.util.spec_from_file_location("voice_" + name.replace("-", "_"), ROOT / "voice" / name)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         return mod
 
     def test_open_source_voice_helpers(self):
-        v = self.load("06-aurix-voice-os.py")
+        v = self.load("aurix_voice.py")
         import numpy as np
         self.assertEqual(v.rms(np.zeros(100, dtype=np.int16).tobytes()), 0.0)
         self.assertAlmostEqual(v.rms(np.full(100, 1000, dtype=np.int16).tobytes()), 1000.0)
@@ -236,8 +249,8 @@ class VoiceScriptTests(unittest.TestCase):
         self.assertTrue(v.AURIX_API_URL.endswith(":7000/api/chat"))
 
     def test_neither_script_needs_audioop(self):
-        for name in ("06-aurix-voice-os.py", "06-aurix-voice.py"):
-            self.assertNotIn("import audioop", (ROOT / "patches" / "7070" / name).read_text())
+        for name in ("aurix_voice.py", "aurix_voice_porcupine.py"):
+            self.assertNotIn("import audioop", (ROOT / "voice" / name).read_text())
 
 
 if __name__ == "__main__":

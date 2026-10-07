@@ -50,6 +50,20 @@ jobs:
           fi
           bash scripts/git-hooks/secret_guard.sh --tree
 
+      - name: PowerShell scripts parse; the push script dry-runs
+        # The Windows PC pushes with scripts/aurix-push.ps1: a syntax error there would only show up on the owner's PC.
+        shell: pwsh
+        run: |
+          $bad = 0
+          foreach ($f in git ls-files '*.ps1') {
+            $t = $null; $e = $null
+            [void][System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $f), [ref]$t, [ref]$e)
+            foreach ($x in $e) { Write-Host "::error file=$f,line=$($x.Extent.StartLineNumber)::$($x.Message)"; $bad++ }
+          }
+          if ($bad) { exit 1 }
+          $key = New-TemporaryFile
+          ./scripts/aurix-push.ps1 -Branch HEAD -OldBase HEAD -GitKey $key -PythonExe (Get-Command python3).Source -DryRun
+
   tests:
     name: Tests
     runs-on: ubuntu-latest
