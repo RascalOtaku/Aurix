@@ -97,7 +97,7 @@ def _problems(snapshot: dict, now: float) -> Dict[str, str]:
     vitals = organs.get("circulatory", {}).get("metrics", {})
     disk = vitals.get("disk %")
     if isinstance(disk, (int, float)) and disk >= DISK_PCT_LIMIT:
-        out["disk_low"] = f"⚠️ Disk is {disk:.0f}% full on the AURIX host. Missions and logs will start failing. (<code>disk</code>)"
+        out["disk_low"] = f"🚨 Disk is {disk:.0f}% full on the AURIX host. Missions and logs will start failing. (<code>disk</code>)"
     elif isinstance(disk, (int, float)) and disk >= DISK_WARN_PCT:
         out["disk_getting_full"] = (f"💾 Disk is {int(disk)}% full on the AURIX host - worth freeing space before it hits "
                                     f"{DISK_PCT_LIMIT:.0f}%. (<code>disk</code>)")

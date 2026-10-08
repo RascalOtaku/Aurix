@@ -76,6 +76,20 @@ $p = "first-pattern`nsecond-pattern`n"
 The sync script also scans the whole tree before any push, so a commit made on the server by hand, or by an agent,
 without the hook is caught before it leaves the machine.
 
+## When Aurix messages you
+
+- **Replies:** anything you typed or tapped gets its answer immediately.
+- **Quiet hours (22:00-06:00, `AURIX_QUIET_HOURS`):** everything Aurix says on its own is held and arrives as one
+  "While you slept" summary at 06:00. Held reports arrive in full after it.
+- **You're awake:** if you have sent or tapped anything in the last 20 minutes, quiet hours step aside.
+- **🚨 messages always come through:** a broken audit chain, the disk full, a person on a camera, `/api/telegram/alert`.
+  The same one is not repeated within 30 minutes. If you have not been active since, it is followed up once after 20
+  minutes, then left alone.
+- **Hourly cap:** at most 8 unprompted messages an hour (`AURIX_NOTIFY_MAX_PER_HOUR`). The rest are folded into one
+  catch-up message.
+- **Fix first:** for a filling disk, Aurix clears its own old caches before alerting (speech audio, search results,
+  emoji images, rotated logs, and only files older than 6 hours), then says what it freed. It never touches your data.
+
 ## The GPU PC (Windows, Ollama)
 
 If it "keeps turning off" or "loses its models", run `scripts/windows/aurix-gpu-pc-setup.ps1` on it in an admin PowerShell:

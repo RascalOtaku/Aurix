@@ -39,6 +39,7 @@ from src.foundation import vision
 from src.foundation import frigate
 from src.foundation import homeapps
 from src.foundation import gpu_watch
+from src.foundation import outbox
 from src.foundation.land import hub as land
 from src.foundation import evolve
 from src.foundation import evolve_domains  # noqa: F401 - import-time side effect: registers the "forge_guidance" domain
@@ -134,6 +135,7 @@ _PATTERNS = [
     ("tv_pause", re.compile(r"^\s*/?pause\s+(?:the\s+)?(?:tv|jellyfin|movie|show|playback)\s*$", re.I)),
     ("tv_resume", re.compile(r"^\s*/?(?:resume|unpause|play)\s+(?:the\s+)?(?:tv|jellyfin|movie|show|playback)\s*$", re.I)),
     ("tv", re.compile(r"^\s*/?(?:tv|jellyfin|what'?s\s+playing|now\s+playing)\s*\??\s*$", re.I)),
+    ("quiet", re.compile(r"^\s*/?(?:quiet|quiet\s+hours|notifications|do\s+not\s+disturb|dnd)\s*\??\s*$", re.I)),
     ("gpu_forget", re.compile(r"^\s*/?gpu\s+forget\s+(\S{1,120})\s*$", re.I)),
     ("gpu", re.compile(r"^\s*/?(?:gpu|gpu\s+pc|gaming\s+pc|ollama)\s*\??\s*$", re.I)),
     ("kuma", re.compile(r"^\s*/?(?:kuma|uptime(?:\s+kuma)?)\s*\??\s*$", re.I)),
@@ -372,19 +374,10 @@ def _bare_skill_decision(text: str) -> Optional[Tuple[str, str]]:
 
 
 def _in_quiet_hours(ln) -> bool:
-    """AURIX_PULSE_QUIET_HOURS (default "23:00-07:00", local time, wraps past midnight). An unparseable window
-    is treated as "never quiet" rather than silently going quiet forever on a typo."""
-    window = os.environ.get("AURIX_PULSE_QUIET_HOURS", "23:00-07:00").strip()
-    try:
-        start_s, end_s = window.split("-")
-        sh, sm = (int(x) for x in start_s.split(":"))
-        eh, em = (int(x) for x in end_s.split(":"))
-    except ValueError:
-        return False
-    now_mins, start_mins, end_mins = ln.hour * 60 + ln.minute, sh * 60 + sm, eh * 60 + em
-    if start_mins <= end_mins:
-        return start_mins <= now_mins < end_mins
-    return now_mins >= start_mins or now_mins < end_mins
+    """The owner's quiet hours (AURIX_QUIET_HOURS, default 22:00-06:00; AURIX_PULSE_QUIET_HOURS still honoured) - one
+    window for the pulse and for every unprompted message (src/foundation/outbox.py)."""
+    from src.foundation import outbox
+    return outbox.in_quiet_hours(ln)
 
 
 class Foundation:
@@ -592,6 +585,10 @@ class Foundation:
         if boot_text:
             messages.insert(0, boot_text)
         watchdog.save_state(new_state)
+        if any(m.lstrip().startswith(("🚨 Disk", "💾 Disk")) for m in messages):     # fix what is safe first, then say so
+            from src.foundation import selfheal
+            note = await asyncio.to_thread(selfheal.heal_disk_note, now)
+            messages = [m + note if m.lstrip().startswith(("🚨 Disk", "💾 Disk")) else m for m in messages]
         for text in messages:
             audit.append("watchdog_alert", preview=text[:120])
             await self.notify(text)
@@ -1047,6 +1044,8 @@ class Foundation:
             return await asyncio.to_thread(homeapps.tv_status)
         if kind in ("tv_pause", "tv_resume"):
             return await asyncio.to_thread(homeapps.tv_control, kind[3:])
+        if kind == "quiet":
+            return await asyncio.to_thread(outbox.status_text)
         if kind == "gpu":
             return await asyncio.to_thread(gpu_watch.status_text)
         if kind == "gpu_forget":

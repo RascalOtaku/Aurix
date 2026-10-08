@@ -1,6 +1,7 @@
 """Watchdog: alerts only for real problems, once each, re-alert after 6 h, say when cleared, restart notice."""
 import asyncio
 import os
+from pathlib import Path
 import sys
 import tempfile
 import time
@@ -151,6 +152,17 @@ class TickTests(_Base):
         self.assertEqual(len(self.said), 1)
         self.assertTrue(any(r["event"] == "watchdog_alert" for r in audit.recent(10)))
         self.assertIn("audit_tamper", watchdog.load_state()["seen"])
+
+    async def test_a_full_disk_is_an_emergency_and_old_caches_are_cleared_first(self):
+        cache = Path(self.tmp.name) / "data" / "tts_cache" / "old.wav"
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        cache.write_bytes(b"x" * 2_000_000)
+        os.utime(cache, (T0 - 86400, T0 - 86400))
+        with mock.patch.object(sysview, "snapshot", return_value=snap(disk=97.0)):
+            (msg,) = await self.f.tick_watchdog(T0)
+        self.assertTrue(msg.startswith("🚨 Disk is 97% full"))                    # wakes the owner, even in quiet hours
+        self.assertIn("I already cleared 2 MB of my own caches", msg)
+        self.assertFalse(cache.exists())
 
     async def test_state_survives_a_restart(self):
         with mock.patch.object(sysview, "snapshot", return_value=snap(audit_ok=False)):

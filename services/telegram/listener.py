@@ -132,11 +132,18 @@ class TelegramListener:
         for task in list(self._in_flight):
             task.cancel()
 
+    async def _notify_unprompted(self, text: str, buttons: dict = None) -> None:
+        """Everything Aurix says on its own (scheduler, watchdog, missions) goes through the outbox: quiet hours, the
+        hourly cap, emergencies with one follow-up (src/foundation/outbox.py). Replies to the owner use _notify."""
+        from src.foundation import outbox
+        if outbox.decide(text) == "send":
+            await self._notify(text, buttons)
+
     def _foundation_obj(self):
         if self._foundation is None:
             from src.foundation.llm_bridge import default_llm
             self._foundation = fcommands.Foundation(
-                run_agent=self._run_agent_serialised, notify=self._notify, llm=default_llm,
+                run_agent=self._run_agent_serialised, notify=self._notify_unprompted, llm=default_llm,
                 session_id=_agent_session_id(), on_stop=self._cancel_in_flight, send_file=self._send_file)
         return self._foundation
 
@@ -245,6 +252,8 @@ class TelegramListener:
             logger.warning("ignored a button press from an unexpected sender/chat")
             await loop.run_in_executor(None, self._api, "answerCallbackQuery", {"callback_query_id": cq_id})
             return
+        from src.foundation import outbox
+        outbox.note_owner_active()                              # a tap means the owner is awake
         cmd = buttons_mod.command_from_data(cq.get("data") or "")
         if cmd is not None:
             # A tap-instead-of-type button: the same owner check as above, the same parser as typing, and only allow-listed kinds.
@@ -291,6 +300,8 @@ class TelegramListener:
                     chat = msg.get("chat", {})
                     if str(chat.get("id", "")) != str(self.chat_id):
                         continue
+                    from src.foundation import outbox
+                    outbox.note_owner_active()                  # the owner is awake: quiet hours step aside
                     doc = msg.get("document") or {}
                     if msg.get("voice") or msg.get("audio") or str(doc.get("mime_type", "")).startswith("audio/"):
                         atask = asyncio.create_task(self._handle_audio(msg))
@@ -367,6 +378,9 @@ class TelegramListener:
         while True:
             try:
                 await self._foundation_obj().tick_standing()
+                from src.foundation import outbox
+                for text in outbox.due():                        # the morning summary, or one emergency follow-up
+                    await self._notify(text)
             except asyncio.CancelledError:
                 raise
             except Exception as e:

@@ -68,6 +68,7 @@ class _Base(unittest.IsolatedAsyncioTestCase):
         # treatment as AURIX_DIGEST_AT above, for the same reason.
         os.environ.pop("AURIX_PULSE_EVERY_MINUTES", None)
         os.environ.pop("AURIX_PULSE_QUIET_HOURS", None)
+        os.environ.pop("AURIX_QUIET_HOURS", None)
         ag.reset_state()
         self.said, self.prompts = [], []
 
@@ -230,12 +231,12 @@ class QuietHoursTests(unittest.TestCase):
     def test_default_window_wraps_past_midnight(self):
         from datetime import datetime
         quiet = lambda h, m=0: commands._in_quiet_hours(datetime(2026, 9, 20, h, m))  # noqa: E731
-        self.assertTrue(quiet(23, 30))
+        self.assertTrue(quiet(22, 0))                     # the owner's window: 22:00-06:00
         self.assertTrue(quiet(0, 0))
-        self.assertTrue(quiet(6, 59))
-        self.assertFalse(quiet(7, 0))
+        self.assertTrue(quiet(5, 59))
+        self.assertFalse(quiet(6, 0))
         self.assertFalse(quiet(12, 0))
-        self.assertFalse(quiet(22, 59))
+        self.assertFalse(quiet(21, 59))
 
     def test_a_same_day_window_does_not_wrap(self):
         from datetime import datetime

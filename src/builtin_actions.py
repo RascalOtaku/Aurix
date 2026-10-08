@@ -2197,6 +2197,9 @@ async def action_send_daily_report(owner: str, **kwargs) -> Tuple[str, bool]:
                 logger.warning(f"send_daily_report LLM step failed, using raw digest: {e}")
 
         subject = "Daily Report - " + now.strftime("%a %b %d, %H:%M")
+        from src.foundation import outbox
+        if outbox.decide(f"<b>{subject}</b>\n{insight}", whole=True) == "hold":       # quiet hours: arrives in full at 06:00
+            return insight, True
         result = TelegramService().send_report(subject, insight)
         if not result.ok and result.error not in ("no_token", "disabled"):
             raise Exception("telegram send failed: " + str(result.error))

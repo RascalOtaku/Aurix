@@ -59,6 +59,7 @@ HELP = """<b>AURIX - what you can say</b>
 • <code>lights</code> · <code>turn on|off &lt;name&gt;</code> · <code>toggle &lt;name&gt;</code> - lights, plugs and fans through Home Assistant (locks, doors, alarms and heating are read-only from chat)
 • <code>look</code> · <code>look: &lt;question&gt;</code> · or just send a photo (caption = question) - a LOCAL vision model on your GPU PC answers; <code>look</code> sees the PC screen only while a game or Steam is in front
 • <code>ads</code> · <code>pause ads 10m</code> · <code>resume ads</code> (Pi-hole) · <code>tv</code> · <code>pause tv</code> · <code>resume tv</code> (Jellyfin) · <code>kuma</code> (Uptime Kuma) - the homelab apps you run, from chat
+• <code>quiet</code> - quiet hours (22:00-06:00): what I hold until morning, and why 🚨 messages still reach you (once, plus one follow-up if you have not seen them)
 • <code>gpu</code> · <code>gpu forget &lt;model&gt;</code> - the GPU PC: on or off, its Ollama models, what is loaded, how often it went offline this week; I message you if its models go missing
 • Camera alerts from Frigate arrive on their own when <code>AURIX_FRIGATE_URL</code> is set (person at the door, with a one-line description if you want)
 • <code>version</code> · <code>reviewed vX.Y.Z</code> - AURIX's version history; a big shift in the code opens a review ticket for Claude Code
@@ -73,7 +74,7 @@ HELP = """<b>AURIX - what you can say</b>
 • <code>teacher [on N|off]</code> · <code>teach</code> · <code>lessons</code> · <code>approve|deny|retire lesson &lt;id&gt;</code> - a frontier model writes guidance for what the local model failed at; tested first, used only after you approve
 • <code>level</code> - my XP, rank and streak (earned from finished work only; approving earns nothing)
 • <code>authorizations</code> · <code>authorize &lt;name&gt; [YYYY-MM-DD]</code> · <code>revoke &lt;name&gt;</code>
-I also message you on my own if the audit chain breaks, the disk fills, the sandbox dies or a mission stalls.
+I also message you on my own if the audit chain breaks, the disk fills (after clearing my own old caches), the sandbox dies or a mission stalls.
 Web UI: <code>/command</code> (Command Center), <code>/systems</code> (every subsystem + STOP), God's Eye globe (rail button)."""
 
 
