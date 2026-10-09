@@ -29,8 +29,10 @@ MIN_CONFIDENCE = 0.75
 # High-stakes words (from the triage prototype's human-escalation guard): such a message is never shortcut by the tiny
 # model, however confident it is - it goes to the agent, whose approval gates exist for exactly these.
 HIGH_STAKES = re.compile(r"\b(pay|payment|paid|buy|purchase|order|refund|invoice|transfer|send\s+(?:an?\s+|the\s+)?e-?mail|"
-                         r"publish|post\s+to|tweet|delete|remove|wipe|erase|legal|lawyer|contract|sign|password|passcode|"
-                         r"api\s+key|token|unlock|open\s+the\s+(?:door|garage))\b", re.I)
+                         r"e-?mail\s+(?:the|my|this|our)\s+|"
+                         r"publish|post\s+(?:to|on|this\s+on)|tweet|delete|remove|wipe|erase|legal|lawyer|contract|sign|"
+                         r"password|passcode|api\s+key|token|unlock|"
+                         r"open\s+(?:the\s+|my\s+)?(?:front\s+|back\s+)?(?:doors?|garage))\b", re.I)
 SYSTEM = """You map one chat message to at most one command from this list, or to nothing.
 Commands:
 - look                      (what is on the PC screen / in the game right now)

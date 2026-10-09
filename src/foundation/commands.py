@@ -587,8 +587,12 @@ class Foundation:
         watchdog.save_state(new_state)
         if any(m.lstrip().startswith(("🚨 Disk", "💾 Disk")) for m in messages):     # fix what is safe first, then say so
             from src.foundation import selfheal
-            note = await asyncio.to_thread(selfheal.heal_disk_note, now)
-            messages = [m + note if m.lstrip().startswith(("🚨 Disk", "💾 Disk")) else m for m in messages]
+            try:  # the cleanup must never suppress the alert itself (audit writes can fail on a full disk)
+                note = await asyncio.to_thread(selfheal.heal_disk_note, now)
+            except Exception:
+                note = ""
+            if note:
+                messages = [m + note if m.lstrip().startswith(("🚨 Disk", "💾 Disk")) else m for m in messages]
         for text in messages:
             audit.append("watchdog_alert", preview=text[:120])
             await self.notify(text)

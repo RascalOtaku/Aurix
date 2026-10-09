@@ -37,6 +37,8 @@ def free_disk(now: float = None, min_age_hours: float = MIN_AGE_HOURS) -> Tuple[
     freed = removed = 0
     for folder, pattern in cache_globs():
         try:
+            if folder.is_symlink():
+                continue  # a symlinked cache folder would redirect deletion at its target
             entries = list(folder.glob(pattern)) if folder.is_dir() else []
         except OSError:
             continue

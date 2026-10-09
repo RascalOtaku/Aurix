@@ -1,6 +1,6 @@
 --- a/static/command.html
 +++ b/static/command.html
-@@ -450,6 +450,120 @@
+@@ -450,4 +450,171 @@
    setInterval(addBoardFilter, 2000);
  })();
 

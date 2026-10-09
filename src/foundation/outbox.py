@@ -128,7 +128,7 @@ def decide(text: str, now: Optional[float] = None, emergency: Optional[bool] = N
     quiet = in_quiet_hours(_local(now)) and not owner_awake(st, now)
     if quiet or len(sent) >= max_per_hour():
         held = st.get("held", [])
-        held.append({"t": now, "text": text[:4000] if whole else text[:2000], "why": "quiet" if quiet else "cap", "whole": whole})
+        held.append({"t": now, "text": text if whole else text[:2000], "why": "quiet" if quiet else "cap", "whole": whole})
         st["held"] = held[-MAX_HELD:]
         _save(st)
         return "hold"
@@ -169,7 +169,8 @@ def due(now: Optional[float] = None) -> List[str]:
         sent.append(now)
     for em in st.get("emergencies", []):
         if (not em.get("followed") and now - em["t"] >= FOLLOW_UP_MINUTES * 60
-                and float(st.get("owner_active", 0) or 0) < em["t"]):
+                and float(st.get("owner_active", 0) or 0) < em["t"] - AWAKE_MINUTES * 60
+                and not owner_awake(st, now)):
             out.append(f"{EMERGENCY_MARK} <b>Still waiting for you</b> (sent {int((now - em['t']) // 60)} min ago, "
                        f"I will not repeat it again): " + e(_first_line(em["text"])))
             em["followed"] = True
