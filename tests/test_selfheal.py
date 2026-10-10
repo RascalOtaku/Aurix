@@ -57,6 +57,15 @@ class SelfHealTests(unittest.TestCase):
         self.assertIn("the disk is at", note)
         self.assertIn("Nothing of mine was safe to clear", selfheal.heal_disk_note())
 
+    def test_a_symlinked_cache_folder_is_skipped(self):
+        """Patch 09: a cache folder that is itself a symlink would aim the cleanup at its target."""
+        precious = self.make("data/memory/precious.wav")
+        link = self.root / "data" / "tts_cache"
+        link.parent.mkdir(parents=True, exist_ok=True)
+        link.symlink_to(precious.parent, target_is_directory=True)
+        self.assertEqual(selfheal.free_disk(), (0, 0))
+        self.assertTrue(precious.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

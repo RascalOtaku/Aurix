@@ -164,6 +164,14 @@ class TickTests(_Base):
         self.assertIn("I already cleared 2 MB of my own caches", msg)
         self.assertFalse(cache.exists())
 
+    async def test_the_disk_alert_survives_a_failing_cleanup(self):
+        """Patch 10: if the cleanup itself fails (say, audit writes on a full disk), the alert still goes out."""
+        with mock.patch.object(sysview, "snapshot", return_value=snap(disk=97.0)), \
+                mock.patch("src.foundation.selfheal.heal_disk_note", side_effect=OSError("No space left on device")):
+            (msg,) = await self.f.tick_watchdog(T0)
+        self.assertTrue(msg.startswith("🚨 Disk is 97% full"))
+        self.assertEqual(self.said, [msg])
+
     async def test_state_survives_a_restart(self):
         with mock.patch.object(sysview, "snapshot", return_value=snap(audit_ok=False)):
             await self.f.tick_watchdog(T0)

@@ -220,6 +220,15 @@ class IntentRouterTests(_Env):
         self.assertEqual(calls, [])                                          # not even asked
         self.assertEqual(intent.route("lights please", post), ("home", ""))  # ordinary requests still route
 
+    def test_broadened_high_stakes_phrases(self):
+        """Patch 14: more ways of saying the same risky things."""
+        calls = []
+        post = lambda url, body, timeout: calls.append(1) or {"message": {"content": json.dumps({"command": "lights", "confidence": 1.0})}}  # noqa: E731
+        for msg in ("email the landlord", "post this on facebook", "open my front door", "open the back doors"):
+            with self.subTest(msg=msg):
+                self.assertIsNone(intent.route(msg, post))
+        self.assertEqual(calls, [])
+
     def test_off_or_broken_falls_through(self):
         with mock.patch.dict(os.environ, {"AURIX_ROUTER_MODEL": ""}):
             self.assertIsNone(intent.route("lights", self.reply("lights")))

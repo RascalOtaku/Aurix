@@ -83,6 +83,18 @@ class OutboxTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {"AURIX_QUIET_HOURS": "nonsense"}):
             self.assertEqual(outbox.decide("note 3", at(3)), "send")                   # a typo never silences Aurix
 
+    def test_a_long_held_report_is_kept_whole(self):
+        """Patch 11: the sender splits long messages, so a held report must not be cut."""
+        report = "<b>Daily Report</b>\n" + "x" * 9000
+        outbox.decide(report, at(5), whole=True)
+        self.assertEqual(outbox.due(at(6, 1))[1], report)
+
+    def test_no_follow_up_when_the_owner_was_active_just_before(self):
+        """Patch 12: an owner active right before the emergency was awake when it arrived."""
+        outbox.note_owner_active(at(14, 0))
+        outbox.decide("🚨 Disk is 97% full on the AURIX host.", at(14, 5))
+        self.assertEqual(outbox.due(at(14, 40)), [])
+
 
 if __name__ == "__main__":
     unittest.main()
