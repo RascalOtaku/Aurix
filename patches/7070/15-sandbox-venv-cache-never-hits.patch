@@ -1,0 +1,64 @@
+# Patch 15 — mission_sandbox/sandbox_venv_cache.py: the venv cache can never hit (2026-10-11)
+#
+# WHAT: get_or_create_venv() is supposed to reuse a previously built venv when
+# the dependency config hashes the same ("Reduces mission startup time by ~30s
+# per cached environment"). But the cache-hit check is wrong:
+#
+#     if venv_path.exists():                       # /tmp/aurix_venv_cache/venv-<hash>
+#         # Verify it's still valid
+#         if (Path.cwd() / venv_path.name).exists():   # looks for venv-<hash> in the
+#             return venv_path                         # PROCESS'S CURRENT DIRECTORY
+#
+# The validity check looks for the venv directory in os.getcwd(), which is
+# never where the cache lives (the sandbox server's CWD is the repo / /app).
+# So the inner condition is effectively always False: the function falls
+# through and re-runs `python -m venv` + `pip install` into the same path on
+# EVERY call. The cache exists but is never reused; the promised ~30s saving
+# never materializes. (Verified byte-for-byte via the read-only gate.)
+#
+# NOTE: the module is new (2026-10-11, self-upgrade window) and not yet wired
+# into server.py (which still imports install_package from
+# sandbox_dependencies). Zero live impact today — this is pre-wiring
+# hardening so the bug doesn't go live with the wiring.
+#
+# FIX: validate the cached venv by checking for its interpreter instead of
+# probing the CWD:
+#
+#     interp = venv_path / ("Scripts" if os.name == "nt" else "bin") \
+#                        / ("python.exe" if os.name == "nt" else "python")
+#     if interp.exists():
+#         return venv_path
+#
+# `os` is already imported in the module. Windows branch kept for the PC-side
+# reuse the docstring hints at.
+#
+# NOT CHANGED (noted for the applier): MAX_CACHE_AGE_DAYS = 7 is defined but
+# never enforced — a stale venv is reused forever. Harmless for now (pip would
+# reinstall on version drift only if asked); consider an mtime check when the
+# module is wired in. Also use_cached_venv()'s mission_venv.unlink() raises
+# IsADirectoryError if .venv is a real dir (caught -> returns False, caller
+# falls back to uncached) — acceptable, not a correctness bug.
+#
+# TESTS: no test file exists for this module yet (it is unwired). Suggested
+# pin: create a fake venv dir with bin/python, assert get_or_create_venv()
+# returns it WITHOUT invoking subprocess (mock subprocess.run to raise if
+# called); assert a second distinct config hashes differently and builds.
+#
+--- a/mission_sandbox/sandbox_venv_cache.py
++++ b/mission_sandbox/sandbox_venv_cache.py
+@@ -32,11 +32,13 @@ def get_or_create_venv(packages: List[str], binaries: List[str], timeout: int =
+     """Get or create cached venv."""
+     h = config_hash(packages, binaries)
+     venv_path = CACHE_ROOT / f"venv-{h}"
+     
+     if venv_path.exists():
+-        # Verify it's still valid
+-        if (Path.cwd() / venv_path.name).exists():
++        # Verify it's still valid: a usable venv has its interpreter.
++        # (The old check looked for venv-<hash> in the process CWD, which is
++        # never where the cache lives, so a cached venv could never be reused.)
++        interp = venv_path / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
++        if interp.exists():
+             return venv_path
+     
+     # Create new venv
