@@ -56,6 +56,12 @@
   #err { display: none; margin: 12px 18px 0; padding: 10px 14px; border-radius: 8px; background: #2d1216; border: 1px solid #7a2a33; color: #ffb3bb; }
   #toast { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); background: var(--panel2); border: 1px solid var(--line);
            padding: 10px 16px; border-radius: 10px; display: none; max-width: 90vw; z-index: 9; }
+  .btns { display: flex; gap: 8px; margin-top: 6px; }
+  button.decide { border: 1px solid var(--line); border-radius: 8px; padding: 4px 14px; font-size: 12px; font-weight: 600;
+                  cursor: pointer; background: var(--panel2); color: var(--text); }
+  button.decide:hover:not(:disabled) { filter: brightness(1.25); } button.decide:disabled { opacity: .5; cursor: wait; }
+  button.decide.adopt { border-color: #1f6e50; color: var(--ok); }
+  button.decide.skip { border-color: var(--line); color: var(--dim); }
 </style>
 </head>
 <body>
@@ -78,6 +84,7 @@
   <div class="stack">
     <section class="card"><h2 id="detail-title">Select an organ</h2><dl id="detail"><dt></dt><dd class="dim">Click any organ on the map.</dd></dl></section>
     <section class="card"><h2>Waiting on you</h2><div id="approvals"></div></section>
+    <section class="card"><h2>Integrations to review</h2><div id="integrations"></div></section>
     <section class="card"><h2>Missions</h2><div id="missions"></div></section>
     <section class="card"><h2>Standing (scheduled)</h2><div id="standing"></div></section>
   </div>
@@ -179,6 +186,25 @@ function drawLists() {
     if (a.risk) r.appendChild(el("div", { class: "small dim" }, a.risk));
     ap.appendChild(r);
   }
+  const ig = $("integrations"); ig.textContent = "";
+  const ideas = state.integrations || [];
+  if (!ideas.length) emptyNote(ig, "No integration ideas waiting. When a repo is absorbed, its plan shows up here.");
+  for (const i of ideas) {
+    const r = el("div", { class: "row" });
+    r.appendChild(el("b", {}, i.title)); r.appendChild(el("span", { class: "tag" }, i.id + " · " + i.kind + " · effort " + i.effort + " · risk " + i.risk));
+    r.appendChild(el("div", { class: "small" }, i.why));
+    r.appendChild(el("div", { class: "small dim" }, "from " + i.repo));
+    const btns = el("div", { class: "btns" });
+    const mk = (label, verb, cls) => {
+      const bt = el("button", { type: "button", class: cls }, label);
+      bt.addEventListener("click", () => decideIdea(i.id, verb, bt));
+      return bt;
+    };
+    btns.appendChild(mk("Adopt", "adopt", "decide adopt"));
+    btns.appendChild(mk("Skip", "skip", "decide skip"));
+    r.appendChild(btns);
+    ig.appendChild(r);
+  }
   const ms = $("missions"); ms.textContent = "";
   if (!state.missions.length) emptyNote(ms, "No missions yet. Message AURIX: mission: <goal>");
   for (const m of state.missions) {
@@ -239,6 +265,20 @@ async function poll() {
     $("err").textContent = String(e.message || e); $("err").style.display = "block";
     const l = $("live"); l.textContent = "offline"; l.className = "chip bad";
   }
+}
+
+async function decideIdea(iid, verb, btn) {
+  if (!confirm(verb === "adopt"
+    ? `Adopt ${iid}?\n\nThis only queues the idea into its lane (upgrade backlog / skill forge). That lane drafts, tests and asks you again before anything runs.`
+    : `Skip ${iid}?`)) return;
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/command/integrate/${encodeURIComponent(iid)}/${verb}`, {
+      method: "POST", credentials: "same-origin", headers: { "X-AURIX-Confirm": verb.toUpperCase() } });
+    const j = await r.json().catch(() => ({}));
+    toast(r.ok ? String(j.message || "").replace(/<[^>]+>/g, "") : "Failed: " + (j.detail || r.status));
+  } catch (e) { toast("Failed: " + e); }
+  poll();
 }
 
 $("stop").addEventListener("click", async () => {

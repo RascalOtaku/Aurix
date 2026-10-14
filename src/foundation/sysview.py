@@ -28,6 +28,13 @@ OK, WARN, BAD, IDLE = "ok", "warn", "bad", "idle"
 _verify_cache: Dict[str, Any] = {"key": None, "at": 0.0, "value": None}
 
 
+def _integrate_open_ideas() -> List[dict]:
+    """Open integration ideas (adopt/skip waiting on the owner). Lazy import + late binding so tests
+    can patch src.foundation.integrate.open_ideas; a broken integrate store must never blank the page."""
+    from src.foundation import integrate
+    return integrate.open_ideas()
+
+
 def _safe(fn: Callable[[], Any], default: Any) -> Any:
     try:
         return fn()
@@ -285,6 +292,13 @@ def snapshot(probes: Optional[Dict[str, Callable[[], Any]]] = None, now: Optiona
     seq, head = _safe(audit.head, (0, ""))
     refusals = sum(1 for r in audit.recent(2000) if r.get("reason") == "protected_component")
     chain_ok = bool(v and v.ok)
+    # integration ideas waiting on an adopt/skip decision (surfaced on the Systems page; read-only here,
+    # the decision itself needs a real logged-in admin via POST /api/command/integrate/{id}/{verb})
+    integrations = _safe(lambda: [{
+        "id": i["id"], "title": str(i.get("title", ""))[:80], "kind": i.get("kind", "?"),
+        "effort": i.get("effort", "?"), "risk": i.get("risk", "?"),
+        "repo": str(i.get("repo", "?"))[:60], "why": " ".join(str(i.get("why", "")).split())[:140],
+    } for i in _integrate_open_ideas()], [])
 
     # -- organs -------------------------------------------------------------------------------
     sys_ = p.get("system") or {}
@@ -347,6 +361,7 @@ def snapshot(probes: Optional[Dict[str, Callable[[], Any]]] = None, now: Optiona
         "standing": [{"id": s.id, "status": s.status.value, "title": s.title[:60], "schedule": s.schedule.describe(),
                       "runs": s.runs, "failing": s.consecutive_failures} for s in standing[:8]],
         "approvals": pending, "events": _events(25),
+        "integrations": integrations[:10],
         "audit": {"ok": chain_ok, "records": v.records if v else 0, "seq": seq, "head": head[:12]},
         "active": active.id if active else None, "stop": stop_on,
     }

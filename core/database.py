@@ -1,7 +1,9 @@
 import os
 import logging
+import sqlite3
 from datetime import datetime
-from sqlalchemy import create_engine, Column, String, Text, Boolean, DateTime, Integer, ForeignKey, JSON, Index, func, text
+from sqlalchemy import create_engine, event, Column, String, Text, Boolean, DateTime, Integer, ForeignKey, JSON, Index, func, text
+from sqlalchemy.pool import QueuePool
 from sqlalchemy.types import TypeDecorator
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
 from sqlalchemy.orm import relationship, sessionmaker, backref
@@ -24,11 +26,77 @@ class TimestampMixin:
 # Get database URL from environment, default to SQLite
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./data/app.db")
 
-# Create engine
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
-)
+_IS_SQLITE = "sqlite" in DATABASE_URL
+# In-memory SQLite uses SQLAlchemy's SingletonThreadPool, which does NOT accept
+# pool_size/max_overflow; file-backed SQLite is switched to a QueuePool below.
+_IS_MEMORY = ":memory:" in DATABASE_URL
+
+# Create engine. Pooling notes:
+# - SQLite is single-writer; the default pool for pysqlite is actually
+#   QueuePool + a per-connection recycle in SQLAlchemy 2.x only when using
+#   StaticPool for :memory:. Here we keep an explicit bounded QueuePool so
+#   concurrent requests reuse connections instead of opening/closing a new
+#   sqlite file handle per checkout (the old behavior).
+# - Non-SQLite (Postgres/MySQL) gets a tuned QueuePool with pre-ping so dead
+#   connections are detected before use instead of erroring mid-request.
+if _IS_SQLITE:
+    _sqlite_kwargs = dict(
+        connect_args={
+            "check_same_thread": False,
+            # Never hang a request thread forever waiting on the SQLite write
+            # lock; raise "database is locked" after 10s instead (the app has
+            # retry paths and users get an error rather than a stuck worker).
+            "timeout": 10,
+        },
+        pool_pre_ping=False,  # pointless for local sqlite files
+    )
+    if not _IS_MEMORY:
+        # Bounded QueuePool instead of the default per-thread pool: one shared
+        # set of file handles reused across request threads and background
+        # workers, instead of a fresh connection per thread.
+        _sqlite_kwargs.update(poolclass=QueuePool, pool_size=5, max_overflow=10)
+    engine = create_engine(DATABASE_URL, **_sqlite_kwargs)
+else:
+    engine = create_engine(
+        DATABASE_URL,
+        pool_size=10,
+        max_overflow=20,
+        pool_recycle=1800,
+        pool_pre_ping=True,
+    )
+
+
+if _IS_SQLITE:
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_connection: sqlite3.Connection, connection_record):
+        """Per-connection performance pragmas.
+
+        - WAL journal mode: readers no longer block the writer and the writer
+          no longer blocks readers — the single biggest win for this app, which
+          runs background pollers/schedulers against the same DB as HTTP
+          request handlers. Persists in the DB file, but re-applying per
+          connection is cheap and also covers fresh databases.
+        - synchronous=NORMAL: with WAL this keeps the database consistent
+          (no corruption on crash; at worst the last transaction may be lost,
+          the same guarantee as FULL under rollback-only semantics) while
+          removing an fsync from every commit's hot path.
+        - busy_timeout: belt-and-suspenders alongside the connect timeout so
+          SQLite itself waits for locks instead of failing instantly.
+        - cache_size/mmap_size/temp_store: keep more pages in RAM (~64MB page
+          cache, 256MB mmap) and put temp tables/sorts in memory instead of
+          disk files.
+        """
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA busy_timeout=10000")
+            cursor.execute("PRAGMA cache_size=-65536")   # ~64 MB page cache
+            cursor.execute("PRAGMA mmap_size=268435456") # 256 MB memory-mapped I/O
+            cursor.execute("PRAGMA temp_store=MEMORY")
+        finally:
+            cursor.close()
+
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
