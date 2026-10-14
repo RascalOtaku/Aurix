@@ -139,4 +139,36 @@ def setup_command_routes() -> APIRouter:
         from src import approval_gate as ag
         return {"ok": True, "message": ag.handle_command(verb, approval_id, resolver="web")}
 
+    @router.post("/api/command/integrate/{iid}/{verb}")
+    async def integrate_decide(iid: str, verb: str, request: Request):
+        """adopt | skip an open integration idea from the web. Same authority rule as approvals: a REAL
+        logged-in admin (never the agent's internal loopback token) plus X-AURIX-Confirm: ADOPT|SKIP.
+        Mirrors the Telegram `adopt i-xxxxxx` / `skip i-xxxxxx` commands exactly; adopting only queues
+        the idea into its lane (upgrade backlog / skill forge), which drafts, tests and asks again."""
+        _require_human_admin(request)
+        v = (verb or "").strip().lower()
+        if v not in ("adopt", "skip"):
+            raise HTTPException(400, "verb must be adopt or skip")
+        if request.headers.get("X-AURIX-Confirm", "").strip().upper() != v.upper():
+            raise HTTPException(400, f"missing X-AURIX-Confirm: {v.upper()}")
+        from src.foundation import integrate
+        if not integrate.IID.match(iid or ""):
+            raise HTTPException(400, "bad idea id")
+        msg, idea = await asyncio.to_thread(integrate.decide, iid, v == "adopt")
+        if idea is None:
+            return {"ok": True, "message": msg}
+        plan, _ = integrate.find_idea(iid)
+        spec = integrate.spec_for_lane(plan, idea)
+        if idea["kind"] == "upgrade":                    # enters the upgrade lane: drafted, tested, then `yes u-...`
+            from src.foundation import upgrades
+            return {"ok": True, "message": "✅ Adopted → upgrade lane.\n" + await asyncio.to_thread(upgrades.add_idea, spec)}
+        if idea["kind"] == "skill":                      # drafted + tested in the sandbox, then `approve skill`
+            try:
+                from src.foundation.llm_bridge import default_llm
+                from src.foundation import forge
+                return {"ok": True, "message": "✅ Adopted → skill forge.\n" + await forge.propose(spec, default_llm)}
+            except Exception as e:                       # forge needs the model/sandbox; never break the page
+                return {"ok": True, "message": f"✅ Adopted <b>{iid}</b>, but the forge could not start ({e}). Retry from chat with: adopt {iid}"}
+        return {"ok": True, "message": f"✅ Adopted <b>{iid}</b>."}
+
     return router

@@ -37,6 +37,11 @@ DIGEST_LIMIT = 9000
 IID = re.compile(r"^i-[0-9a-f]{6}$")
 KINDS = ("upgrade", "skill", "reference")
 LEVELS = ("low", "medium", "high")
+# The planner's own module and data dir must never enter a prompt: they are protected (approval_gate) and they
+# quote credential patterns (.env, auth.json...) literally in their regexes - refuse_reason() would then reject
+# every plan. Same defense for the digest peek: it walks the library, not this lane's own model-text records.
+_SKIP_MODULES = {"integrate.py"}
+_SKIP_DIRS = {"data/integrate/"}
 COPYLEFT = re.compile(r"(?i)\b(A?GPL|LGPL|SSPL|EUPL|OSL|CC-BY-SA|NOASSERTION|UNKNOWN|OTHER)\b")
 _lock = threading.Lock()
 _running: Dict[str, float] = {}
@@ -134,16 +139,23 @@ def digest(rec: dict) -> str:
 # --------------------------------------------------------------------------------------------------------------------------------
 
 def aurix_map(limit: int = 4500) -> Tuple[str, List[str]]:
-    """('file: purpose' lines for AURIX's Foundation modules, [module paths]) - so ideas can target real files, and code can check them."""
+    """('file: purpose' lines for AURIX's Foundation modules, [module paths]) - so ideas can target real files, and code can check them.
+
+    Two honest exclusions: this lane's own module (its docstring/regexes quote credential patterns literally, which
+    would make refuse_reason() reject every prompt built on the map), and any module whose first docstring line
+    trips the same check (e.g. upgrades.py mentions `.env` in its safety notes). The rest of the map stays complete."""
     root = Path(__file__).resolve().parent
+    from src.foundation import teacher
     lines, names = [], []
     for f in sorted(root.glob("*.py")):
-        if f.name.startswith("_"):
+        if f.name.startswith("_") or f.name in _SKIP_MODULES:
             continue
         try:
             first = f.read_text(encoding="utf-8").split('"""', 2)[1].strip().splitlines()[0]
         except (OSError, IndexError):
             first = ""
+        if teacher.refuse_reason(first):
+            continue
         purpose = first.split(" - ", 1)[-1] if " - " in first else first
         names.append(f"src/foundation/{f.name}")
         lines.append(f"src/foundation/{f.name}: {purpose[:90]}")
@@ -154,7 +166,7 @@ def _clean(s: Any, n: int) -> str:
     return re.sub(r"\s+", " ", str(s or "")).strip()[:n]
 
 
-def validate(obj: Any, license_name: str) -> Tuple[str, List[dict], List[str]]:
+def validate(obj: Any, license_name: str, real_files: Optional[List[str]] = None) -> Tuple[str, List[dict], List[str]]:
     """(summary, ideas, dropped-reasons). Code decides what survives."""
     from src.foundation import teacher
     from src.foundation.fastlane import _OUTWARD
@@ -176,7 +188,8 @@ def validate(obj: Any, license_name: str) -> Tuple[str, List[dict], List[str]]:
             dropped.append(f"'{idea['title'][:40]}': instruction/credential-like text")
             continue
         if idea["kind"] == "upgrade":                                    # an upgrade must name a REAL AURIX file, or it cannot be drafted
-            real = [n for n in aurix_map()[1] if n.rsplit("/", 1)[-1] in f"{idea['target']} {idea['spec']}"]
+            pool = real_files if real_files is not None else aurix_map()[1]
+            real = [n for n in pool if n.rsplit("/", 1)[-1] in f"{idea['target']} {idea['spec']}"]
             if real:
                 idea["target"] = real[0]
             else:
@@ -199,7 +212,7 @@ Asker = Callable[..., Tuple[Optional[str], dict]]
 
 def plan(rid: str, ask: Optional[Asker] = None, now: Optional[float] = None) -> dict:
     """Plan one absorbed repo. Always writes a plan record (status planned | failed | skipped) so it is never retried in a loop."""
-    from src.foundation import repos
+    from src.foundation import repos, teacher
     now = now or time.time()
     rec = repos.load(rid)
     p = {"rid": rid, "repo": f"{rec['owner']}/{rec['repo']}" if rec else rid, "created": now, "announced": False}
@@ -211,18 +224,28 @@ def plan(rid: str, ask: Optional[Asker] = None, now: Optional[float] = None) -> 
         if ask is None:
             from src.foundation import workers
             ask = workers.ask
-        from src.prompt_security import UNTRUSTED_CONTEXT_HEADER
-        prompt = (f"AURIX MODULES (an 'upgrade' idea MUST name one of these files as its target):\n{aurix_map()[0]}\n\n"
-                  f"{UNTRUSTED_CONTEXT_HEADER}\n<<<UNTRUSTED_SOURCE_DATA>>>\n{digest(rec)}\n<<<END_UNTRUSTED_SOURCE_DATA>>>")
-        text, info = ask("plan", PLANNER_SYSTEM, prompt, data_class="internal", max_tokens=1400, json_mode=True)
-        from src.foundation.planner import extract_json
-        obj = extract_json(text or "") if text else None
-        summary, ideas, dropped = validate(obj, str((rec.get("facts") or {}).get("license") or ""))
-        if not ideas:
-            p.update(status="failed", reason=info.get("reason") or "; ".join(dropped) or "no usable ideas in the reply",
-                     worker=info.get("worker"))
+        # Defense in depth: the digest quotes repo text (README excerpts). If any of it literally mentions a
+        # credential file or private key, refuse_reason() would reject the WHOLE prompt - which would look like a
+        # broken lane. Redact first, then check honestly: a still-refused digest is recorded as skipped, no model call.
+        d = digest(rec)
+        red, _n = teacher.redact(d)
+        why = teacher.refuse_reason(red)
+        if why:
+            p.update(status="skipped", reason=f"the repo's own text {why}; not sending it to a model")
         else:
-            p.update(status="planned", summary=summary, ideas=ideas, dropped=dropped, worker=info.get("worker"))
+            from src.prompt_security import UNTRUSTED_CONTEXT_HEADER
+            map_text, names = aurix_map()
+            prompt = (f"AURIX MODULES (an 'upgrade' idea MUST name one of these files as its target):\n{map_text}\n\n"
+                      f"{UNTRUSTED_CONTEXT_HEADER}\n<<<UNTRUSTED_SOURCE_DATA>>>\n{red}\n<<<END_UNTRUSTED_SOURCE_DATA>>>")
+            text, info = ask("plan", PLANNER_SYSTEM, prompt, data_class="internal", max_tokens=1400, json_mode=True)
+            from src.foundation.planner import extract_json
+            obj = extract_json(text or "") if text else None
+            summary, ideas, dropped = validate(obj, str((rec.get("facts") or {}).get("license") or ""), names)
+            if not ideas:
+                p.update(status="failed", reason=info.get("reason") or "; ".join(dropped) or "no usable ideas in the reply",
+                         worker=info.get("worker"))
+            else:
+                p.update(status="planned", summary=summary, ideas=ideas, dropped=dropped, worker=info.get("worker"))
     _save_plan(p)
     audit.append("integration_planned", rid=rid, status=p["status"], ideas=len(p.get("ideas") or []), worker=p.get("worker"))
     return p
@@ -299,6 +322,16 @@ def find_idea(iid: str) -> Tuple[Optional[dict], Optional[dict]]:
             if i["id"] == iid:
                 return p, i
     return None, None
+
+
+def open_ideas() -> List[dict]:
+    """Ideas waiting on an adopt/skip tap, oldest plan first - the shape heartbeat.waiting_for_you() expects."""
+    out = []
+    for p in plans():
+        for i in p.get("ideas") or []:
+            if i["status"] == "proposed":
+                out.append({**i, "repo": p.get("repo", p.get("rid", "?"))})
+    return out
 
 
 def decide(iid: str, adopt: bool, now: Optional[float] = None) -> Tuple[str, Optional[dict]]:
