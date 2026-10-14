@@ -37,7 +37,7 @@ bcrypt
 # (2.0 removed the decorator API). tests/test_mcp_e2e.py starts real servers, so the next major break fails CI.
 mcp>=2.3.0,<3
 # Knowledge graph client (src/graph_memory.py). 5.x matches the neo4j:5 server image.
-neo4j>=6.3.1,<7
+neo4j>=6.4.0,<7
 pyotp
 qrcode[pil]
 croniter
