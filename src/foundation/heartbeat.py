@@ -66,12 +66,13 @@ def waiting_for_you(limit: int = 6) -> str:
         except Exception as exc:
             record(logger, exc, context=f"heartbeat waiting-for-you: section {label} failed",
                    level=logging.WARNING)
-    from src.foundation import content, forge, freelance, gaming, learning, memory, repos, teacher, upgrades
+    from src.foundation import content, forge, freelance, gaming, integrate, learning, memory, repos, teacher, upgrades
     from src.foundation.land import hub as land
     from src.foundation import evolve
     add(gaming.pending, lambda p: f"🎮 {e(p['title'][:70])} - <code>yes {p['id']}</code> / <code>no {p['id']}</code>", 'gaming')
     add(lambda: [u for u in upgrades.all_proposals() if u["status"] == "review"], lambda u: f"🛠️ Upgrade: {e(u['title'][:60])} - <code>yes {u['id']}</code> / <code>no {u['id']}</code>", 'upgrades')
     add(repos.pending, lambda r: f"📥 {e(r['owner'])}/{e(r['repo'])} - <code>yes {r['id']}</code> / <code>no {r['id']}</code>", 'repos')
+    add(integrate.open_ideas, lambda i: f"🧩 Adopt from {e(str(i.get('repo', '?'))[:40])}: {e(i['title'][:50])} - <code>adopt {i['id']}</code> / <code>skip {i['id']}</code>", 'integrate')
     add(memory.pending, lambda k: f"🧠 {'Forget' if k.get('kind') == 'forget' else 'Remember'}: {e(k.get('text', '')[:60])} - <code>yes {k['id']}</code> / <code>no {k['id']}</code>", 'memory')
     add(lambda: [l for l in teacher.all_lessons() if l.get("status") == "pending"], lambda l: f"🎓 Lesson: {e(l['title'][:60])} - <code>approve lesson {l['id']}</code> / <code>deny lesson {l['id']}</code>", 'teacher')
     add(freelance.pending, lambda j: f"🧰 {e(j['title'][:60])} - <code>yes {j['id']}</code> / <code>no {j['id']}</code>", 'freelance')

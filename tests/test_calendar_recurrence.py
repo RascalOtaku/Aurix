@@ -5,12 +5,37 @@ routes/calendar_routes using the same stub-friendly import pattern
 as test_null_owner_gates.py. No live DB or FastAPI test client needed.
 """
 
+import sys
+import types
 from datetime import datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
-from tests.test_null_owner_gates import _import_calendar_helpers
+# Mirror test_null_owner_gates.py: core.database instantiates SQLAlchemy
+# declarative classes at import time, which blows up under conftest's
+# sqlalchemy MagicMock stubs ("metaclass conflict"). Stub it (and friends)
+# before importing the calendar router module.
+for _stub in ["core.database", "core.auth", "src.endpoint_resolver"]:
+    if _stub not in sys.modules:
+        m = types.ModuleType(_stub)
+        if _stub == "core.database":
+            for _name in ["SessionLocal", "CalendarCal", "CalendarEvent", "Document",
+                          "DocumentVersion", "Session", "GalleryImage", "GalleryAlbum",
+                          "Note", "ScheduledTask", "TaskRun", "ModelEndpoint"]:
+                setattr(m, _name, MagicMock())
+        elif _stub == "core.auth":
+            m.AuthManager = MagicMock()
+        sys.modules[_stub] = m
+
+
+def _import_calendar_helpers():
+    """Import routes.calendar_routes without booting the full app (see stubs above)."""
+    mod_name = "routes.calendar_routes"
+    if mod_name in sys.modules:
+        return sys.modules[mod_name]
+    return __import__(mod_name, fromlist=["_get_or_404_calendar", "_get_or_404_event"])
 
 
 # ── _resolve_base_uid ──────────────────────────────────────────────────
