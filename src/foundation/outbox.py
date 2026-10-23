@@ -15,6 +15,9 @@ Inspired by agents that, finding something wrong at night, kept trying to reach 
     FOLLOW_UP_MINUTES with "still waiting for you", and then left alone.
 
 Replies to something you just typed or tapped never pass through here: you asked, you get the answer.
+
+A held message that carried buttons (an approval card) keeps them: after the summary it is re-sent whole, as the same one-tap card, so a
+2 AM approval request waits for the morning instead of waking you, and still arrives as a card rather than a line of text.
 """
 from __future__ import annotations
 
@@ -25,7 +28,7 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 e = html.escape
 AWAKE_MINUTES = 20
@@ -110,9 +113,11 @@ def owner_awake(st: dict, now: float) -> bool:
     return now - float(st.get("owner_active", 0) or 0) < AWAKE_MINUTES * 60
 
 
-def decide(text: str, now: Optional[float] = None, emergency: Optional[bool] = None, whole: bool = False) -> str:
+def decide(text: str, now: Optional[float] = None, emergency: Optional[bool] = None, whole: bool = False,
+           buttons: Optional[dict] = None) -> str:
     """'send', 'hold' (stored for the summary; `whole` ones - e.g. a scheduled report - are delivered in full after it) or
-    'drop' (a repeated emergency). Records sends. `emergency` overrides the 🚨 convention (the /alert API)."""
+    'drop' (a repeated emergency). Records sends. `emergency` overrides the 🚨 convention (the /alert API). A held message
+    with `buttons` (an inline keyboard) is delivered whole after the summary, buttons and all."""
     now = now or time.time()
     st = _load()
     sent = [t for t in st.get("sent", []) if now - t < 3600]
@@ -128,7 +133,11 @@ def decide(text: str, now: Optional[float] = None, emergency: Optional[bool] = N
     quiet = in_quiet_hours(_local(now)) and not owner_awake(st, now)
     if quiet or len(sent) >= max_per_hour():
         held = st.get("held", [])
-        held.append({"t": now, "text": text if whole else text[:2000], "why": "quiet" if quiet else "cap", "whole": whole})
+        whole = whole or bool(buttons)
+        row = {"t": now, "text": text if whole else text[:2000], "why": "quiet" if quiet else "cap", "whole": whole}
+        if buttons:
+            row["buttons"] = buttons
+        held.append(row)
         st["held"] = held[-MAX_HELD:]
         _save(st)
         return "hold"
@@ -144,11 +153,16 @@ def _first_line(text: str) -> str:
 
 
 def due(now: Optional[float] = None) -> List[str]:
-    """Messages to send now on the scheduler tick: the summary of held messages once quiet hours end (or the hourly cap
-    frees up), and a single follow-up for an emergency nobody has seen. Never raises."""
+    """The texts of due_items() (for callers that send plain text)."""
+    return [text for text, _ in due_items(now)]
+
+
+def due_items(now: Optional[float] = None) -> List[Tuple[str, Optional[dict]]]:
+    """(text, buttons) to send now on the scheduler tick: the summary of held messages once quiet hours end (or the hourly
+    cap frees up), held reports and cards in full after it, and a single follow-up for an emergency nobody has seen."""
     now = now or time.time()
     st = _load()
-    out: List[str] = []
+    out: List[Tuple[str, Optional[dict]]] = []
     held = st.get("held", [])
     quiet = in_quiet_hours(_local(now)) and not owner_awake(st, now)
     sent = [t for t in st.get("sent", []) if now - t < 3600]
@@ -162,17 +176,18 @@ def due(now: Optional[float] = None) -> List[str]:
             lines.append("• " + e(_first_line(h["text"])) + (" (in full below)" if h.get("whole") else ""))
         if len(held) > 25:
             lines.append(f"… and {len(held) - 25} more.")
-        lines.append("Anything waiting on a yes/no is in <code>approvals</code>.")
-        out.append("\n".join(lines))
-        out.extend(h["text"] for h in held if h.get("whole"))
+        lines.append("Cards waiting on a decision follow below, buttons and all." if any(h.get("buttons") for h in held)
+                     else "Anything waiting on a yes/no is in <code>approvals</code>.")
+        out.append(("\n".join(lines), None))
+        out.extend((h["text"], h.get("buttons")) for h in held if h.get("whole"))
         st["held"] = []
         sent.append(now)
     for em in st.get("emergencies", []):
         if (not em.get("followed") and now - em["t"] >= FOLLOW_UP_MINUTES * 60
                 and float(st.get("owner_active", 0) or 0) < em["t"] - AWAKE_MINUTES * 60
                 and not owner_awake(st, now)):
-            out.append(f"{EMERGENCY_MARK} <b>Still waiting for you</b> (sent {int((now - em['t']) // 60)} min ago, "
-                       f"I will not repeat it again): " + e(_first_line(em["text"])))
+            out.append((f"{EMERGENCY_MARK} <b>Still waiting for you</b> (sent {int((now - em['t']) // 60)} min ago, "
+                        f"I will not repeat it again): " + e(_first_line(em["text"])), None))
             em["followed"] = True
     st["sent"] = sent
     _save(st)

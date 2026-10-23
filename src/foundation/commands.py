@@ -41,6 +41,8 @@ from src.foundation import homeapps
 from src.foundation import gpu_watch
 from src.foundation import outbox
 from src.foundation.land import hub as land
+from src.foundation.economy import hub as econ
+from src.foundation import build_approvals
 from src.foundation import evolve
 from src.foundation import evolve_domains  # noqa: F401 - import-time side effect: registers the "forge_guidance" domain
 from src.foundation import workers as fworkers
@@ -82,7 +84,37 @@ NOT_YET_AUTHORIZATIONS = {
 
 _SID = r"(sm-[0-9a-f]{6})"
 _SKILL = r"([a-z][a-z0-9_]{2,30})"
-_PATTERNS = [
+_ID = r"([a-z][a-z0-9_]{2,30})"
+_AMT = r"\$?(\d{1,7}(?:\.\d{1,2})?)"
+# The Economic Engine (src/foundation/economy): multi-part arguments are joined with a tab (economy.hub.SEP).
+_ECON_PATTERNS = [
+    ("econ_yes", re.compile(r"^\s*/?(?:yes|approve)\s+econ\s+(x-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
+    ("econ_no", re.compile(r"^\s*/?(?:no|deny|reject)\s+econ\s+(x-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
+    ("build_yes", re.compile(r"^\s*/?(?:yes|approve)\s+build\s+(\d{8}-\d{6}-\d{6})\s*[.!]*\s*$", re.I)),
+    ("build_no", re.compile(r"^\s*/?(?:no|deny|reject)\s+build\s+(\d{8}-\d{6}-\d{6})\s*[.!]*\s*$", re.I)),
+    ("econ_help", re.compile(r"^\s*/?(?:help\s+econ(?:omy)?|econ(?:omy)?\s+help)\s*\??\s*$", re.I)),
+    ("econ_set", re.compile(r"^\s*/?freedom\s+set\s+([a-z_]{2,20})\s+\$?([\d,]{1,12}(?:\.\d{1,2})?)\s*%?\s*$", re.I)),
+    ("econ_freedom", re.compile(r"^\s*/?(?:freedom|freedom\s+(?:number|dashboard)|economy|econ|economic\s+engine)\s*\??\s*$", re.I)),
+    ("econ_opps", re.compile(r"^\s*/?(?:opps|opportunities|portfolio|opportunity\s+desk)\s*\??\s*$", re.I)),
+    ("econ_new", re.compile(rf"^\s*/?opp\s+new\s+{_ID}\s+([a-z]{{3,12}})\s*[:\-]\s*(\S.{{2,118}})$", re.I)),
+    ("econ_import", re.compile(rf"^\s*/?opp\s+import\s+{_ID}\s*$", re.I)),
+    ("econ_opp_set", re.compile(rf"^\s*/?opp\s+{_ID}\s+set\s+([a-z_]{{2,20}})\s+(\S.{{0,599}})$", re.I | re.S)),
+    ("econ_advance", re.compile(rf"^\s*/?opp\s+{_ID}\s+(?:advance|next)\s*$", re.I)),
+    ("econ_modify", re.compile(rf"^\s*/?opp\s+{_ID}\s+(modify|close)\s*[:\-]\s*(\S.{{2,599}})$", re.I | re.S)),
+    ("econ_opp", re.compile(rf"^\s*/?opp\s+{_ID}\s*$", re.I)),
+    ("econ_evidence", re.compile(rf"^\s*/?evidence\s+{_ID}\s+([a-z_]{{4,20}})\s*[:\-]\s*(\S.{{2,599}}?)(?:\s+(https?://\S+))?\s*$", re.I | re.S)),
+    ("econ_spent", re.compile(rf"^\s*/?spent\s+{_AMT}\s+{_ID}(?:\s+(.{{1,200}}))?\s*$", re.I)),
+    ("econ_booked", re.compile(rf"^\s*/?booked\s+{_AMT}\s+{_ID}(?:\s+(.{{1,200}}))?\s*$", re.I)),
+    ("econ_hours", re.compile(rf"^\s*/?hours\s+(\d{{1,3}}(?:\.\d{{1,2}})?)\s+{_ID}(?:\s+(.{{1,200}}))?\s*$", re.I)),
+    ("econ_review", re.compile(r"^\s*/?(?:review|weekly\s+review|portfolio\s+review)\s*\??\s*$", re.I)),
+    ("econ_close", re.compile(r"^\s*/?(?:close\s+month|monthly\s+close)(?:\s+(\d{4}-\d{2}))?\s*$", re.I)),
+]
+# Arguments that are identifiers or keywords are lower-cased; free text keeps its case.
+_ECON_LOWER = {"econ_set": (0,), "econ_new": (0, 1), "econ_import": (0,), "econ_opp_set": (0, 1), "econ_advance": (0,),
+               "econ_modify": (0, 1), "econ_opp": (0,), "econ_evidence": (0, 1), "econ_spent": (1,), "econ_booked": (1,),
+               "econ_hours": (1,), "econ_yes": (0,), "econ_no": (0,)}
+
+_PATTERNS = _ECON_PATTERNS + [
     ("approve_standing", re.compile(rf"^\s*/?approve\s+standing\s+{_SID}\s*$", re.I)),
     ("deny_standing", re.compile(rf"^\s*/?deny\s+standing\s+{_SID}\s*$", re.I)),
     ("pause_standing", re.compile(rf"^\s*/?pause\s+standing\s+{_SID}\s*$", re.I)),
@@ -307,6 +339,10 @@ def parse(text: str) -> Optional[Tuple[str, str]]:
     for kind, rx in _PATTERNS:
         m = rx.match(text or "")
         if m:
+            if kind.startswith("econ_"):
+                parts = [(g or "").strip() for g in m.groups()]
+                parts = [x.lower() if i in _ECON_LOWER.get(kind, ()) else x for i, x in enumerate(parts)]
+                return kind, econ.SEP.join(parts).rstrip(econ.SEP)
             if kind == "authorize":
                 return kind, (m.group(1).lower() + (" " + m.group(2) if m.group(2) else ""))
             if kind == "money_set":                           # "<id> <status>"
@@ -509,6 +545,16 @@ class Foundation:
             pass
         try:                                    # freelance checking its own job feed must never break scheduling either
             await self._maybe_freelance_search(now or time.time())
+        except Exception:
+            pass
+        try:                                    # the build pipeline's approval cards (aurix_approval.py), through the outbox
+            if build_approvals.present():                 # no build pipeline on this machine: not even a thread hop
+                for text, _kb in await asyncio.to_thread(build_approvals.scan, now):
+                    await self.notify_ui(text, "build_approval")
+        except Exception:
+            pass
+        try:                                    # the Economic Engine's weekly review and monthly close
+            await self._maybe_economy(now or time.time())
         except Exception:
             pass
         try:                                    # the GPU PC's Ollama: models gone missing (never pages for it being off)
@@ -735,6 +781,24 @@ class Foundation:
             return
         if result and not result.startswith("Checked a real remote-jobs feed - nothing new"):
             await self.notify_ui(result, "freelance")
+
+    async def _maybe_economy(self, now_ts: float) -> None:
+        """Sunday 18:00 local: the weekly portfolio review. The 1st of the month from 09:00: last month's close. Each once.
+        Starts once the owner has opened the engine (`freedom`, `opps`); AURIX_ECON_REVIEW=0 turns both off. Unprompted, so both
+        go through the outbox (quiet hours, the hourly cap)."""
+        from src.foundation.economy import store as estore
+        if os.environ.get("AURIX_ECON_REVIEW", "1") == "0" or not estore.db_path().exists():
+            return                                           # nothing to review until the owner has opened the engine once
+        ln = st.local_now(now_ts)
+        week = ln.strftime("%G-W%V")
+        if ln.weekday() == 6 and ln.hour >= 18 and estore.meta_get("review_sent") != week:
+            estore.meta_set("review_sent", week)
+            audit.append("economy_review_sent", week=week)
+            await self.notify_ui(await asyncio.to_thread(econ.review_text, now_ts), "econ_review")
+        month = ln.strftime("%Y-%m")
+        if ln.day == 1 and ln.hour >= 9 and estore.meta_get("close_sent") != month and estore.one("SELECT 1 AS x FROM transactions"):
+            estore.meta_set("close_sent", month)
+            await self.notify_ui(await asyncio.to_thread(econ.close_text, None, now_ts), "econ_close")
 
     async def _maybe_digest(self, now_ts: float) -> None:
         """Opt-in: AURIX_DIGEST_AT=07:00 sends one owner digest per local day."""
@@ -1085,6 +1149,10 @@ class Foundation:
             return await asyncio.to_thread(subscriptions.remove, arg)
         if kind == "subscriptions_status":
             return await asyncio.to_thread(subscriptions.render_summary)
+        if kind.startswith("econ_"):
+            return await asyncio.to_thread(econ.handle, kind, arg)
+        if kind in ("build_yes", "build_no"):
+            return await asyncio.to_thread(build_approvals.resolve, arg, kind == "build_yes")
         if kind == "earnings":
             return await asyncio.to_thread(earnings.render)
         if kind == "earned":
@@ -1094,7 +1162,13 @@ class Foundation:
                 amt = float(amount)
             except ValueError:
                 return "Say it like `earned 45 transcription` (amount, then a source)."
-            return await asyncio.to_thread(earnings.record, amt, source, note)
+            reply = await asyncio.to_thread(earnings.record, amt, source, note)
+            if amt > 0:
+                try:                                        # an opportunity's id also lands in the Economic Engine's ledger
+                    reply += await asyncio.to_thread(econ.mirror_earned, amt, source, note)
+                except Exception:
+                    pass
+            return reply
         if kind == "money":
             return await asyncio.to_thread(money.list_text)
         if kind == "money_show":

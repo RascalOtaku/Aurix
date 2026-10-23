@@ -42,6 +42,8 @@ PROTECTED_COMPONENTS: Dict[str, List[str]] = {
         "src/foundation/repos.py", "scripts/aurix_absorb_agent.py", "data/repos/", "src/foundation/memory.py", "data/memory/",
         "src/foundation/shards.py", "data/shards/", "src/foundation/gamepilot.py", "routes/gamepilot_routes.py", "data/gamepilot/", "src/foundation/money.py", "money/", "data/money/", "src/foundation/upgrades.py", "scripts/aurix_upgrade_agent.py", "scripts/aurix_deploy.sh", "data/upgrades/",
         "src/foundation/land/", "data/land/",        # LandPilot: dossiers, evidence and acquisition approvals
+        "src/foundation/economy/", "data/economy/",  # Economic Engine: the ledger, evidence, stage moves and venture approvals
+        "aurix_approval.py", "src/foundation/build_approvals.py", "data/build_approvals/",   # build-pipeline approval cards
         "src/foundation/workers.py",                 # Worker Registry & Router: decides where private data may go
         "src/foundation/integrate.py", "data/integrate/",
         "src/foundation/versions.py", "data/versions/",     # version history + big-shift review tickets   # integration lane: plans + adopt decisions feeding the upgrade/skill lanes

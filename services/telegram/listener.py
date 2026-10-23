@@ -136,7 +136,7 @@ class TelegramListener:
         """Everything Aurix says on its own (scheduler, watchdog, missions) goes through the outbox: quiet hours, the
         hourly cap, emergencies with one follow-up (src/foundation/outbox.py). Replies to the owner use _notify."""
         from src.foundation import outbox
-        if outbox.decide(text) == "send":
+        if outbox.decide(text, buttons=buttons) == "send":       # a held card keeps its buttons for the morning
             await self._notify(text, buttons)
 
     def _foundation_obj(self):
@@ -379,8 +379,8 @@ class TelegramListener:
             try:
                 await self._foundation_obj().tick_standing()
                 from src.foundation import outbox
-                for text in outbox.due():                        # the morning summary, or one emergency follow-up
-                    await self._notify(text)
+                for text, kb in outbox.due_items():              # the morning summary (+ held cards), or one emergency follow-up
+                    await self._notify(text, kb)
             except asyncio.CancelledError:
                 raise
             except Exception as e:

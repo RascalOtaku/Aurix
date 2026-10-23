@@ -7,6 +7,19 @@ in `pyproject.toml` and `package.json`.
 ## [Unreleased]
 
 ### Added
+- **Economic Engine** (`src/foundation/economy/`, spec in `docs/ECONOMIC_ENGINE.md`): the freedom number and milestones,
+  an evidence-gated opportunity pipeline (discovered → … → scaled) stored in SQLite, one scorecard with hard limits first,
+  owner approval cards before any money, launch or scale-up, a ledger that keeps projected, booked and collected revenue
+  apart (with a tax reserve), a forecast-vs-actual learning loop, and a weekly review and monthly close via the outbox.
+  Telegram: `freedom`, `opps`, `opp <id>`, `evidence`, `spent`/`booked`/`hours`, `review`, `help economy`.
+- Build-pipeline approval cards (`aurix_approval.py`) are delivered to Telegram through the outbox
+  (`src/foundation/build_approvals.py`); `yes build <id>` / `no build <id>` resolves them.
+- The outbox keeps a held card's buttons: it arrives whole after the morning summary, still one tap.
+
+### Fixed
+- `aurix_approval.ApprovalManager` now reads the shared state on disk before its in-memory copy, so a decision made in another
+  process (the Telegram listener) reaches a polling pipeline.
+- Removed a private hostname and address from comments in `aurix_build_brain.py`.
 - `GET /api/health/aggregate` — aggregated degraded-state reporting across
   ChromaDB, SearXNG, email, ntfy, and configured model providers. Each probe is
   hard-capped at 3s; per-service `{status, latency_ms, error, detail}` plus a

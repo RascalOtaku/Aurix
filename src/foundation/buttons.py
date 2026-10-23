@@ -19,6 +19,7 @@ ALLOWED_KINDS = frozenset({
     "approve_standing", "deny_standing", "approve_skill", "deny_skill", "run_all", "dashboard", "games", "fixes", "games_refresh",
     "lessons", "evals", "teach", "fastlane", "teacher", "timeline", "menu", "trades", "level", "doctor", "disk", "homelab", "help", "status",
     "history", "todos", "projects", "ack", "trust", "repo", "repos", "repo_yes", "repo_no", "mem_yes", "mem_no", "memory", "recall", "unforget", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrade_now", "upgrade_openhands", "upgrades", "money", "money_show", "money_set", "unwrap", "night_now", "transcripts", "earnings", "freelance_status", "freelance_find", "fab_status", "printer", "pihole", "tv", "kuma", "gpu", "content_status", "learn_status", "subscriptions_status", "lab", "gp_status", "gp_disarm", "shards", "land", "land_show", "land_yes", "land_no", "workers", "integ_adopt", "integ_skip", "integrations", "version",
+    "econ_yes", "econ_no", "build_yes", "build_no", "econ_freedom", "econ_opps", "econ_opp", "econ_review",
 })
 
 MAIN_MENU: List[List[Tuple[str, str]]] = [
@@ -31,6 +32,7 @@ MAIN_MENU: List[List[Tuple[str, str]]] = [
     [("💰 Money ideas", "money"), ("🧪 Strategy lab", "lab")],
     [("🎁 Overnight gifts", "unwrap"), ("🎙️ Transcripts", "transcripts")],
     [("💵 Earnings", "earnings"), ("🧰 Freelance", "freelance")],
+    [("🧭 Freedom", "freedom"), ("💼 Opportunities", "opps")],
     [("📝 Content", "content"), ("💳 Subscriptions", "subscriptions")],
     [("📚 Library", "learn"), ("🤖 Helpers", "shards")],
     [("🛠️ Upgrades", "upgrades"), ("❓ Help", "help")],
@@ -95,6 +97,10 @@ def for_reply(kind: str, text: str) -> Optional[dict]:
     for nid in list(dict.fromkeys(re.findall(r"\byes (n-[0-9a-f]{6})", t)))[:3]:
         rows.append([("✅ Keep it", f"yes {nid}"), ("❌ Discard", f"no {nid}")])
 
+    for xid in list(dict.fromkeys(re.findall(r"\byes econ (x-[0-9a-f]{6})", t)))[:2]:
+        rows.append([("✅ Approve", f"yes econ {xid}"), ("❌ Deny", f"no econ {xid}")])
+    for bid in list(dict.fromkeys(re.findall(r"\byes build (\d{8}-\d{6}-\d{6})", t)))[:2]:
+        rows.append([("✅ Approve", f"yes build {bid}"), ("❌ Deny", f"no build {bid}")])
     for aid in list(dict.fromkeys(re.findall(r"\byes land (a-[0-9a-f]{6})", t)))[:2]:
         rows.append([("✅ APPROVE", f"yes land {aid}"), ("❌ REJECT", f"no land {aid}")])
     for iid in list(dict.fromkeys(re.findall(r"\badopt (i-[0-9a-f]{6})", t)))[:5]:
@@ -126,6 +132,8 @@ def for_reply(kind: str, text: str) -> Optional[dict]:
         rows.append([("📊 Dashboard", "dashboard"), ("💰 All money ideas", "money")])
     elif kind == "upgrades":
         rows.append([("🛠️ Work on one now", "upgrade now"), ("📊 Dashboard", "dashboard")])
+    elif kind in ("econ_freedom", "econ_review"):
+        rows.append([("💼 Opportunities", "opps"), ("📒 Weekly review", "review")])
     elif kind == "memory":
         rows.append([("📊 Dashboard", "dashboard")])
     elif kind == "games":

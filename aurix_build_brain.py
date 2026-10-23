@@ -41,10 +41,10 @@ from typing import Optional, Dict, Any, List
 # Configuration
 # ---------------------------------------------------------------------------
 # URLs support env-var overrides for cross-machine deployment.
-# Defaults assume Steammachine (where Kev and Ollama live).
+# Defaults assume the GPU PC (where Kev and Ollama live).
 # If running on the 7070, set:
-#   AURIX_KEV_URL=http://100.114.213.55:8009/v1/systemone
-#   AURIX_OLLAMA_URL=http://100.114.213.55:11434/api/generate
+#   AURIX_KEV_URL=http://<gpu-pc-tailscale-ip>:8009/v1/systemone
+#   AURIX_OLLAMA_URL=http://<gpu-pc-tailscale-ip>:11434/api/generate
 import os as _os
 KEV_URL = _os.environ.get("AURIX_KEV_URL", "http://localhost:8009/v1/systemone")
 KEV_MODEL = _os.environ.get("AURIX_KEV_MODEL", "kev-latest")
@@ -59,7 +59,7 @@ OLLAMA_URL = _os.environ.get("AURIX_OLLAMA_URL", "http://localhost:11434/api/gen
 OLLAMA_MODEL = _os.environ.get("AURIX_OLLAMA_MODEL", "llama3.2:3b")  # Verified working via API 2026-10-06
 
 # For local testing, we can mock Kev or use SSH tunnel
-# In production, this runs on Steammachine where Kev is local
+# In production, this runs on the GPU PC where Kev is local
 
 
 # ---------------------------------------------------------------------------

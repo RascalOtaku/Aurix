@@ -39,9 +39,9 @@ class ForReplyTests(unittest.TestCase):
         self.assertIn("do:approve lesson l-abcdef", [c for _, c in flat(buttons.for_reply("lessons", listing))])
 
     def test_menus_on_overview_screens_and_help_placeholders_do_not_make_buttons(self):
-        self.assertEqual(len(flat(buttons.for_reply("menu", "hi"))), 24)
+        self.assertEqual(len(flat(buttons.for_reply("menu", "hi"))), 26)
         help_kb = flat(buttons.for_reply("help", commands.HELP))
-        self.assertEqual(len(help_kb), 24)                                  # only the menu: "approve mission <id>" placeholders are not ids
+        self.assertEqual(len(help_kb), 26)                                  # only the menu: "approve mission <id>" placeholders are not ids
         self.assertIn(("▶ Check everything", "do:all"), flat(buttons.for_reply("dashboard", "x")))
         self.assertIn(("🔄 Refresh facts", "do:games refresh"), flat(buttons.for_reply("games", "x")))
 

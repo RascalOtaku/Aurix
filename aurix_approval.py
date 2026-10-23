@@ -149,9 +149,12 @@ class ApprovalManager:
                 pass  # persistence is best-effort
 
     def _load(self, approval_id: str) -> Optional[ApprovalRequest]:
-        """Load approval from memory or RecoveryState."""
-        if approval_id in self._memory:
-            return self._memory[approval_id]
+        """Load approval from RecoveryState (the shared truth), else memory.
+
+        Disk wins when it exists: the decision is usually made by ANOTHER process
+        (the 7070's Telegram listener resolves it), so a cached in-memory copy
+        would keep a polling pipeline waiting on "pending" forever.
+        """
         if self.recovery:
             try:
                 import os
@@ -166,7 +169,7 @@ class ApprovalManager:
                     return approval
             except (OSError, KeyError, json.JSONDecodeError):
                 pass
-        return None
+        return self._memory.get(approval_id)
 
     def request(self, action: str, target: str, reason: str,
                 risk_details: dict = None, context: dict = None) -> ApprovalRequest:

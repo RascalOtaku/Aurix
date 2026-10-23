@@ -23,7 +23,7 @@ from typing import Callable, Optional, Tuple
 
 ROUTABLE = frozenset({"look", "home", "home_switch", "printer", "fab_status", "disk", "homelab", "status", "doctor", "level",
                       "games", "version", "unwrap", "earnings", "dashboard", "pihole", "pihole_pause", "pihole_resume", "tv",
-                      "tv_pause", "tv_resume", "kuma", "gpu"})
+                      "tv_pause", "tv_resume", "kuma", "gpu", "econ_freedom", "econ_opps", "econ_review"})
 TIMEOUT = 8
 MIN_CONFIDENCE = 0.75
 # High-stakes words (from the triage prototype's human-escalation guard): such a message is never shortcut by the tiny
@@ -51,6 +51,9 @@ Commands:
 - version                   (which Aurix version is running)
 - unwrap                    (what happened overnight)
 - earnings                  (money earned so far)
+- freedom                   (the freedom number: how far from not needing a job, dependable income, the gap)
+- opps                      (the ranked list of business opportunities)
+- review                    (the weekly portfolio review: what earned money, what took time)
 Reply with ONLY JSON: {"command": "<one command exactly as listed, or empty>", "confidence": <0..1>}.
 Use an empty command for anything else: questions, chat, requests to make, buy, print, approve or change something."""
 
