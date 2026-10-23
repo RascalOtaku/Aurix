@@ -35,7 +35,7 @@ discovered → researched → validated → APPROVED → built → LAUNCHED → 
 
 | Move to | Evidence required (checked in code) |
 |---|---|
-| researched | `research` and `competitor` evidence |
+| researched | `research` and `competitor` evidence, each with a source link (an unsourced note is kept but opens no gate; a `hypothesis` never counts) |
 | validated | demand evidence (`customer_interest`, `presale`, `payment`, or collected revenue), `legal_ok`, a projected net |
 | **approved** | hard limits pass, `legal_ok`, success criteria, stop conditions, next action, deadline, **then an owner approval card** |
 | built | `build` evidence (the sample deliverable or workflow exists) |
@@ -91,6 +91,14 @@ needs at least two samples (otherwise 1.0). Optimism that reality has not backed
 - Tax reserve = profit × `tax` (default 25%).
 - **Available** = profit − reserve.
 - **Dependable income** = the *lowest* available figure of the last three complete months, with an empty month counting as $0.
+  It is a deliberately conservative **rule, not a statistical forecast**: with only a few months of records there is no reliable
+  forecast to make. A loss month is floored at $0, and the dashboard says how many months of records there are.
+- A **refund** comes off collected revenue in the month it is paid back.
+- The tax reserve is taken only from profitable months. Losses are not carried forward (the real tax position belongs on the tax
+  return).
+- Every venture shows **net earned per hour of your time**: $200 for 15 hours and $200 for 90 minutes are different businesses.
+- **Three kinds of progress are kept apart** on the dashboard: *engineering* (ventures built), *commercial* (sales collected, cash
+  in and out, per hour) and *freedom* (dependable income).
 
 ## The freedom number
 
@@ -109,6 +117,15 @@ fund is $13,500.
 **Time bought back:** dependable income ÷ your job's after-tax hourly wage (`wage`) = job hours replaced each month.
 
 ## Telegram
+
+After a deploy, `econ check` verifies the live box:
+- the engine's code fingerprint;
+- database integrity and writability;
+- every setting, with the freedom math worked through;
+- a scripted bookkeeping scenario (sale, refund, loss month, empty month, tax, booked and projected revenue) replayed on a
+  throwaway database;
+- a live approval round-trip between two processes;
+- held cards with their buttons, and the next review time.
 
 `help economy` lists every command. The main ones:
 

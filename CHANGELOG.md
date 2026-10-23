@@ -14,6 +14,9 @@ in `pyproject.toml` and `package.json`.
   Telegram: `freedom`, `opps`, `opp <id>`, `evidence`, `spent`/`booked`/`hours`, `review`, `help economy`.
 - Build-pipeline approval cards (`aurix_approval.py`) are delivered to Telegram through the outbox
   (`src/foundation/build_approvals.py`); `yes build <id>` / `no build <id>` resolves them.
+- Economic Engine 1.1: `econ check` (post-deploy verification incl. a scratch-ledger bookkeeping self-test and a live
+  approval round-trip), refunds, net earned per hour of owner time, engineering / commercial / freedom progress shown
+  separately, research and competitor evidence must cite a source to open a stage, and `hypothesis` evidence that never counts.
 - The outbox keeps a held card's buttons: it arrives whole after the morning summary, still one tap.
 
 ### Fixed

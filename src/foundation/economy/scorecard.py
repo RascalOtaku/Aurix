@@ -21,7 +21,10 @@ from typing import Dict, List, Optional, Tuple
 from src.foundation.economy import freedom, ledger, store
 
 EVIDENCE_KINDS = ("research", "competitor", "customer_interest", "presale", "payment", "cost_quote", "legal_ok",
-                  "legal_problem", "build", "risk", "lesson")
+                  "legal_problem", "build", "risk", "lesson", "hypothesis")
+# Observed facts must say where they were observed: research/competitor evidence without a source is kept, but it does not open a
+# stage gate. `hypothesis` is the honest home for a guess - recorded, shown, and never counted as evidence of anything.
+NEEDS_SOURCE = ("research", "competitor")
 DEMAND_LEVELS = {"none": 0.0, "interest": 0.3, "presale": 0.6, "paid": 0.85, "recurring": 1.0}
 WEIGHTS = {"demand": 25, "contribution": 20, "speed": 10, "hours_fit": 10, "automation": 10, "durability": 10,
            "reversibility": 5, "strategic": 10}

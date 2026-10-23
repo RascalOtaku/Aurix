@@ -8,6 +8,7 @@ data/economy/ (identity.PROTECTED_COMPONENTS), so no agent can forge a sale, an 
 """
 from __future__ import annotations
 
+import contextvars
 import os
 import secrets
 import sqlite3
@@ -106,8 +107,23 @@ CREATE TABLE IF NOT EXISTS meta (
 """
 
 
+# A scratch database for the self-check (check.py). A ContextVar, not a global: it only affects the thread/task that set it,
+# so a self-check running in one thread can never send the scheduler's real review to the scratch file or vice versa.
+_override: contextvars.ContextVar = contextvars.ContextVar("economy_db_override", default=None)
+
+
 def db_path() -> Path:
-    return Path(os.getenv("AURIX_PROJECT_ROOT", "/app")) / "data" / "economy" / "economy.db"
+    o = _override.get()
+    return Path(o) if o else Path(os.getenv("AURIX_PROJECT_ROOT", "/app")) / "data" / "economy" / "economy.db"
+
+
+@contextmanager
+def scratch(path: Path) -> Iterator[None]:
+    token = _override.set(str(path))
+    try:
+        yield
+    finally:
+        _override.reset(token)
 
 
 @contextmanager

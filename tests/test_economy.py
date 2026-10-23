@@ -34,7 +34,7 @@ class EconBase(unittest.TestCase):
         seed.seed_if_empty()
         for kind, text in (("research", "three sites sell parcel reports"), ("competitor", "one sells at $79"),
                            ("customer_interest", "two forum posts asking"), ("legal_ok", "records are public")):
-            pipeline.add_evidence(oid, kind, text)
+            pipeline.add_evidence(oid, kind, text, "https://example.com/" + kind)
         pipeline.advance(oid)
         pipeline.advance(oid)
         for f, v in (("success", "2 paid reports"), ("stop", "no sale after 3 listings"), ("due", "2026-12-15"), ("budget", "30")):
@@ -99,6 +99,39 @@ class LedgerTests(EconBase):
                 ledger.add(*args)
 
 
+class FinancialLogicTests(EconBase):
+    def test_refunds_come_off_the_month_they_are_paid(self):
+        pipeline.create("thing", "Thing", "research")
+        ledger.add("revenue", 200, "thing", "collected", at=ts(2026, 8, 20))
+        ledger.add("refund", 200, "thing", at=ts(2026, 9, 3))
+        self.assertEqual(ledger.month_summary("2026-08")["collected"], 200)
+        self.assertEqual(ledger.month_summary("2026-09")["available"], -200)        # a loss month is shown
+        tot = ledger.venture_totals("thing")
+        self.assertEqual((tot["collected"], tot["sales"]), (0, 1))
+
+    def test_per_hour_is_measured_not_guessed(self):
+        pipeline.create("thing", "Thing", "research")
+        ledger.add("revenue", 200, "thing", "collected", at=NOW)
+        ledger.log_hours(15, "thing", at=NOW)
+        self.assertEqual(ledger.venture_totals("thing")["per_hour"], 13.33)
+        self.assertIn("$13.33 per hour of your time", hub.opp_text("thing"))
+        self.assertIn("1 sale(s) collected", hub.progress_line(NOW))
+
+    def test_history_months(self):
+        self.assertEqual(ledger.history_months(NOW), 0)
+        ledger.add("revenue", 10, None, "collected", at=ts(2026, 7, 1))
+        self.assertEqual(ledger.history_months(NOW), 3)
+        self.assertIn("not a forecast", hub.dashboard(NOW))
+
+    def test_the_deploy_check_passes_and_never_touches_the_live_ledger(self):
+        from src.foundation.economy import check
+        out = check.run(NOW)
+        self.assertNotIn("❌", out)
+        self.assertIn("8/8", out)
+        self.assertEqual(store.rows("SELECT * FROM transactions"), [])               # the scenario ran on a scratch file
+        self.assertRegex(out, r"code <code>[0-9a-f]{12}</code>")
+
+
 class PipelineTests(EconBase):
     def test_five_candidates_and_land_is_blocked_by_the_hard_limits(self):
         self.assertEqual(len(seed.seed_if_empty()), 5)
@@ -112,13 +145,23 @@ class PipelineTests(EconBase):
         seed.seed_if_empty()
         text, _ = pipeline.advance("market_monitor")
         self.assertIn("cannot move discovered", text)
-        pipeline.add_evidence("market_monitor", "research", "five tools exist")
-        pipeline.add_evidence("market_monitor", "competitor", "one charges $29/mo")
+        pipeline.add_evidence("market_monitor", "research", "five tools exist", "https://example.com/a")
+        pipeline.add_evidence("market_monitor", "competitor", "one charges $29/mo", "https://example.com/b")
         pipeline.advance("market_monitor")
         text, _ = pipeline.advance("market_monitor")
         self.assertIn("demand evidence", text)                          # a projection is not demand
         self.assertIn("legal_ok", text)
         self.assertEqual(pipeline.get("market_monitor")["stage"], "researched")
+
+    def test_unsourced_research_and_hypotheses_never_open_a_gate(self):
+        seed.seed_if_empty()
+        self.assertIn("does not count", pipeline.add_evidence("market_monitor", "research", "lots of tools"))
+        pipeline.add_evidence("market_monitor", "competitor", "a rival", "https://example.com/rival")
+        self.assertIn("never counted", pipeline.add_evidence("market_monitor", "hypothesis", "people would pay $29"))
+        self.assertIn("cannot move", pipeline.advance("market_monitor")[0])
+        pipeline.add_evidence("market_monitor", "research", "five tools exist", "https://example.com/list")
+        self.assertIn("researched", pipeline.advance("market_monitor")[0])
+        self.assertEqual(scorecard.demand("market_monitor"), "none")
 
     def test_approval_needs_the_owner_and_freezes_the_forecast(self):
         self.ready_to_approve()
@@ -202,6 +245,8 @@ class CommandTests(EconBase):
         self.assertEqual(commands.parse("yes econ x-ABC123"), ("econ_yes", "x-abc123"))
         self.assertEqual(commands.parse("opp abc close: Nobody Bought"), ("econ_modify", "abc\tclose\tNobody Bought"))
         self.assertEqual(commands.parse("review")[0], "econ_review")
+        self.assertEqual(commands.parse("refund 20 Abc sorry"), ("econ_refund", "20\tabc\tsorry"))
+        self.assertEqual(commands.parse("econ check"), ("econ_check", ""))
         self.assertIsNone(commands.parse("opp"))
 
     def test_taps_reach_the_card_but_not_new_ventures(self):

@@ -16,3 +16,5 @@ what is the most reliable, lowest-risk path from the owner's current resources t
 Nothing here spends money, contacts anyone or publishes anything. Models may read these records and suggest; only the owner's
 commands and approvals change them.
 """
+
+ENGINE_VERSION = "1.1"

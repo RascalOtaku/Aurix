@@ -116,18 +116,24 @@ def add_evidence(opp_id: str, kind: str, summary: str, source: str = "") -> str:
                   (eid, opp["id"], kind, summary.strip()[:600], source.strip()[:300], store.now()))
     store.execute("UPDATE opportunities SET updated = ? WHERE id = ?", (store.now(), opp["id"]))
     audit.append("economy_evidence", id=eid, opp=opp["id"], kind=kind)
-    return f"🧾 Logged <b>{kind}</b> evidence for <b>{e(opp['name'])}</b>. Demand evidence now: <b>{scorecard.demand(opp['id'])}</b>."
+    note = ""
+    if kind in scorecard.NEEDS_SOURCE and not source.strip():
+        note = "\n<i>No source link: kept as a note, but it does not count toward a stage until you add one with a link.</i>"
+    elif kind == "hypothesis":
+        note = "\n<i>A hypothesis: recorded so it can be tested, never counted as evidence.</i>"
+    return f"🧾 Logged <b>{kind}</b> for <b>{e(opp['name'])}</b>. Demand evidence now: <b>{scorecard.demand(opp['id'])}</b>." + note
 
 
 def requirements(opp: dict, to: str) -> List[str]:
     """What is still missing for opp to move to `to` (empty = ready)."""
     ev = [x["kind"] for x in scorecard.evidence(opp["id"])]
+    sourced = [x["kind"] for x in scorecard.evidence(opp["id"]) if x["source"].strip()]
     miss: List[str] = []
     if to == "researched":
-        if "research" not in ev:
-            miss.append("`research` evidence: what the market looks like (sources)")
-        if "competitor" not in ev:
-            miss.append("`competitor` evidence: who already sells this, and for how much")
+        if "research" not in sourced:
+            miss.append("`research` evidence with a source link: what the market looks like")
+        if "competitor" not in sourced:
+            miss.append("`competitor` evidence with a source link: who already sells this, and for how much")
     elif to == "validated":
         if scorecard.demand(opp["id"]) == "none":
             miss.append("demand evidence: `customer_interest`, `presale` or `payment` (a model's opinion does not count)")

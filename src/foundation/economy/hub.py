@@ -9,14 +9,17 @@ monthly close, as Telegram text. Every command here is owner-only (commands.py p
     opp new <id> <lane>: <name>          add one (lanes: research automation products software land other)
     opp import <money id>                bring an idea in from the money catalog
     opp <id> set <field> <value>         startup · loss · months · low · high · hours · budget · success · stop · next · due · ...
-    evidence <id> <kind>: <what> [url]   research competitor customer_interest presale payment cost_quote legal_ok legal_problem build risk lesson
+    evidence <id> <kind>: <what> [url]   research competitor customer_interest presale payment cost_quote legal_ok legal_problem build risk lesson hypothesis
+                                         (research/competitor need a source link to count; a hypothesis never counts)
     opp <id> advance                     next stage if the evidence is in; approval stages produce a card
     yes econ <x-id> / no econ <x-id>     decide an approval card
     opp <id> modify: <why> / close: <why>
     booked <amount> <id> [note]          a sale agreed, not yet paid       (earned <amount> <id> = cash collected)
+    refund <amount> <id> [note]          money given back to a customer
     spent <amount> <id> [note]           money actually paid out
     hours <h> <id> [note]                your time, so "time bought back" is measured, not guessed
     review                               the weekly portfolio review now   ·   close month [YYYY-MM]   the monthly close
+    econ check                           after a deploy: version, settings, database, held cards, a live approval round-trip
 """
 from __future__ import annotations
 
@@ -50,11 +53,12 @@ def dashboard(now: Optional[float] = None) -> str:
     p = freedom.profile()
     _, months = ledger.dependable(now)
     this = ledger.month_summary(ledger.month_of(now or store.now()))
+    hist = ledger.history_months(now)
     lines = ["🧭 <b>Freedom Dashboard</b>",
              "<i>What is the most reliable, lowest-risk path from what I have now to a life that no longer needs a conventional job?</i>",
              f"<b>Monthly costs:</b> {_money(c['monthly_costs'])} · <b>target income</b> {_money(c['target'])} (with a {p['margin']:g}% margin)",
-             f"<b>Dependable income:</b> {_money(c['dependable'])}/mo <i>(the worst of the last 3 full months: "
-             + ", ".join(f"{ym} {_money(v)}" for ym, v in months) + ")</i>",
+             f"<b>Dependable income:</b> {_money(c['dependable'])}/mo <i>(a conservative rule, not a forecast: the worst of the last "
+             "3 full months, " + ", ".join(f"{ym} {_money(v)}" for ym, v in months) + f"; {hist} full month(s) of records)</i>",
              f"<b>Gap:</b> {_money(c['gap'])}/mo",
              f"Breathing room   {_bar(c['breathing_room'])}  ({_money(c['saved'])} of {_money(c['emergency_fund'])} reserve)",
              f"Work optionality {_bar(c['optionality'])}  (dependable income vs half your costs)",
@@ -62,6 +66,7 @@ def dashboard(now: Optional[float] = None) -> str:
              f"<b>Stage:</b> {freedom.milestone(c)}"]
     if c["job_hours_replaced"]:
         lines.append(f"<b>Time bought back:</b> ~{c['job_hours_replaced']:g} job hours a month replaced by dependable income.")
+    lines.append(progress_line(now))
     lines.append(f"<b>This month so far:</b> collected {_money(this['collected'])} · booked {_money(this['booked'])} · costs "
                  f"{_money(this['costs'])} · available {_money(this['available'])} · {this['hours']:g} h of your time")
     ranked = scorecard.ranked()
@@ -79,6 +84,15 @@ def dashboard(now: Optional[float] = None) -> str:
         lines.append(f"<i>Still placeholders: {', '.join(ph)}. Set your real numbers, e.g. <code>freedom set essentials 1800</code>.</i>")
     lines.append("<i>Only cash collected, minus costs and a tax reserve, counts. Forecasts never do.</i>")
     return "\n".join(lines) + note
+
+
+def progress_line(now: Optional[float] = None) -> str:
+    """Three different kinds of progress, never blurred together."""
+    built = store.one("SELECT COUNT(*) AS n FROM opportunities WHERE stage IN ('built', 'launched', 'measured', 'scaled', 'modified')")["n"]
+    t = ledger.totals(now)
+    rate = f" · {_money((t['collected'] - t['costs']) / t['hours'])} per hour of your time" if t["hours"] else ""
+    return (f"<b>Progress</b> · engineering: {built} venture(s) built · commercial: {t['sales']} sale(s) collected, "
+            f"{_money(t['collected'])} in, {_money(t['costs'])} out{rate} · freedom: {_money(freedom.compute(now)['dependable'])}/mo dependable")
 
 
 def opps_text() -> str:
@@ -119,8 +133,9 @@ def opp_text(opp_id: str) -> str:
     if blocked:
         lines.append("⛔ <b>Hard limits:</b> " + e("; ".join(blocked)))
     if tot["collected"] or tot["costs"] or tot["hours"]:
-        lines.append(f"<b>Actual:</b> collected {_money(tot['collected'])} · booked {_money(tot['booked'])} · costs {_money(tot['costs'])} · "
-                     f"net {_money(tot['net'])} · {tot['hours']:g} h")
+        rate = f" · <b>{_money(tot['per_hour'])} per hour of your time</b>" if tot["per_hour"] is not None else ""
+        lines.append(f"<b>Actual:</b> {tot['sales']} sale(s) · collected {_money(tot['collected'])} · booked {_money(tot['booked'])} · "
+                     f"costs {_money(tot['costs'])} · net {_money(tot['net'])} · {tot['hours']:g} h{rate}")
     for label, f in (("Next action", "next_action"), ("Success looks like", "success_criteria"), ("Stop when", "stop_conditions"),
                      ("Deadline", "deadline"), ("Notes", "notes")):
         if opp[f]:
@@ -251,6 +266,15 @@ def handle(kind: str, arg: str) -> str:
             return pipeline.modify(a[0], a[2], close=a[1] == "close")
         if kind == "econ_evidence":
             return pipeline.add_evidence(a[0], a[1], a[2], a[3] if len(a) > 3 else "")
+        if kind == "econ_refund":
+            amount, oid, note = float(a[0]), a[1], (a[2] if len(a) > 2 else "")
+            if not pipeline.get(oid):
+                return f"No opportunity <code>{e(oid)}</code>."
+            ledger.add("refund", amount, oid, "collected", note)
+            return f"↩️ Logged a {_money(amount)} refund on <code>{oid}</code>; it comes off this month's collected revenue."
+        if kind == "econ_check":
+            from src.foundation.economy import check
+            return check.run()
         if kind in ("econ_spent", "econ_booked"):
             amount, oid, note = float(a[0]), a[1], (a[2] if len(a) > 2 else "")
             if not pipeline.get(oid):

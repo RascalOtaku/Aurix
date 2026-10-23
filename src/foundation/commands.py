@@ -104,6 +104,8 @@ _ECON_PATTERNS = [
     ("econ_opp", re.compile(rf"^\s*/?opp\s+{_ID}\s*$", re.I)),
     ("econ_evidence", re.compile(rf"^\s*/?evidence\s+{_ID}\s+([a-z_]{{4,20}})\s*[:\-]\s*(\S.{{2,599}}?)(?:\s+(https?://\S+))?\s*$", re.I | re.S)),
     ("econ_spent", re.compile(rf"^\s*/?spent\s+{_AMT}\s+{_ID}(?:\s+(.{{1,200}}))?\s*$", re.I)),
+    ("econ_refund", re.compile(rf"^\s*/?refund(?:ed)?\s+{_AMT}\s+{_ID}(?:\s+(.{{1,200}}))?\s*$", re.I)),
+    ("econ_check", re.compile(r"^\s*/?econ(?:omy)?\s+(?:check|selftest|self-test|verify)\s*$", re.I)),
     ("econ_booked", re.compile(rf"^\s*/?booked\s+{_AMT}\s+{_ID}(?:\s+(.{{1,200}}))?\s*$", re.I)),
     ("econ_hours", re.compile(rf"^\s*/?hours\s+(\d{{1,3}}(?:\.\d{{1,2}})?)\s+{_ID}(?:\s+(.{{1,200}}))?\s*$", re.I)),
     ("econ_review", re.compile(r"^\s*/?(?:review|weekly\s+review|portfolio\s+review)\s*\??\s*$", re.I)),
@@ -111,7 +113,7 @@ _ECON_PATTERNS = [
 ]
 # Arguments that are identifiers or keywords are lower-cased; free text keeps its case.
 _ECON_LOWER = {"econ_set": (0,), "econ_new": (0, 1), "econ_import": (0,), "econ_opp_set": (0, 1), "econ_advance": (0,),
-               "econ_modify": (0, 1), "econ_opp": (0,), "econ_evidence": (0, 1), "econ_spent": (1,), "econ_booked": (1,),
+               "econ_modify": (0, 1), "econ_opp": (0,), "econ_evidence": (0, 1), "econ_spent": (1,), "econ_booked": (1,), "econ_refund": (1,),
                "econ_hours": (1,), "econ_yes": (0,), "econ_no": (0,)}
 
 _PATTERNS = _ECON_PATTERNS + [
