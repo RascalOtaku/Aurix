@@ -23,6 +23,10 @@ in `pyproject.toml` and `package.json`.
   `opp <id> result:` ends it, and no demand points to closing or the next-best opportunity. researched → validated now needs
   all seven checklist items. Hours carry a category (production, acquisition, revision, support, admin). Two variants of the
   property offer (basic screen, ongoing monitoring) are added for comparison.
+- Economic Engine 1.3: delivery economics ((revenue − direct costs) ÷ production, revision and support hours) and all-in
+  economics ((revenue − all costs) ÷ every hour incl. finding customers and failed pitches) are reported separately; costs carry
+  `direct` / `acquisition` (acquisition by default while a demand experiment runs); `engineering` hours (building AURIX) are
+  shown but never counted as commercial.
 - LandPilot `land buyer <property>`: a customer-facing buyer's dossier in seven sections that separates confirmed, indicated and
   open findings, names who resolves each open question, flags apparent-but-unrecorded access, states its scope at top and bottom,
   and measures itself for the `sample` record.

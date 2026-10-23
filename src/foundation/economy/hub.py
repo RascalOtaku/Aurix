@@ -20,8 +20,9 @@ monthly close, as Telegram text. Every command here is owner-only (commands.py p
     opp <id> modify: <why> / close: <why>
     booked <amount> <id> [note]          a sale agreed, not yet paid       (earned <amount> <id> = cash collected)
     refund <amount> <id> [note]          money given back to a customer
-    spent <amount> <id> [note]           money actually paid out
-    hours <h> <id> [category] [note]     your time: production · acquisition · revision · support · admin
+    spent <amount> <id> [direct|acquisition] [note]   money actually paid out (acquisition by default during an experiment)
+    hours <h> <id> [category] [note]     your time: production · revision · support (delivery) · acquisition · admin
+                                         · engineering (building AURIX: shown, never counted as commercial)
     review                               the weekly portfolio review now   ·   close month [YYYY-MM]   the monthly close
     econ check                           after a deploy: version, settings, database, held cards, a live approval round-trip
 """
@@ -99,9 +100,18 @@ def progress_line(now: Optional[float] = None) -> str:
     """Three different kinds of progress, never blurred together."""
     built = store.one("SELECT COUNT(*) AS n FROM opportunities WHERE stage IN ('built', 'launched', 'measured', 'scaled', 'modified')")["n"]
     t = ledger.totals(now)
-    rate = f" · {_money((t['collected'] - t['costs']) / t['hours'])} per hour of your time" if t["hours"] else ""
-    return (f"<b>Progress</b> · engineering: {built} venture(s) built · commercial: {t['sales']} sale(s) collected, "
-            f"{_money(t['collected'])} in, {_money(t['costs'])} out{rate} · freedom: {_money(freedom.compute(now)['dependable'])}/mo dependable")
+    return (f"<b>Progress</b> · engineering: {built} venture(s) built, {t['engineering_hours']:g} h building (not commercial) · "
+            f"commercial: {t['sales']} sale(s) collected, {_money(t['collected'])} in, {_money(t['costs'])} out{_rates(t)} · "
+            f"freedom: {_money(freedom.compute(now)['dependable'])}/mo dependable")
+
+
+def _rates(t: dict) -> str:
+    out = []
+    if t["delivery_per_hour"] is not None:
+        out.append(f"delivery {_money(t['delivery_per_hour'])}/h")
+    if t["per_hour"] is not None:
+        out.append(f"<b>all-in {_money(t['per_hour'])}/h</b> (finding customers included)")
+    return (" · " + " · ".join(out)) if out else ""
 
 
 def opps_text() -> str:
@@ -141,8 +151,8 @@ def opp_text(opp_id: str) -> str:
              f"<b>Demand evidence:</b> {scorecard.demand(opp['id'])} · <b>legal:</b> {scorecard.legal(opp['id'])}"]
     if blocked:
         lines.append("⛔ <b>Hard limits:</b> " + e("; ".join(blocked)))
-    if tot["collected"] or tot["costs"] or tot["hours"]:
-        rate = f" · <b>{_money(tot['per_hour'])} per hour of your time</b>" if tot["per_hour"] is not None else ""
+    if tot["collected"] or tot["costs"] or tot["hours"] or tot["engineering_hours"]:
+        rate = _rates(tot)
         lines.append(f"<b>Actual:</b> {tot['sales']} sale(s) · collected {_money(tot['collected'])} · booked {_money(tot['booked'])} · "
                      f"costs {_money(tot['costs'])} · net {_money(tot['net'])} · {tot['hours']:g} h{rate}")
     for label, f in (("Next action", "next_action"), ("Success looks like", "success_criteria"), ("Stop when", "stop_conditions"),
@@ -157,7 +167,8 @@ def opp_text(opp_id: str) -> str:
     cats = ledger.hours_by_category(opp["id"])
     if cats:
         lines.append("<b>Your time:</b> " + " · ".join(f"{k} {v:g} h" for k, v in sorted(cats.items(), key=lambda kv: -kv[1]))
-                     + "  <i>(contribution per hour = (revenue − costs) ÷ ALL of these hours)</i>")
+                     + "  <i>(delivery $/h = (revenue − direct costs) ÷ production+revision+support; all-in $/h = (revenue − all "
+                       "costs) ÷ every hour except engineering)</i>")
     for smp in validation.samples(opp["id"])[-2:]:
         lines.append(f"<b>Sample</b> <code>{smp['id']}</code>: you {smp['owner_min']:g} min · AURIX {smp['machine_min']:g} min · "
                      f"${smp['cost']:,.2f} · {smp['sourced']}/{smp['findings']} sourced · {smp['unresolved']} open · value {smp['value']}")
@@ -316,7 +327,13 @@ def handle(kind: str, arg: str) -> str:
             if not pipeline.get(oid):
                 return f"No opportunity <code>{e(oid)}</code>."
             if kind == "econ_spent":
-                ledger.add("cost", amount, oid, "collected", note)
+                first, _, rest = note.partition(" ")
+                x = validation.running(oid)
+                if first.lower() in ledger.COST_CATEGORIES:
+                    cat, note = first.lower(), rest
+                else:
+                    cat = "acquisition" if x else "direct"          # money spent while a demand experiment runs is acquisition
+                ledger.add("cost", amount, oid, "collected", note, category=cat)
                 tot, opp = ledger.venture_totals(oid), pipeline.get(oid)
                 x = validation.running(oid)
                 if x:

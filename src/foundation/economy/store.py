@@ -174,6 +174,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(hours)").fetchall()}
     if "category" not in cols:
         conn.execute("ALTER TABLE hours ADD COLUMN category TEXT NOT NULL DEFAULT 'production'")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(transactions)").fetchall()}
+    if "category" not in cols:                     # costs: direct (delivering the work) | acquisition (finding and winning customers)
+        conn.execute("ALTER TABLE transactions ADD COLUMN category TEXT NOT NULL DEFAULT 'direct'")
 
 
 def new_id(prefix: str) -> str:

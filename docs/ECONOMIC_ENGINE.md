@@ -164,8 +164,12 @@ Each item must be backed by a record, not by a judgement:
 If the experiment finds no demand, the engine says so. You can close the idea, or change the offer and test it once more.
 The weekly review then points to the next-best opportunity rather than polishing a weak one.
 
-**Hours carry a category:** production, acquisition, revision, support or admin. Contribution per owner hour is
-(revenue − costs) ÷ *all* of those hours, so time spent finding customers, revising and giving support counts too.
+**Two economics, kept apart:**
+- *Delivery* = (revenue − direct costs) ÷ production, revision and support hours. Can the work itself pay?
+- *All-in* = (revenue − all costs) ÷ every hour, including finding customers, failed pitches and admin. Can it be a livelihood?
+
+Costs are tagged `direct` or `acquisition`. While a demand experiment is running, spending counts as acquisition by default.
+`engineering` hours (building AURIX itself) are shown on the dashboard but never counted as commercial progress.
 
 **`land buyer <property>`** turns a LandPilot dossier into the customer-facing sample, in seven sections:
 1. parcel identity

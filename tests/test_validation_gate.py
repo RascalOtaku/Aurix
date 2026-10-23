@@ -110,6 +110,29 @@ class HoursAndVariantsTests(GateBase):
         self.assertEqual(ledger.venture_totals(OID)["per_hour"], 50)
         self.assertIn("acquisition 2 h", hub.opp_text(OID))
 
+    def test_delivery_and_all_in_economics_are_kept_apart(self):
+        ledger.add("revenue", 200, OID, "collected")
+        ledger.add("cost", 20, OID, category="direct")
+        ledger.add("cost", 30, OID, category="acquisition")
+        ledger.log_hours(2, OID, category="production")
+        ledger.log_hours(4, OID, category="acquisition")                # incl. pitches that went nowhere
+        ledger.log_hours(10, OID, category="engineering")               # building AURIX: visible, never commercial
+        t = ledger.venture_totals(OID)
+        self.assertEqual(t["delivery_per_hour"], 90)                    # (200 - 20) / 2
+        self.assertEqual(t["per_hour"], 25)                             # (200 - 50) / 6
+        self.assertEqual(t["engineering_hours"], 10)
+        text = hub.opp_text(OID)
+        self.assertIn("delivery $90.00/h", text)
+        self.assertIn("all-in $25.00/h", text)
+        self.assertIn("10 h building (not commercial)", hub.progress_line())
+
+    def test_spending_during_an_experiment_is_acquisition(self):
+        self.ready_to_test()
+        self.start_experiment()
+        hub.handle(*commands.parse(f"spent 5 {OID} listing fee"))
+        hub.handle(*commands.parse(f"spent 3 {OID} direct county copy fee"))
+        self.assertEqual(ledger.venture_totals(OID)["acquisition_costs"], 5)
+
     def test_variants_are_added_once_to_an_existing_database(self):
         self.assertIsNotNone(pipeline.get("parcel_screen"))
         self.assertIsNotNone(pipeline.get("parcel_monitor"))

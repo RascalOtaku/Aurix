@@ -40,27 +40,38 @@ def month_of(ts: float) -> str:
     return _local(ts).strftime("%Y-%m")
 
 
+COST_CATEGORIES = ("direct", "acquisition")
+
+
 def add(kind: str, amount: float, opp_id: Optional[str] = None, status: str = "collected", note: str = "",
-        at: Optional[float] = None) -> dict:
+        at: Optional[float] = None, category: str = "direct") -> dict:
     if kind not in KINDS:
         raise ValueError(f"kind must be one of {KINDS}")
     if status not in STATUSES:
         raise ValueError(f"status must be one of {STATUSES}")
     if kind != "revenue" and status != "collected":
         raise ValueError("costs and distributions are recorded when actually paid")
+    if category not in COST_CATEGORIES:
+        raise ValueError(f"category must be one of {COST_CATEGORIES}")
     amount = round(float(amount), 2)
     if amount <= 0:
         raise ValueError("amount must be positive")
     row = {"id": store.new_id("t"), "opp_id": opp_id, "kind": kind, "status": status, "amount": amount,
            "note": (note or "")[:200], "at": at or store.now()}
-    store.execute("INSERT INTO transactions(id, opp_id, kind, status, amount, note, at) VALUES(?,?,?,?,?,?,?)",
-                  (row["id"], opp_id, kind, status, amount, row["note"], row["at"]))
+    store.execute("INSERT INTO transactions(id, opp_id, kind, status, amount, note, at, category) VALUES(?,?,?,?,?,?,?,?)",
+                  (row["id"], opp_id, kind, status, amount, row["note"], row["at"], category))
     audit.append("economy_txn", id=row["id"], opp=opp_id or "", kind=kind, status=status, amount=amount)
     return row
 
 
 # Where the owner's time goes. Production is the work itself; the others are what quietly turns a "profitable" service into a job.
-HOUR_CATEGORIES = ("production", "acquisition", "revision", "support", "admin")
+# Two economics, never blurred:
+#   delivery     (revenue - direct costs) / (production + revision + support hours)      can the WORK pay?
+#   all-in       (revenue - all costs)    / (delivery + acquisition + admin hours)        can it be a LIVELIHOOD? (failed pitches count)
+# `engineering` (building AURIX itself) is kept visible but is in neither: building the machine is not commercial success.
+HOUR_CATEGORIES = ("production", "acquisition", "revision", "support", "admin", "engineering")
+DELIVERY_HOURS = ("production", "revision", "support")
+ALLIN_HOURS = DELIVERY_HOURS + ("acquisition", "admin")
 
 
 def log_hours(hours: float, opp_id: Optional[str] = None, note: str = "", at: Optional[float] = None,
@@ -126,16 +137,26 @@ def dependable(now: Optional[float] = None) -> Tuple[float, List[Tuple[str, floa
 
 def venture_totals(opp_id: str) -> Dict[str, float]:
     txns = store.rows("SELECT * FROM transactions WHERE opp_id = ?", (opp_id,))
-    hrs = store.rows("SELECT hours FROM hours WHERE opp_id = ?", (opp_id,))
+    hrs = store.rows("SELECT hours, category FROM hours WHERE opp_id = ?", (opp_id,))
     collected = round(sum(r["amount"] for r in txns if r["kind"] == "revenue" and r["status"] == "collected")
                       - sum(r["amount"] for r in txns if r["kind"] == "refund"), 2)
     sales = sum(1 for r in txns if r["kind"] == "revenue" and r["status"] == "collected")
     booked = round(sum(r["amount"] for r in txns if r["kind"] == "revenue" and r["status"] == "booked"), 2)
     costs = round(sum(r["amount"] for r in txns if r["kind"] == "cost"), 2)
-    hours = round(sum(r["hours"] for r in hrs), 2)
-    net = round(collected - costs, 2)
-    return {"collected": collected, "booked": booked, "costs": costs, "net": net, "hours": hours, "sales": sales,
-            "per_hour": round(net / hours, 2) if hours else None}
+    return {"collected": collected, "booked": booked, "costs": costs, "net": round(collected - costs, 2), "sales": sales,
+            **_economics(collected, txns, hrs)}
+
+
+def _economics(collected: float, txns: List[dict], hrs: List[dict]) -> Dict[str, Optional[float]]:
+    direct = sum(r["amount"] for r in txns if r["kind"] == "cost" and r.get("category", "direct") != "acquisition")
+    costs = sum(r["amount"] for r in txns if r["kind"] == "cost")
+    delivery_h = sum(r["hours"] for r in hrs if r["category"] in DELIVERY_HOURS)
+    allin_h = sum(r["hours"] for r in hrs if r["category"] in ALLIN_HOURS)
+    return {"hours": round(allin_h, 2), "delivery_hours": round(delivery_h, 2),
+            "engineering_hours": round(sum(r["hours"] for r in hrs if r["category"] == "engineering"), 2),
+            "acquisition_costs": round(costs - direct, 2),
+            "delivery_per_hour": round((collected - direct) / delivery_h, 2) if delivery_h else None,
+            "per_hour": round((collected - costs) / allin_h, 2) if allin_h else None}
 
 
 def history_months(now: Optional[float] = None) -> int:
@@ -154,7 +175,7 @@ def totals(now: Optional[float] = None) -> Dict[str, float]:
     refunds = sum(r["amount"] for r in txns if r["kind"] == "refund")
     return {"sales": sum(1 for r in txns if r["kind"] == "revenue" and r["status"] == "collected"),
             "collected": round(collected - refunds, 2), "costs": round(sum(r["amount"] for r in txns if r["kind"] == "cost"), 2),
-            "hours": round(sum(r["hours"] for r in store.rows("SELECT hours FROM hours")), 2)}
+            **_economics(round(collected - refunds, 2), txns, store.rows("SELECT hours, category FROM hours"))}
 
 
 def recent(limit: int = 8) -> List[dict]:

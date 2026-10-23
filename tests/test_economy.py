@@ -125,7 +125,7 @@ class FinancialLogicTests(EconBase):
         ledger.add("revenue", 200, "thing", "collected", at=NOW)
         ledger.log_hours(15, "thing", at=NOW)
         self.assertEqual(ledger.venture_totals("thing")["per_hour"], 13.33)
-        self.assertIn("$13.33 per hour of your time", hub.opp_text("thing"))
+        self.assertIn("all-in $13.33/h", hub.opp_text("thing"))
         self.assertIn("1 sale(s) collected", hub.progress_line(NOW))
 
     def test_history_months(self):
