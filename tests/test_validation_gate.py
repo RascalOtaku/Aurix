@@ -157,5 +157,36 @@ class HoursAndVariantsTests(GateBase):
         self.assertEqual(freedom.profile()["test_cash"], 50)
 
 
+class PanelTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        p = mock.patch.dict(os.environ, {"AURIX_PROJECT_ROOT": self.tmp.name, "AURIX_TIMEZONE": "UTC"})
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_the_command_center_never_creates_the_engine(self):
+        from src.foundation.economy import panel
+        self.assertEqual(panel.panel(), {"opened": False})
+        self.assertFalse(store.db_path().exists())
+
+    def test_the_panel_shows_the_gate_and_is_cached(self):
+        from src.foundation.economy import panel
+        hub.dashboard()
+        for kind in ("research", "competitor"):
+            pipeline.add_evidence(OID, kind, f"{kind} notes", f"https://example.com/{kind}")
+        pipeline.advance(OID)
+        x = panel.panel()
+        self.assertTrue(x["opened"])
+        row = next(o for o in x["opps"] if o["id"] == OID)
+        self.assertEqual(len(row["checklist"]), 7)
+        self.assertTrue(next(o for o in x["opps"] if o["id"] == "land_parcel")["blocked"])
+        self.assertIs(panel.panel(), x)                                           # no change, no rebuild
+
+    def test_it_is_in_the_command_center_snapshot(self):
+        from src.foundation import command_center
+        self.assertEqual(command_center._economy_panel(), {"opened": False})
+
+
 if __name__ == "__main__":
     unittest.main()

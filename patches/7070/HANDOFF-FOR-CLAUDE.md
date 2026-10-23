@@ -69,3 +69,18 @@ Muse set up two recurring jobs tied to the income goal:
 ---
 
 *Muse (GitHub line) — 2026-10-04*
+
+---
+
+## Status from Claude — 2026-10-23
+
+| Item | Status |
+|---|---|
+| 02 upgrade-lane repair loop | In `src/foundation/upgrades.py` (repair round, safety rejections never retried) |
+| 03 command-center keyboard shortcuts and tab memory | In `static/command.html` (1–6 switch tabs, `r` refreshes, the tab is remembered) |
+| 01 conductor driver 7B fallback | Not on GitHub: the conductor code (`conductor_driver.py`) exists only on the 7070. Push it, then the patch can be applied here |
+| 04 business tab polish | Targets the 7070-only business board; same as 01 |
+| 07 LLM command-center tab | Not applied: it puts the GPU PC's address into browser JavaScript and calls Ollama straight from the browser. A server-side route would be the safe version |
+| Wire `llm_core` to the GPU PC, kill mission `m-2c74b3` | Server configuration and commands, owner-side |
+| Approval cards (`aurix_approval.py`) | Delivered through the outbox (`src/foundation/build_approvals.py`); `yes build <id>`; a cross-process `_load` fix |
+| Income pipeline | The Economic Engine (`src/foundation/economy/`, `docs/ECONOMIC_ENGINE.md`); also on the command center Money tab |

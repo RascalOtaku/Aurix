@@ -27,6 +27,9 @@ in `pyproject.toml` and `package.json`.
   economics ((revenue − all costs) ÷ every hour incl. finding customers and failed pitches) are reported separately; costs carry
   `direct` / `acquisition` (acquisition by default while a demand experiment runs); `engineering` hours (building AURIX) are
   shown but never counted as commercial.
+- The web command center's Money tab shows the Economic Engine (read-only): freedom number and milestones, engineering vs commercial
+  progress, delivery and all-in $/h, every opportunity with its score, blockers, next test and validation gate, and approvals
+  waiting on Telegram. It never creates or seeds the engine and caches between polls.
 - LandPilot `land buyer <property>`: a customer-facing buyer's dossier in seven sections that separates confirmed, indicated and
   open findings, names who resolves each open question, flags apparent-but-unrecorded access, states its scope at top and bottom,
   and measures itself for the `sample` record.

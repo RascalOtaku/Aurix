@@ -332,6 +332,11 @@ def default_probes() -> Dict[str, Callable[[], Any]]:
     return {"memory": probe_memory, "skills": probe_skills, "tasks": probe_tasks}
 
 
+def _economy_panel() -> Dict[str, Any]:
+    from src.foundation.economy import panel
+    return panel.panel()
+
+
 def _fabricate_panel() -> Dict[str, Any]:
     from src.foundation import fabricate
     return fabricate.panel()
@@ -405,6 +410,7 @@ def snapshot(system_probes: Optional[Dict[str, Callable[[], Any]]] = None,
         "mind": safe("mind", fmemory.panel, {"total": 0, "rows": [], "pending": []}),
         "upgrades": safe("upgrades", upgrades.panel, {"enabled": False, "items": []}),
         "money": safe("money", money.panel, {"lab": None, "items": []}),
+        "economy": safe("economy", _economy_panel, {"opened": False}),
         "gamepilot": safe("gamepilot", gamepilot.panel, {"pc_online": False, "paired": 0, "armed": False}),
         "shards": safe("shards", shards.panel, []),
         "nightshift": safe("nightshift", nightshift.panel, {}),

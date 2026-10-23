@@ -229,6 +229,9 @@
   <section class="card c6"><h2>Live audit ticker</h2><div id="ticker"></div></section>
   </div>
   <div class="tabpanel" data-tab="money">
+  <section class="card c12"><h2>Freedom &amp; opportunities <span class="small" id="econ-n"></span></h2>
+    <div class="dim small" style="margin-bottom:8px">The Economic Engine. Only cash collected, minus costs and a tax reserve, counts; forecasts never do. Read-only here: decide on Telegram (<code>freedom</code>, <code>opps</code>, <code>yes econ x-…</code>).</div>
+    <div id="econ"></div></section>
   <section class="card c12"><h2>Money <span class="small" id="money-n"></span></h2>
     <div class="dim small" style="margin-bottom:8px">Simulation and estimates only. AURIX never moves real money or opens accounts; every idea says what only you can do.</div>
     <div class="tblwrap"><table class="tbl" id="lab-table"><thead><tr><th>Paper strategy</th><th class="n">Per year</th><th class="n">Sharpe</th><th class="n">Worst drop</th><th class="n">Out-of-sample</th><th class="n">Live</th><th>Verdict</th></tr></thead><tbody id="lab-rows"></tbody></table></div>
@@ -814,6 +817,38 @@ function drawLand(l) {
   if (!dossiers.length) box.appendChild(el("div", { class: "dim small" }, "None yet. Try: land build <name>, then land propose <name>."));
 }
 
+function drawEconomy(x) {
+  x = x || {}; const box = $("econ"); box.replaceChildren();
+  if (!x.opened) { $("econ-n").textContent = ""; box.appendChild(el("div", { class: "dim small" }, "Not opened yet. Send freedom on Telegram to start it.")); return; }
+  const f = x.freedom || {}, p = x.progress || {};
+  const money = (v) => (v < 0 ? "-$" : "$") + Math.abs(Number(v || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const rate = (v) => (v === null || v === undefined) ? "-" : money(v) + "/h";
+  $("econ-n").textContent = "engine " + x.version + " · " + x.milestone;
+  const head = el("div", { class: "grow" + (f.gap > 0 ? "" : " ok") }); head.appendChild(el("i"));
+  const hm = el("div", { style: "flex:1;min-width:0" });
+  hm.appendChild(el("b", { style: "display:block;white-space:normal" }, "Dependable " + money(f.dependable) + "/mo of " + money(f.target) + " target · gap " + money(f.gap) + "/mo"));
+  hm.appendChild(el("div", { class: "small" }, "Breathing room " + Math.round((f.breathing_room || 0) * 100) + "% (" + money(f.saved) + " of " + money(f.emergency_fund) +
+    ") · work optionality " + Math.round((f.optionality || 0) * 100) + "% · independence " + Math.round((f.independence || 0) * 100) + "% · " + x.history_months + " full month(s) of records"));
+  hm.appendChild(el("div", { class: "small" }, "Engineering: " + p.built + " built, " + (p.engineering_hours || 0) + " h (not commercial) · Commercial: " + p.sales + " sale(s), " +
+    money(p.collected) + " in, " + money(p.costs) + " out, delivery " + rate(p.delivery_per_hour) + ", all-in " + rate(p.per_hour)));
+  if ((x.placeholders || []).length) hm.appendChild(el("div", { class: "small warn" }, "Still placeholders: " + x.placeholders.join(", ") + " (freedom set ...)"));
+  head.appendChild(hm); box.appendChild(head);
+  (x.pending || []).forEach((a) => { const row = el("div", { class: "grow warn" }); row.appendChild(el("i"));
+    row.appendChild(el("b", { style: "white-space:normal" }, "Waiting on you: " + a.action + " " + a.opp_id + " (" + money(a.cost) + ") - yes econ " + a.id + " on Telegram")); box.appendChild(row); });
+  (x.opps || []).forEach((o) => {
+    const row = el("div", { class: "grow " + (o.blocked.length ? "" : (o.actual && o.actual.net > 0 ? "ok" : "")) }); row.appendChild(el("i"));
+    const mid = el("div", { style: "flex:1;min-width:0" });
+    mid.appendChild(el("b", { style: "display:block;white-space:normal" }, (o.blocked.length ? "⛔ " : "") + o.name + " · " + o.stage + " · score " + o.score));
+    mid.appendChild(el("div", { class: "small" }, "demand " + o.demand + " · " + money(o.startup_cash) + " at risk · " + o.owner_hours + " h/wk" +
+      (o.actual ? " · net " + money(o.actual.net) + ", all-in " + rate(o.actual.per_hour) : "")));
+    if (o.blocked.length) mid.appendChild(el("div", { class: "small dim" }, "blocked: " + o.blocked.join("; ")));
+    else mid.appendChild(el("div", { class: "small dim" }, "next: " + o.next_test));
+    if (o.checklist) mid.appendChild(el("div", { class: "small" }, "Validation gate " + o.checklist.filter((c) => c.done).length + "/" + o.checklist.length + ": " +
+      o.checklist.map((c) => (c.done ? "✅ " : "⬜ ") + c.label).join(" · ")));
+    row.appendChild(mid); box.appendChild(row);
+  });
+}
+
 function drawEvolve(v) {
   v = v || {}; const box = $("evo-domains"); box.replaceChildren();
   const doms = v.domains || [], pending = v.pending || [];
@@ -1113,6 +1148,7 @@ function render() {
   if (changed("mind", state.mind)) drawMind(state.mind);
   if (changed("upgrades", state.upgrades)) drawUpgrades(state.upgrades);
   if (changed("money", state.money)) drawMoney(state.money);
+  if (changed("economy", state.economy)) drawEconomy(state.economy || {});
   if (changed("gamepilot", state.gamepilot)) drawGamepilot(state.gamepilot);
   if (changed("shards", state.shards)) drawShards(state.shards || []);
   if (changed("nightshift", state.nightshift)) drawNight(state.nightshift || {});
