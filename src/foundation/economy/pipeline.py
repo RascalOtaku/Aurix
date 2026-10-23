@@ -135,10 +135,8 @@ def requirements(opp: dict, to: str) -> List[str]:
         if "competitor" not in sourced:
             miss.append("`competitor` evidence with a source link: who already sells this, and for how much")
     elif to == "validated":
-        if scorecard.demand(opp["id"]) == "none":
-            miss.append("demand evidence: `customer_interest`, `presale` or `payment` (a model's opinion does not count)")
-        if scorecard.legal(opp["id"]) != "checked":
-            miss.append("`legal_ok` evidence: permitted use, licences and platform terms checked")
+        from src.foundation.economy import validation
+        miss += [label for label, done in validation.checklist(opp) if not done]
         if opp["net_high"] <= 0:
             miss.append("a projected monthly net (`opp ID set high 300`)")
     elif to == "approved":
@@ -234,6 +232,9 @@ def resolve(aid: str, approve: bool, by: str = "owner") -> str:
         store.execute("UPDATE approvals SET status = 'expired', resolved = ? WHERE id = ?", (store.now(), aid))
         return f"<code>{aid}</code> expired (older than 14 days). <code>opp {ap['opp_id']} advance</code> issues a fresh card."
     opp = get(ap["opp_id"])
+    if ap["action"] == "experiment":
+        from src.foundation.economy import validation
+        return validation.resolve(ap, approve)
     if not approve:
         store.execute("UPDATE approvals SET status = 'denied', resolved = ? WHERE id = ?", (store.now(), aid))
         audit.append("economy_approval", id=aid, opp=ap["opp_id"], decision="denied")

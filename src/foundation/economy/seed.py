@@ -47,17 +47,50 @@ SEEDS = [
 ]
 
 
+# Added 2026-10-23: the property idea as three offers, so the scorecard compares them instead of assuming the middle one.
+# property_dossiers (above) is the middle one: the sourced buyer's dossier.
+VARIANTS = [
+    dict(opp_id="parcel_screen", name="Basic parcel screen (property)", lane="research",
+         problem="A quick red-flag screen of one parcel: flood, wetlands, access, zoning from public layers.",
+         customer="land flippers screening many parcels", startup_cash=0, max_loss=20, months_to_revenue=1, net_low=20,
+         net_high=150, owner_hours=2, automation=0.9, durability=0.2, reversibility=1.0, strategic=0.3,
+         next_action="Compare against the free tools (Buildability's free check) and $40-50 offshore reports before anything else.",
+         notes=ASSUMPTION + " Competes with free tools and cheap desktop reports: a commodity unless something is added."),
+    dict(opp_id="parcel_monitor", name="Ongoing parcel monitoring (property)", lane="research",
+         problem="Owners and buyers of a parcel miss changes: tax status, sale listings, zoning hearings, recorded liens.",
+         customer="absentee land owners, buyers watching a parcel", startup_cash=20, max_loss=50, months_to_revenue=4,
+         net_low=30, net_high=300, owner_hours=2, automation=0.8, durability=0.5, reversibility=0.9, strategic=0.7,
+         next_action="Find out which county records can be checked reliably and repeatably without paid data, before offering it.",
+         notes=ASSUMPTION + " Recurring only if customers have a real ongoing need AND the data can be maintained reliably."),
+]
+
+
+def add_variants() -> List[str]:
+    """Once per database: the property offer variants, if the owner has not already added them."""
+    if store.meta_get("seed_variants"):
+        return []
+    made = []
+    for v in VARIANTS:
+        v = dict(v)
+        oid = v.pop("opp_id")
+        if not pipeline.get(oid):
+            pipeline.create(oid, v.pop("name"), v.pop("lane"), origin="seed", **v)
+            made.append(oid)
+    store.meta_set("seed_variants", "1")
+    return made
+
+
 def seed_if_empty() -> List[str]:
     """Seed the five candidates the first time the engine opens. Returns the ids created."""
     if store.meta_get("seeded") or store.one("SELECT 1 AS x FROM opportunities"):
-        return []
+        return add_variants()
     made = []
     for s in SEEDS:
         s = dict(s)
         pipeline.create(s.pop("opp_id"), s.pop("name"), s.pop("lane"), origin="seed", **s)
         made.append(SEEDS[len(made)]["opp_id"])
     store.meta_set("seeded", "1")
-    return made
+    return made + add_variants()
 
 
 def import_money_idea(money_id: str) -> str:

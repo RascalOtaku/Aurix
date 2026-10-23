@@ -100,6 +100,31 @@ CREATE TABLE IF NOT EXISTS approvals (
     created   REAL NOT NULL,
     resolved  REAL
 );
+CREATE TABLE IF NOT EXISTS samples (
+    id          TEXT PRIMARY KEY,                -- s-abc123: one sample deliverable, measured
+    opp_id      TEXT NOT NULL,
+    owner_min   REAL NOT NULL,                   -- the owner's own minutes
+    machine_min REAL NOT NULL,                   -- AURIX's minutes (research mission + rendering)
+    cost        REAL NOT NULL DEFAULT 0,         -- direct cost of producing it
+    findings    INTEGER NOT NULL DEFAULT 0,
+    sourced     INTEGER NOT NULL DEFAULT 0,      -- findings traceable to an authoritative source
+    unresolved  INTEGER NOT NULL DEFAULT 0,      -- material questions only a county office / title co. / surveyor ... can settle
+    value       TEXT NOT NULL,                   -- decision value vs free tools: none | low | medium | high
+    note        TEXT NOT NULL DEFAULT '',
+    at          REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS experiments (
+    id        TEXT PRIMARY KEY,                  -- e-abc123
+    opp_id    TEXT NOT NULL,
+    plan      TEXT NOT NULL,
+    cap       REAL NOT NULL,                     -- the spending cap the owner approved
+    status    TEXT NOT NULL DEFAULT 'proposed',  -- proposed | running | done | denied
+    approval  TEXT NOT NULL DEFAULT '',
+    result    TEXT NOT NULL DEFAULT '',
+    started   REAL,
+    ended     REAL,
+    created   REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -134,6 +159,7 @@ def connect() -> Iterator[sqlite3.Connection]:
     conn.row_factory = sqlite3.Row
     try:
         conn.executescript(SCHEMA)
+        _migrate(conn)
         yield conn
         conn.commit()
     except Exception:
@@ -141,6 +167,13 @@ def connect() -> Iterator[sqlite3.Connection]:
         raise
     finally:
         conn.close()
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    """Columns added after a database already existed on the 7070 (CREATE TABLE IF NOT EXISTS never adds them)."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(hours)").fetchall()}
+    if "category" not in cols:
+        conn.execute("ALTER TABLE hours ADD COLUMN category TEXT NOT NULL DEFAULT 'production'")
 
 
 def new_id(prefix: str) -> str:

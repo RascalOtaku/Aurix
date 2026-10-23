@@ -146,6 +146,45 @@ After a deploy, `econ check` verifies the live box:
 - Both start once you have opened the engine, and both go through the outbox, so quiet hours and the hourly cap apply.
 - `AURIX_ECON_REVIEW=0` turns them off.
 
+## The validation gate (researched → validated)
+
+Each item must be backed by a record, not by a judgement:
+
+1. **A complete, sourced sample.** Recorded with `sample <id>: …`, and at least 90% of its findings must trace to an
+   authoritative source.
+2. **Its real cost.** The same record holds your minutes, AURIX's minutes and the direct cost.
+3. **A differentiator.** Evidence of type `differentiator`: why this beats free tools and cheap competitors.
+4. **A specific offer.** Evidence of type `offer`: the price, the scope, and what is *not* included.
+5. **The rules checked.** Evidence of type `legal_ok`.
+6. **One validation experiment with a spending cap, approved.** `opp <id> experiment $20: plan` produces an approval card.
+   It can only be proposed once items 1–5 are in place, and the cap must fit within your test limit.
+7. **Its result recorded, with demand for *this* offer.** `opp <id> result: …`. Proof that people pay for land research
+   in general is not demand for your offer.
+
+If the experiment finds no demand, the engine says so. You can close the idea, or change the offer and test it once more.
+The weekly review then points to the next-best opportunity rather than polishing a weak one.
+
+**Hours carry a category:** production, acquisition, revision, support or admin. Contribution per owner hour is
+(revenue − costs) ÷ *all* of those hours, so time spent finding customers, revising and giving support counts too.
+
+**`land buyer <property>`** turns a LandPilot dossier into the customer-facing sample, in seven sections:
+1. parcel identity
+2. ownership and title
+3. legal access
+4. land use
+5. physical constraints
+6. financial exposure
+7. decision summary
+
+Every finding is labelled *confirmed* (an official record at the tier the field needs), *indicated* (our reading, to be
+verified) or *open*, with who resolves it.
+- An official map showing road frontage is not the recorded deed or easement that settles legal access.
+- A model's report is a hypothesis, never a fact.
+- The scope (not a title opinion, survey, legal opinion, environmental assessment or buildability determination) is stated at
+  the top and the bottom.
+- The report measures itself (findings, official sources, open material questions, discrepancies, machine time) and prints a
+  `sample` line ready to fill in.
+
 ## The first milestone (days 1–14): done when
 
 - [x] Freedom budget and hard limits (`freedom`, `freedom set`)

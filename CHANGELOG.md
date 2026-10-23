@@ -17,6 +17,15 @@ in `pyproject.toml` and `package.json`.
 - Economic Engine 1.1: `econ check` (post-deploy verification incl. a scratch-ledger bookkeeping self-test and a live
   approval round-trip), refunds, net earned per hour of owner time, engineering / commercial / freedom progress shown
   separately, research and competitor evidence must cite a source to open a stage, and `hypothesis` evidence that never counts.
+- Economic Engine 1.2, the validation gate: `sample` records a measured sample deliverable (owner and machine minutes, cost,
+  sourced findings, open questions, decision value vs free tools); `opp <id> experiment $cap: plan` proposes one capped
+  validation experiment as an approval card (only once a sample, a differentiator, an offer and a legal check exist);
+  `opp <id> result:` ends it, and no demand points to closing or the next-best opportunity. researched → validated now needs
+  all seven checklist items. Hours carry a category (production, acquisition, revision, support, admin). Two variants of the
+  property offer (basic screen, ongoing monitoring) are added for comparison.
+- LandPilot `land buyer <property>`: a customer-facing buyer's dossier in seven sections that separates confirmed, indicated and
+  open findings, names who resolves each open question, flags apparent-but-unrecorded access, states its scope at top and bottom,
+  and measures itself for the `sample` record.
 - The outbox keeps a held card's buttons: it arrives whole after the morning summary, still one tap.
 
 ### Fixed

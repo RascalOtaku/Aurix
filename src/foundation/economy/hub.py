@@ -9,15 +9,19 @@ monthly close, as Telegram text. Every command here is owner-only (commands.py p
     opp new <id> <lane>: <name>          add one (lanes: research automation products software land other)
     opp import <money id>                bring an idea in from the money catalog
     opp <id> set <field> <value>         startup · loss · months · low · high · hours · budget · success · stop · next · due · ...
-    evidence <id> <kind>: <what> [url]   research competitor customer_interest presale payment cost_quote legal_ok legal_problem build risk lesson hypothesis
+    evidence <id> <kind>: <what> [url]   research competitor customer_interest presale payment cost_quote legal_ok legal_problem build risk lesson hypothesis differentiator offer
                                          (research/competitor need a source link to count; a hypothesis never counts)
     opp <id> advance                     next stage if the evidence is in; approval stages produce a card
     yes econ <x-id> / no econ <x-id>     decide an approval card
+    sample <id>: owner=95 machine=14 cost=0 findings=15 sourced=14 unresolved=4 value=medium <what it shows>
+                                         a measured sample deliverable (`land buyer <key>` prints one ready to fill in)
+    opp <id> experiment $<cap>: <plan>   a capped validation experiment -> an approval card
+    opp <id> result: <what happened>     ends it; no demand = close it or change the offer once, then move on
     opp <id> modify: <why> / close: <why>
     booked <amount> <id> [note]          a sale agreed, not yet paid       (earned <amount> <id> = cash collected)
     refund <amount> <id> [note]          money given back to a customer
     spent <amount> <id> [note]           money actually paid out
-    hours <h> <id> [note]                your time, so "time bought back" is measured, not guessed
+    hours <h> <id> [category] [note]     your time: production · acquisition · revision · support · admin
     review                               the weekly portfolio review now   ·   close month [YYYY-MM]   the monthly close
     econ check                           after a deploy: version, settings, database, held cards, a live approval round-trip
 """
@@ -26,7 +30,7 @@ from __future__ import annotations
 import html
 from typing import Optional
 
-from src.foundation.economy import freedom, learning, ledger, pipeline, scorecard, seed, store
+from src.foundation.economy import freedom, learning, ledger, pipeline, scorecard, seed, store, validation
 
 e = html.escape
 SEP = "\t"
@@ -43,8 +47,13 @@ def _bar(frac: float, width: int = 10) -> str:
 
 def _seeded_note() -> str:
     made = seed.seed_if_empty()
+    if not made:
+        return ""
+    if "property_dossiers" not in made:
+        return (f"\n<i>Added {len(made)} variant(s) of the property offer to compare on the same scorecard: "
+                + ", ".join(f"<code>{m}</code>" for m in made) + ".</i>")
     return (f"\n<i>First run: I wrote down {len(made)} candidate opportunities to rank (placeholder numbers, no money spent, "
-            "nobody contacted). <code>opps</code> shows them.</i>") if made else ""
+            "nobody contacted). <code>opps</code> shows them.</i>")
 
 
 def dashboard(now: Optional[float] = None) -> str:
@@ -145,6 +154,18 @@ def opp_text(opp_id: str) -> str:
     if ev:
         lines.append("<b>Evidence:</b>")
         lines += [f"• {x['kind']}: {e(x['summary'][:160])}" + (f" <i>({e(x['source'][:60])})</i>" if x["source"] else "") for x in ev[-6:]]
+    cats = ledger.hours_by_category(opp["id"])
+    if cats:
+        lines.append("<b>Your time:</b> " + " · ".join(f"{k} {v:g} h" for k, v in sorted(cats.items(), key=lambda kv: -kv[1]))
+                     + "  <i>(contribution per hour = (revenue − costs) ÷ ALL of these hours)</i>")
+    for smp in validation.samples(opp["id"])[-2:]:
+        lines.append(f"<b>Sample</b> <code>{smp['id']}</code>: you {smp['owner_min']:g} min · AURIX {smp['machine_min']:g} min · "
+                     f"${smp['cost']:,.2f} · {smp['sourced']}/{smp['findings']} sourced · {smp['unresolved']} open · value {smp['value']}")
+    for x in validation.experiments(opp["id"])[-2:]:
+        lines.append(f"<b>Experiment</b> <code>{x['id']}</code> ({x['status']}, cap ${x['cap']:,.2f}): {e(x['plan'][:140])}"
+                     + (f" → <i>{e(x['result'][:160])}</i>" if x["result"] else ""))
+    if opp["stage"] == "researched":
+        lines.append(validation.checklist_text(opp))
     nxt = pipeline.NEXT.get(opp["stage"])
     if nxt:
         miss = pipeline.requirements(opp, nxt)
@@ -164,6 +185,15 @@ def _stop_flags(now: float) -> list:
         if o["deadline"] and o["deadline"] < today and o["stage"] not in ("measured", "scaled"):
             flags.append(f"<b>{e(o['name'])}</b> passed its deadline ({o['deadline']}) at stage {o['stage']}: "
                          f"check its stop conditions ({e(o['stop_conditions'] or 'none written')}) - modify or close?")
+    for x in store.rows("SELECT * FROM experiments WHERE status = 'running'"):
+        if now - (x["started"] or now) > 30 * 86400:
+            flags.append(f"Experiment <code>{x['id']}</code> on <code>{x['opp_id']}</code> has run 30 days: record the result "
+                         f"(<code>opp {x['opp_id']} result: ...</code>).")
+    for x in store.rows("SELECT * FROM experiments WHERE status = 'done' AND ended >= ?", (now - 7 * 86400,)):
+        o = pipeline.get(x["opp_id"])
+        if o and o["stage"] != "closed" and scorecard.demand(o["id"]) == "none":
+            flags.append(f"<b>{e(o['name'])}</b>'s experiment found no demand: close it or change the offer once - "
+                         "then compare the next opportunity rather than polishing this one.")
     return flags
 
 
@@ -272,6 +302,12 @@ def handle(kind: str, arg: str) -> str:
                 return f"No opportunity <code>{e(oid)}</code>."
             ledger.add("refund", amount, oid, "collected", note)
             return f"↩️ Logged a {_money(amount)} refund on <code>{oid}</code>; it comes off this month's collected revenue."
+        if kind == "econ_sample":
+            return validation.record_sample(a[0], a[1])
+        if kind == "econ_experiment":
+            return validation.propose(a[0], float(a[1].replace(",", "")), a[2])
+        if kind == "econ_result":
+            return validation.result(a[0], a[1])
         if kind == "econ_check":
             from src.foundation.economy import check
             return check.run()
@@ -282,6 +318,12 @@ def handle(kind: str, arg: str) -> str:
             if kind == "econ_spent":
                 ledger.add("cost", amount, oid, "collected", note)
                 tot, opp = ledger.venture_totals(oid), pipeline.get(oid)
+                x = validation.running(oid)
+                if x:
+                    used = sum(r["amount"] for r in store.rows("SELECT amount FROM transactions WHERE opp_id = ? AND kind = 'cost' "
+                                                                 "AND at >= ?", (oid, x["started"])))
+                    warn = f"\n⚠️ Over the experiment's ${x['cap']:,.2f} cap: stop and record the result." if used > x["cap"] else ""
+                    return f"💸 Logged {_money(amount)} on <code>{oid}</code>: {_money(used)} of the experiment's {_money(x['cap'])} cap." + warn
                 over = (f"\n⚠️ That is over its approved budget of {_money(opp['budget'])}." if opp["budget"] and tot["costs"] > opp["budget"]
                         else "\n⚠️ It has no approved budget: spending before approval breaks your own rule." if opp["stage"] in
                         ("discovered", "researched", "validated") else "")
@@ -292,8 +334,11 @@ def handle(kind: str, arg: str) -> str:
             oid = a[1]
             if not pipeline.get(oid):
                 return f"No opportunity <code>{e(oid)}</code>."
-            ledger.log_hours(float(a[0]), oid, a[2] if len(a) > 2 else "")
-            return f"⏱️ Logged {float(a[0]):g} h on <code>{oid}</code> ({ledger.venture_totals(oid)['hours']:g} h in total)."
+            rest = (a[2] if len(a) > 2 else "").split(None, 1)
+            cat = rest[0].lower() if rest and rest[0].lower() in ledger.HOUR_CATEGORIES else "production"
+            note = (rest[1] if len(rest) > 1 else "") if rest and rest[0].lower() in ledger.HOUR_CATEGORIES else (a[2] if len(a) > 2 else "")
+            ledger.log_hours(float(a[0]), oid, note, category=cat)
+            return f"⏱️ Logged {float(a[0]):g} h of {cat} on <code>{oid}</code> ({ledger.venture_totals(oid)['hours']:g} h in total)."
         if kind == "econ_review":
             return review_text()
         if kind == "econ_close":

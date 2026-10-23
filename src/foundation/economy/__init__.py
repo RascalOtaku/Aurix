@@ -11,10 +11,12 @@ what is the most reliable, lowest-risk path from the owner's current resources t
     ledger.py      projected vs booked vs collected revenue, costs, the tax reserve, and what is actually available
     learning.py    forecast vs actual, fed back as a calibration factor on every new projection
     hub.py         the Freedom Dashboard, the opportunity desk, the weekly review and the monthly close (Telegram)
-    seed.py        the first five candidates (placeholder numbers, clearly labelled)
+    seed.py        the first five candidates + two variants of the property offer (placeholder numbers, clearly labelled)
+    validation.py  the validation gate: a measured sample, a defined offer, one capped approved experiment, demand for THIS offer
+    check.py       `econ check`: the deployed engine proves its own numbers
 
 Nothing here spends money, contacts anyone or publishes anything. Models may read these records and suggest; only the owner's
 commands and approvals change them.
 """
 
-ENGINE_VERSION = "1.1"
+ENGINE_VERSION = "1.2"

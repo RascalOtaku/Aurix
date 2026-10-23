@@ -59,11 +59,26 @@ def add(kind: str, amount: float, opp_id: Optional[str] = None, status: str = "c
     return row
 
 
-def log_hours(hours: float, opp_id: Optional[str] = None, note: str = "", at: Optional[float] = None) -> None:
+# Where the owner's time goes. Production is the work itself; the others are what quietly turns a "profitable" service into a job.
+HOUR_CATEGORIES = ("production", "acquisition", "revision", "support", "admin")
+
+
+def log_hours(hours: float, opp_id: Optional[str] = None, note: str = "", at: Optional[float] = None,
+              category: str = "production") -> None:
     hours = round(float(hours), 2)
     if not 0 < hours <= 200:
         raise ValueError("hours must be between 0 and 200")
-    store.execute("INSERT INTO hours(opp_id, hours, note, at) VALUES(?,?,?,?)", (opp_id, hours, (note or "")[:200], at or store.now()))
+    if category not in HOUR_CATEGORIES:
+        raise ValueError(f"category must be one of {HOUR_CATEGORIES}")
+    store.execute("INSERT INTO hours(opp_id, hours, note, at, category) VALUES(?,?,?,?,?)",
+                  (opp_id, hours, (note or "")[:200], at or store.now(), category))
+
+
+def hours_by_category(opp_id: str) -> Dict[str, float]:
+    out: Dict[str, float] = {}
+    for r in store.rows("SELECT hours, category FROM hours WHERE opp_id = ?", (opp_id,)):
+        out[r["category"]] = round(out.get(r["category"], 0.0) + r["hours"], 2)
+    return out
 
 
 def _in_month(ym: str, table: str = "transactions") -> List[dict]:

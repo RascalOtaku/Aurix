@@ -35,11 +35,22 @@ class EconBase(unittest.TestCase):
         for kind, text in (("research", "three sites sell parcel reports"), ("competitor", "one sells at $79"),
                            ("customer_interest", "two forum posts asking"), ("legal_ok", "records are public")):
             pipeline.add_evidence(oid, kind, text, "https://example.com/" + kind)
-        pipeline.advance(oid)
-        pipeline.advance(oid)
+        pipeline.advance(oid)                                           # researched
+        self.validate(oid)
+        pipeline.advance(oid)                                           # validated
         for f, v in (("success", "2 paid reports"), ("stop", "no sale after 3 listings"), ("due", "2026-12-15"), ("budget", "30")):
             pipeline.set_field(oid, f, v)
         return pipeline.get(oid)
+
+    def validate(self, oid="property_dossiers"):
+        from src.foundation.economy import validation
+        validation.record_sample(oid, "owner=90 machine=3 cost=0 findings=20 sourced=19 unresolved=3 value=medium shows access gap")
+        pipeline.add_evidence(oid, "differentiator", "records access vs advertised access, with who resolves each gap")
+        pipeline.add_evidence(oid, "offer", "$79 sourced buyer's dossier, 3 days, no title opinion or survey")
+        text = validation.propose(oid, 20, "list one $79 offer on one marketplace for 30 days")
+        validation.resolve(store.one("SELECT * FROM approvals WHERE action = 'experiment' ORDER BY created DESC"), True)
+        validation.result(oid, "two buyers asked for a quote, one paid")
+        return text
 
     def approve(self, oid="property_dossiers"):
         text, kb = pipeline.advance(oid)
@@ -134,7 +145,7 @@ class FinancialLogicTests(EconBase):
 
 class PipelineTests(EconBase):
     def test_five_candidates_and_land_is_blocked_by_the_hard_limits(self):
-        self.assertEqual(len(seed.seed_if_empty()), 5)
+        self.assertEqual(len(seed.seed_if_empty()), 7)                  # 5 candidates + 2 variants of the property offer
         self.assertEqual(seed.seed_if_empty(), [])                      # once
         rows = scorecard.ranked()
         self.assertEqual(rows[-1]["id"], "land_parcel")
@@ -264,7 +275,7 @@ class CommandTests(EconBase):
         f = commands.Foundation(run_agent=None, notify=None)
         text = asyncio.run(f.handle(*commands.parse("freedom")))
         self.assertIn("Freedom Dashboard", text)
-        self.assertIn("5 candidate opportunities", text)
+        self.assertIn("7 candidate opportunities", text)
         self.assertIn("Weekly portfolio review", asyncio.run(f.handle(*commands.parse("review"))))
 
     def test_earned_mirrors_into_the_engine_for_an_opportunity(self):

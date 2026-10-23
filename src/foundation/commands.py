@@ -101,6 +101,9 @@ _ECON_PATTERNS = [
     ("econ_opp_set", re.compile(rf"^\s*/?opp\s+{_ID}\s+set\s+([a-z_]{{2,20}})\s+(\S.{{0,599}})$", re.I | re.S)),
     ("econ_advance", re.compile(rf"^\s*/?opp\s+{_ID}\s+(?:advance|next)\s*$", re.I)),
     ("econ_modify", re.compile(rf"^\s*/?opp\s+{_ID}\s+(modify|close)\s*[:\-]\s*(\S.{{2,599}})$", re.I | re.S)),
+    ("econ_experiment", re.compile(rf"^\s*/?opp\s+{_ID}\s+experiment\s+{_AMT}\s*[:\-]\s*(\S.{{14,599}})$", re.I | re.S)),
+    ("econ_result", re.compile(rf"^\s*/?opp\s+{_ID}\s+result\s*[:\-]\s*(\S.{{2,599}})$", re.I | re.S)),
+    ("econ_sample", re.compile(rf"^\s*/?sample\s+{_ID}\s*[:\-]\s*(\S.{{2,800}})$", re.I | re.S)),
     ("econ_opp", re.compile(rf"^\s*/?opp\s+{_ID}\s*$", re.I)),
     ("econ_evidence", re.compile(rf"^\s*/?evidence\s+{_ID}\s+([a-z_]{{4,20}})\s*[:\-]\s*(\S.{{2,599}}?)(?:\s+(https?://\S+))?\s*$", re.I | re.S)),
     ("econ_spent", re.compile(rf"^\s*/?spent\s+{_AMT}\s+{_ID}(?:\s+(.{{1,200}}))?\s*$", re.I)),
@@ -113,7 +116,7 @@ _ECON_PATTERNS = [
 ]
 # Arguments that are identifiers or keywords are lower-cased; free text keeps its case.
 _ECON_LOWER = {"econ_set": (0,), "econ_new": (0, 1), "econ_import": (0,), "econ_opp_set": (0, 1), "econ_advance": (0,),
-               "econ_modify": (0, 1), "econ_opp": (0,), "econ_evidence": (0, 1), "econ_spent": (1,), "econ_booked": (1,), "econ_refund": (1,),
+               "econ_modify": (0, 1), "econ_opp": (0,), "econ_evidence": (0, 1), "econ_spent": (1,), "econ_booked": (1,), "econ_refund": (1,), "econ_experiment": (0,), "econ_result": (0,), "econ_sample": (0,),
                "econ_hours": (1,), "econ_yes": (0,), "econ_no": (0,)}
 
 _PATTERNS = _ECON_PATTERNS + [
@@ -265,6 +268,7 @@ _PATTERNS = _ECON_PATTERNS + [
     ("land_cap", re.compile(r"^\s*/?land\s+cap\s+(\S{2,60}\s+\$?[\d,]+(?:\.\d{1,2})?(?:\s+\$?[\d,]+(?:\.\d{1,2})?)?)\s*$", re.I)),
     ("land_promote", re.compile(r"^\s*/?land\s+promote\s+(m-[0-9a-f]{6}\s+[A-Za-z0-9_\-]{2,60})\s*$", re.I)),
     ("land_propose", re.compile(r"^\s*/?land\s+propose\s+(\S{2,60})\s*$", re.I)),
+    ("land_buyer", re.compile(r"^\s*/?land\s+buyer\s+(\S{2,60})\s*$", re.I)),
     ("land_show", re.compile(r"^\s*/?land\s+show\s+(\S{2,60})\s*$", re.I)),
     ("land_criteria", re.compile(r"^\s*/?land\s+criteria\s*[:\-]\s*(\S.{6,998})$", re.I | re.S)),
     ("land_leads", re.compile(r"^\s*/?land\s+leads\s+(m-[0-9a-f]{6})\s*$", re.I)),
@@ -1049,6 +1053,12 @@ class Foundation:
             return "✅ Adopted → skill forge.\n" + await forge.propose(spec, self.llm)      # drafted + tested in the sandbox, then `approve skill`
         if kind == "workers":
             return await asyncio.to_thread(fworkers.status_text)
+        if kind == "land_buyer":
+            from src.foundation.land import buyer as land_buyer
+            text, path = await asyncio.to_thread(land_buyer.command, arg)
+            if path is not None and self.send_file:
+                await self.send_file(str(path), "Buyer's dossier (desktop research; see the scope note inside)")
+            return text
         if kind == "land_show":
             return await asyncio.to_thread(land.show, arg)
         if kind == "land_criteria":
