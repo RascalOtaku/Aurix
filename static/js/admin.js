@@ -830,7 +830,9 @@ function initEndpointForm() {
         msg.textContent = (e instanceof ApiError && e.detail) || 'Request failed';
         msg.className = 'admin-error';
       }
-    btn.disabled = false; btn.textContent = 'Add';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Add';
+    }
   });
 
   // Local "Add" button — sibling form for self-hosted base URLs.
@@ -890,7 +892,9 @@ function initEndpointForm() {
           msg.textContent = (e instanceof ApiError && e.detail) || 'Request failed';
           msg.className = 'admin-error';
         }
-      localAddBtn.disabled = false; localAddBtn.textContent = 'Add';
+      } finally {
+        localAddBtn.disabled = false; localAddBtn.textContent = 'Add';
+      }
     });
   }
 

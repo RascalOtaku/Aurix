@@ -2861,7 +2861,6 @@ def _scan_running_model_processes() -> List[Dict[str, Any]]:
     [] on other platforms or if /proc isn't accessible. Each match returns
     a dict shaped like a cookbook task so the caller can merge cleanly.
     """
-    import os
     if not os.path.isdir("/proc"):
         return []
     out: List[Dict[str, Any]] = []

@@ -44,6 +44,13 @@ python -m py_compile app.py routes/*.py src/*.py
 node --check static/js/<file-you-changed>.js
 ```
 
+The frontend is ES modules, so on Node older than 22 a bare `node --check file.js` reports valid `import`
+statements as syntax errors. Prefer the syntax test, which checks every module the same way in every Node version:
+
+```bash
+python -m pytest tests/test_js_syntax.py     # skips itself when node isn't installed
+```
+
 For Docker-related changes:
 
 ```bash
