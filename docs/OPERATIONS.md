@@ -79,7 +79,7 @@ Suggested in-place flow: restore into a staging folder, inspect it, stop Aurix, 
 `--app-to` / `--brain-to --overwrite`, and start Aurix again. To undo a step, copy the matching file back from
 `.aurix-restore-pre/<stamp>/`.
 
-Tests: `python3 -m unittest tests.test_aurix_restore` (20 cases, temp folders only — the real NAS is never touched).
+Tests: `python3 -m unittest tests.test_aurix_restore` (21 cases, temp folders only — the real NAS is never touched).
 The backup script has its own self-test: `bash scripts/test_aurix_backup.sh`.
 
 ## What keeps the public repository clean
@@ -164,4 +164,5 @@ real server so that kind of break fails CI.
 | App not answering | `docker compose ps`, `docker compose logs --tail 80 odysseus` |
 | Last deploy result | `data/deploy_status.json`, `logs/deploy.log` |
 | Last sync result | `logs/git_sync.log` |
+| A snapshot or restore question | `python3 scripts/aurix_restore.py list` then `verify latest` (see "Backing up and restoring data") |
 | CI or CodeQL failing | The repository's Actions tab and Security → Code scanning |

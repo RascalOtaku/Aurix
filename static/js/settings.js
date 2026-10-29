@@ -7,6 +7,7 @@ import { makeWindowDraggable } from './windowDrag.js';
 import { clearDockSide } from './modalSnap.js';
 import { sortModelIds } from './modelSort.js';
 import { get, post, put, patch, del, api, apiRaw, ApiError } from './api.js';
+import { integrationRemovalRequests } from './integrationActions.js';
 
 let initialized = false;
 let modalEl = null;
@@ -3003,17 +3004,11 @@ async function initUnifiedIntegrations() {
         const type = btn.dataset.intgType;
         const id = btn.dataset.intgId;
         try {
-          if (type === 'api') await del(`/api/auth/integrations/${id}`);
-          else if (type === 'caldav') await post('/api/calendar/config', { url: '', username: '', password: '' });
-          else if (type === 'contacts') {
-            await del('/api/contacts/clear');
+          for (const req of integrationRemovalRequests(type, id)) {
+            if (req.method === 'DELETE') await del(req.path);
+            else if (req.method === 'PUT') await put(req.path, req.body);
+            else if (req.method === 'POST') await post(req.path, req.body);
           }
-          else if (type === 'carddav') {
-            await put('/api/contacts/config', { carddav_url: '', carddav_username: '', carddav_password: '' });
-          }
-          else if (type === 'email') await del(`/api/email/accounts/${id}`);
-          else if (type === 'mcp') await del(`/api/mcp/servers/${id}`);
-          else if (type === 'vault') await post('/api/vault/logout');
         } catch (_) {}
         formEl.style.display = 'none';
         await renderList();

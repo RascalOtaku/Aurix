@@ -378,9 +378,18 @@ def _cmd_restore(args) -> int:
 
     stats = apply_restore(ops, destinations, path.name, overwrite=args.overwrite)
     print(f"restored: {stats['copied']} file(s) copied, {stats['replaced']} replaced (pre-restore copies kept).")
+    damaged = 0
     for dest in destinations.values():
         for db in sorted(Path(dest).rglob("*.db")):
-            print(f"  integrity {db.name}: {_sqlite_check(db)}")
+            verdict = _sqlite_check(db)
+            print(f"  integrity {db.name}: {verdict}")
+            if verdict != "ok":
+                damaged += 1
+    if damaged:
+        print(f"{damaged} restored database(s) did not pass integrity_check. Do not start Aurix on this copy; "
+              f"the snapshot passed verification, so suspect the destination disk or a concurrent writer.",
+              file=sys.stderr)
+        return 1
     print("Secrets are not in snapshots: put .env / auth.json / ssh keys back from their own copy.")
     return 0
 

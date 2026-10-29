@@ -8,6 +8,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "aurix_restore.py"
 _spec = importlib.util.spec_from_file_location("aurix_restore", SCRIPT)
@@ -216,6 +217,23 @@ class RestoreHelperTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("exist as files", err)
         self.assertFalse((dest / "keep.txt").exists(), "a blocked restore must not write anything")
+
+    def test_a_damaged_destination_copy_is_reported_as_a_failure(self):
+        stage = self.tmp / "stage"
+        real_check = aurix_restore._sqlite_check
+        calls = {"n": 0}
+
+        def flaky(db):
+            # The snapshot check (verify) passes; the check of the freshly written copy does not.
+            calls["n"] += 1
+            return real_check(db) if calls["n"] == 1 else "database disk image is malformed"
+
+        with mock.patch.object(aurix_restore, "_sqlite_check", side_effect=flaky):
+            code, out, err = self.run_cli(["restore", self.stamp, "--to", str(stage), "--apply"])
+        self.assertEqual(code, 1)
+        self.assertIn("malformed", out + err)
+        self.assertIn("did not pass integrity_check", err)
+        self.assertNotIn("Secrets are not in snapshots", out)   # the happy-path advice would be misleading
 
     def test_verify_command_exit_code_follows_the_integrity_check(self):
         self.assertEqual(self.run_cli(["verify", self.stamp])[0], 0)

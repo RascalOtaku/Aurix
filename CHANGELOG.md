@@ -39,10 +39,13 @@ in `pyproject.toml` and `package.json`.
   `restore` refuses a corrupt snapshot, previews unless `--apply`, never deletes anything in the destination, and
   with `--overwrite` first copies each replaced file to `<destination>/.aurix-restore-pre/<stamp>/`. Default
   destination is a staging folder next to the snapshots, so the plain command never writes into live data.
-  Covered by `tests/test_aurix_restore.py` (20 cases, temp trees only).
-- `tests/test_js_syntax.py`: every shipped `static/js/**/*.js` (vendored `lib/` excluded) must parse. It runs
-  `node --check` on each module and skips when node is absent — the regression guard for the settings/admin breakage
-  documented under Fixed.
+  Covered by `tests/test_aurix_restore.py` (21 cases, temp trees only).
+- `tests/test_js_syntax.py`: every shipped `static/js/**/*.js` (vendored `lib/` excluded) must parse, every relative
+  import must resolve, every `<script src>` must exist, and every module `index.html` loads must be in the service
+  worker's precache list. It runs `node --check` on each module and skips the syntax part when node is absent — the
+  regression guard for the settings/admin breakage documented under Fixed.
+- `tests/test_js_modules.py`: runs `static/js/integrationActions.js` under node and pins one cleanup request per
+  Settings integration type (plus URL encoding and the unknown-type no-op).
 
 ### Fixed
 - **`static/js/settings.js` and `static/js/admin.js` did not parse** (broken by the 2026-10-02 api.js migration,
@@ -51,11 +54,15 @@ in `pyproject.toml` and `package.json`.
   logout handler and the missing `} finally {` around two endpoint-form buttons.
 - Deleting one integration in Settings no longer clears **every** integration type: the api.js migration dropped the
   `if (type === 'api') … else if (…)` guards, leaving calendar/contacts/email/MCP/vault calls to run unconditionally.
-  The chain is restored, one call per type, as before.
+  The mapping now lives in `static/js/integrationActions.js` (pure, exactly one request per type, no-op for an unknown
+  type) and is covered by `tests/test_js_modules.py`, so the UI and the test share one source of truth.
 - Telegram digests escape skill names everywhere they appear (`waiting_for_you` and `pulse_digest`), so a name
   containing HTML can no longer break the message; `pulse_digest` had also computed `html.escape` and never used it.
 - `tests/test_ada_integrations.py` supplies its own `requests` stub instead of depending on a transitive package
   (caldav now uses `niquests`), so `pip install -r requirements.txt` alone runs the whole suite.
+- The PWA service worker precaches the modules `index.html` actually loads (tours, command palette, assistant, rail,
+  health strip, plus the shared `api.js` and `integrationActions.js`), its offline fallback ignores query strings
+  (`chat.js?v=…` missed the cached entry), and the cache name is bumped to `odysseus-v327`.
 - `aurix_approval.ApprovalManager` now reads the shared state on disk before its in-memory copy, so a decision made in another
   process (the Telegram listener) reaches a polling pipeline.
 - Removed a private hostname and address from comments in `aurix_build_brain.py`.
