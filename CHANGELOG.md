@@ -34,6 +34,12 @@ in `pyproject.toml` and `package.json`.
   open findings, names who resolves each open question, flags apparent-but-unrecorded access, states its scope at top and bottom,
   and measures itself for the `sample` record.
 - The outbox keeps a held card's buttons: it arrives whole after the morning summary, still one tap.
+- **Restore helper** (`scripts/aurix_restore.py`, documented in `docs/OPERATIONS.md`): `list` / `verify` / `restore`
+  for the nightly snapshots, stdlib only. Verification opens every SQLite file read-only with `integrity_check`;
+  `restore` refuses a corrupt snapshot, previews unless `--apply`, never deletes anything in the destination, and
+  with `--overwrite` first copies each replaced file to `<destination>/.aurix-restore-pre/<stamp>/`. Default
+  destination is a staging folder next to the snapshots, so the plain command never writes into live data.
+  Covered by `tests/test_aurix_restore.py` (20 cases, temp trees only).
 
 ### Fixed
 - `aurix_approval.ApprovalManager` now reads the shared state on disk before its in-memory copy, so a decision made in another

@@ -40,6 +40,48 @@ and what guards the public repository. Commands run on the home server in the Au
 - `bash scripts/aurix_deploy.sh rollback [tag]`: go back. Only the code image changes; `data/` is never touched.
 - Optional containers (FileBrowser, ReClip) start only with `COMPOSE_PROFILES=extras` in `.env`.
 
+## Backing up and restoring data
+
+`scripts/aurix_backup.sh` runs nightly (see the top of the script for its cron line) and keeps versioned,
+hard-linked snapshots on the NAS at `/mnt/hearthnode/aurix-backup/snapshots/<YYYY-MM-DD_HHMM>/`. It stores two
+parts: `brain/` (memory, wiki, `.chroma`, `runtime`) and `app/` (`data/`, minus caches, mission workspaces and
+secrets). It writes `data/backup_status.json`; the watchdog messages you if the last good backup is old or failed.
+
+`scripts/aurix_restore.py` is the other half — list, verify and restore, stdlib only:
+
+```bash
+python3 scripts/aurix_restore.py list                    # snapshots, newest first (add --verify for integrity)
+python3 scripts/aurix_restore.py verify latest           # structure + SQLite integrity, read-only
+python3 scripts/aurix_restore.py restore latest --to /tmp/stage             # preview, writes nothing
+python3 scripts/aurix_restore.py restore latest --to /tmp/stage --apply     # copy into a staging folder
+```
+
+| Command | What it does |
+|---|---|
+| `list` | Real snapshots only (`latest` and `.partial` runs are ignored), with size, file/database count and which parts exist. |
+| `verify <stamp\|latest>` | Opens the snapshot read-only and runs SQLite's own `integrity_check` on every `*.db`. Exit 1 if any database is unreadable or fails. |
+| `restore <stamp\|latest> --to DIR` | Writes `DIR/brain` and `DIR/app`. Without `--apply` it only prints the plan. |
+| `restore … --brain-to DIR` / `--app-to DIR` | Restore one part straight into its live folder (e.g. `--app-to ~/ai-brain-sync/odysseus/data`). |
+| `--overwrite` | Replace existing destination files. Each replaced file is first copied to `<destination>/.aurix-restore-pre/<stamp>/`. |
+
+Rules it enforces, so a bad minute cannot make things worse:
+
+- `restore` verifies first and refuses a snapshot whose SQLite integrity check fails; nothing is written.
+- Without `--overwrite`, a restore that would replace any existing file refuses **before** writing anything.
+- A restore never deletes files that are not in the snapshot — a snapshot is not a full mirror of the live tree,
+  so copying it back is additive.
+- Nothing is ever written inside `<NAS>/aurix-backup/snapshots/`.
+- The default destination is `<NAS>/aurix-backup/restore/<stamp>/`, so the no-argument command never touches live data.
+- Snapshots deliberately contain **no secrets** (`.env`, `auth.json`, `ssh/`, `*.pem`, `*.key`, `credentials*`).
+  Put those back from their own copy; a restore cannot do it for you.
+
+Suggested in-place flow: restore into a staging folder, inspect it, stop Aurix, then copy the pieces you want with
+`--app-to` / `--brain-to --overwrite`, and start Aurix again. To undo a step, copy the matching file back from
+`.aurix-restore-pre/<stamp>/`.
+
+Tests: `python3 -m unittest tests.test_aurix_restore` (20 cases, temp folders only — the real NAS is never touched).
+The backup script has its own self-test: `bash scripts/test_aurix_backup.sh`.
+
 ## What keeps the public repository clean
 
 The repository is public. The same rules run in four places:
