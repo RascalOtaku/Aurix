@@ -48,7 +48,11 @@ app = FastAPI(
 )
 
 # ========= CORS =========
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1").split(",")
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost,http://127.0.0.1").split(",")
+    if origin.strip()
+]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
@@ -643,6 +647,7 @@ def _serve_html_with_nonce(request: Request, file_path: str) -> HTMLResponse:
     html = html.replace("{{CSP_NONCE}}", nonce)
     return HTMLResponse(html)
 
+
 @app.get("/")
 async def serve_index(request: Request):
     static_path = abs_join(BASE_DIR, "static/index.html")
@@ -653,59 +658,32 @@ async def serve_index(request: Request):
         return _serve_html_with_nonce(request, root_path)
     raise HTTPException(404, "index.html not found")
 
-@app.get("/notes")
-async def serve_notes(request: Request):
-    return await serve_index(request)
 
-@app.get("/calendar")
-async def serve_calendar(request: Request):
-    return await serve_index(request)
+for route in ("/notes", "/calendar", "/cookbook", "/email", "/memory", "/gallery", "/tasks", "/library"):
+    app.add_api_route(route, serve_index, methods=["GET"])
 
-# Per-tool deep-link routes — all serve the same SPA, the JS auto-opens
-# the matching modal based on window.location.pathname. Each route also
-# gets a unique favicon + page title via inline script in index.html so
-# bookmarks render with tool-specific icons.
-@app.get("/cookbook")
-async def serve_cookbook(request: Request):
-    return await serve_index(request)
-
-@app.get("/email")
-async def serve_email(request: Request):
-    return await serve_index(request)
-
-@app.get("/memory")
-async def serve_memory(request: Request):
-    return await serve_index(request)
-
-@app.get("/gallery")
-async def serve_gallery(request: Request):
-    return await serve_index(request)
-
-@app.get("/tasks")
-async def serve_tasks(request: Request):
-    return await serve_index(request)
-
-@app.get("/library")
-async def serve_library(request: Request):
-    return await serve_index(request)
 
 @app.get("/backgrounds")
 async def serve_backgrounds(request: Request):
     """Sandbox page for prototyping background effects. No auth required."""
     return _serve_html_with_nonce(request, abs_join(BASE_DIR, "static/backgrounds.html"))
 
+
 @app.get("/login")
 async def serve_login(request: Request):
     return _serve_html_with_nonce(request, abs_join(BASE_DIR, "static/login.html"))
+
 
 @app.get("/api/version")
 async def get_version():
     from core.constants import APP_VERSION
     return {"version": APP_VERSION}
 
+
 @app.get("/api/health")
 async def health_check() -> Dict[str, str]:
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
 
 @app.get("/api/health/telegram")
 async def telegram_readiness_check(request: Request):
@@ -718,6 +696,7 @@ async def telegram_readiness_check(request: Request):
     from src.foundation import sysview
     ready, body = sysview.telegram_readiness()
     return JSONResponse(body, status_code=200 if ready else 503)
+
 
 @app.get("/api/runtime")
 async def runtime_info() -> Dict[str, object]:
@@ -738,6 +717,7 @@ async def runtime_info() -> Dict[str, object]:
         "in_docker": in_docker,
         "ollama_base_url": ollama_url,
     }
+
 
 @app.get("/api/scheduler/failures")
 async def scheduler_failures(request: Request, limit: int = 50, level: str = "") -> Dict[str, object]:
@@ -995,6 +975,7 @@ async def startup_event():
         logger.warning(f"Telegram listener startup failed (non-critical): {e}")
 
     logger.info("Application startup complete")
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
