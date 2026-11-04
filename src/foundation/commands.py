@@ -119,7 +119,18 @@ _ECON_LOWER = {"econ_set": (0,), "econ_new": (0, 1), "econ_import": (0,), "econ_
                "econ_modify": (0, 1), "econ_opp": (0,), "econ_evidence": (0, 1), "econ_spent": (1,), "econ_booked": (1,), "econ_refund": (1,), "econ_experiment": (0,), "econ_result": (0,), "econ_sample": (0,),
                "econ_hours": (1,), "econ_yes": (0,), "econ_no": (0,)}
 
-_PATTERNS = _ECON_PATTERNS + [
+# Field Operations (src/foundation/field.py): points captured from shared Telegram locations.
+_FP = r"(?:\s+(fp-[0-9a-f]{6}))?"
+_FIELD_PATTERNS = [
+    ("field_export", re.compile(r"^\s*/?(?:points|waypoints)\s+(gpx|geojson)\s*$", re.I)),
+    ("field_points", re.compile(r"^\s*/?(?:points|field\s+points|waypoints)\s*\??\s*$", re.I)),
+    ("field_set", re.compile(rf"^\s*/?point{_FP}\s+(name|type|note)\s*[:\-]?\s*(\S.{{0,999}})$", re.I | re.S)),
+    ("field_confirm", re.compile(rf"^\s*/?point{_FP}\s+(confirm|unconfirm)\s*$", re.I)),
+    ("field_show", re.compile(rf"^\s*/?point{_FP}\s*$", re.I)),
+]
+_ECON_LOWER.update({"field_export": (0,), "field_set": (0, 1), "field_confirm": (0, 1), "field_show": (0,)})
+
+_PATTERNS = _ECON_PATTERNS + _FIELD_PATTERNS + [
     ("approve_standing", re.compile(rf"^\s*/?approve\s+standing\s+{_SID}\s*$", re.I)),
     ("deny_standing", re.compile(rf"^\s*/?deny\s+standing\s+{_SID}\s*$", re.I)),
     ("pause_standing", re.compile(rf"^\s*/?pause\s+standing\s+{_SID}\s*$", re.I)),
@@ -345,7 +356,7 @@ def parse(text: str) -> Optional[Tuple[str, str]]:
     for kind, rx in _PATTERNS:
         m = rx.match(text or "")
         if m:
-            if kind.startswith("econ_"):
+            if kind.startswith(("econ_", "field_")):
                 parts = [(g or "").strip() for g in m.groups()]
                 parts = [x.lower() if i in _ECON_LOWER.get(kind, ()) else x for i, x in enumerate(parts)]
                 return kind, econ.SEP.join(parts).rstrip(econ.SEP)
@@ -1163,6 +1174,26 @@ class Foundation:
             return await asyncio.to_thread(subscriptions.render_summary)
         if kind.startswith("econ_"):
             return await asyncio.to_thread(econ.handle, kind, arg)
+        if kind.startswith("field_"):
+            from src.foundation import field
+            parts = arg.split(econ.SEP) if arg else []
+            ref = parts[0] if parts else ""
+            if kind == "field_points":
+                return await asyncio.to_thread(field.list_text)
+            if kind == "field_show":
+                return await asyncio.to_thread(field.show_text, ref)
+            if kind == "field_set":
+                return await asyncio.to_thread(field.update, ref, parts[1], parts[2] if len(parts) > 2 else "")
+            if kind == "field_confirm":
+                return await asyncio.to_thread(field.update, ref, parts[1])
+            if kind == "field_export":
+                path = await asyncio.to_thread(field.export, ref)
+                if path is None:
+                    return "No field points to export yet."
+                if self.send_file:
+                    await self.send_file(str(path), f"Field points ({ref.upper()})")
+                    return f"📤 Sent {path.name}. Import it into Organic Maps, QGIS or a GPS."
+                return f"Exported to {html.escape(str(path))}."
         if kind in ("build_yes", "build_no"):
             return await asyncio.to_thread(build_approvals.resolve, arg, kind == "build_yes")
         if kind == "earnings":

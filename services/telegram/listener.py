@@ -114,6 +114,15 @@ class TelegramListener:
         def send_file_sync(path, caption):
             self._service.send_document(path, caption)
         ack = await loop.run_in_executor(None, transcription.request, file_id, filename, duration, notify_sync, send_file_sync)
+        job = re.search(r"<code>(t-[0-9a-f]{6})</code>", ack or "")
+        if job:
+            try:                                                # a voice note right after a shared location describes that field point
+                from src.foundation import field
+                fp = await loop.run_in_executor(None, field.attach_voice, job.group(1), float(msg.get("date") or time.time()))
+                if fp:
+                    ack += f"\n📍 It will be attached to field point <code>{fp}</code>."
+            except Exception as e:
+                logger.warning("field voice attach failed: %r", e)
         await loop.run_in_executor(None, self._service.send, ack)
 
     async def _handle_photo(self, msg: dict) -> None:
@@ -125,7 +134,31 @@ class TelegramListener:
         if not file_id:
             return
         loop = asyncio.get_event_loop()
-        reply = await loop.run_in_executor(None, vision.photo, file_id, (msg.get("caption") or "").strip())
+        caption = (msg.get("caption") or "").strip()
+        reply = await loop.run_in_executor(None, vision.photo, file_id, caption)
+        try:                                                    # a photo right after a shared location belongs to that field point
+            from src.foundation import field
+            fp = await loop.run_in_executor(None, field.attach_photo, file_id, caption, float(msg.get("date") or time.time()), reply)
+            if fp:
+                reply += f"\n📍 Attached to field point <code>{fp}</code>."
+        except Exception as e:                                  # field capture must never cost the owner their photo answer
+            logger.warning("field photo attach failed: %r", e)
+        await loop.run_in_executor(None, self._service.send, reply)
+
+    async def _handle_location(self, msg: dict) -> None:
+        """A shared location (or a venue) becomes a field point at once; nothing else has to work for it to be saved."""
+        from src.foundation import field
+        loc = msg.get("location") or (msg.get("venue") or {}).get("location") or {}
+        loop = asyncio.get_event_loop()
+        try:
+            p = await loop.run_in_executor(None, lambda: field.capture(loc["latitude"], loc["longitude"],
+                                                                        float(msg.get("date") or time.time()), loc.get("horizontal_accuracy")))
+            reply = field.captured_text(p)
+            venue = msg.get("venue") or {}
+            if venue.get("title"):
+                reply = await loop.run_in_executor(None, field.update, field.short(p["id"]), "name", venue["title"])
+        except (KeyError, TypeError, ValueError) as e:
+            reply = f"Could not save that location as a field point ({type(e).__name__})."
         await loop.run_in_executor(None, self._service.send, reply)
 
     def _cancel_in_flight(self) -> None:
@@ -302,6 +335,11 @@ class TelegramListener:
                         continue
                     from src.foundation import outbox
                     outbox.note_owner_active()                  # the owner is awake: quiet hours step aside
+                    if msg.get("location") or msg.get("venue"):
+                        ltask = asyncio.create_task(self._handle_location(msg))
+                        self._control_tasks.add(ltask)
+                        ltask.add_done_callback(self._control_tasks.discard)
+                        continue
                     doc = msg.get("document") or {}
                     if msg.get("voice") or msg.get("audio") or str(doc.get("mime_type", "")).startswith("audio/"):
                         atask = asyncio.create_task(self._handle_audio(msg))

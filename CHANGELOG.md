@@ -7,6 +7,12 @@ in `pyproject.toml` and `package.json`.
 ## [Unreleased]
 
 ### Added
+- **Field Operations, phase 1** (`src/foundation/field.py`): a location (or venue) shared on Telegram becomes a field point
+  (UUID, coordinates, reported accuracy, status unverified) before anything else runs; photos and voice notes sent within
+  15 minutes attach to it (the original photo kept under `data/field/media/`, the voice note linked to its transcript, a
+  model's reading of a photo stored as a lead, not an observation). `points`, `point [id]`, `point [id] name|type|note:`,
+  `point <id> confirm`, and `points gpx|geojson` exports for Organic Maps, QGIS or a GPS. Times are labelled honestly as
+  when Telegram received the message. Coordinates never go into the audit log.
 - **Economic Engine** (`src/foundation/economy/`, spec in `docs/ECONOMIC_ENGINE.md`): the freedom number and milestones,
   an evidence-gated opportunity pipeline (discovered → … → scaled) stored in SQLite, one scorecard with hard limits first,
   owner approval cards before any money, launch or scale-up, a ledger that keeps projected, booked and collected revenue
