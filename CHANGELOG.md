@@ -7,6 +7,12 @@ in `pyproject.toml` and `package.json`.
 ## [Unreleased]
 
 ### Added
+- **Housekeeping lane** (`src/foundation/ops.py` + host-side `scripts/aurix_ops_agent.py`, run by the upgrade agent's existing
+  cron): AURIX updates itself (`update aurix`: sync with GitHub, rebuild, health-check with automatic rollback, then an
+  `econ check` on the new build), prunes GitHub branches (`repo cleanup`: a read-only scan, then a card naming exactly the
+  branches that are merged into main or carry the private patterns; never main or Dependabot's), and sets its CI secret
+  (`ci secret`, from the host's own patterns file with the GitHub CLI). Every change is an HMAC-signed request the owner
+  approved with a tap; the host re-checks everything and does only the one whitelisted operation.
 - **Field Operations, phase 1** (`src/foundation/field.py`): a location (or venue) shared on Telegram becomes a field point
   (UUID, coordinates, reported accuracy, status unverified) before anything else runs; photos and voice notes sent within
   15 minutes attach to it (the original photo kept under `data/field/media/`, the voice note linked to its transcript, a

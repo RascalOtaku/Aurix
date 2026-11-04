@@ -130,7 +130,17 @@ _FIELD_PATTERNS = [
 ]
 _ECON_LOWER.update({"field_export": (0,), "field_set": (0, 1), "field_confirm": (0, 1), "field_show": (0,)})
 
-_PATTERNS = _ECON_PATTERNS + _FIELD_PATTERNS + [
+# Housekeeping (src/foundation/ops.py): AURIX updates itself, prunes GitHub branches, sets its CI secret - each a signed, tapped card.
+_OPS_PATTERNS = [
+    ("ops_yes", re.compile(r"^\s*/?(?:yes|approve)\s+ops\s+(o-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
+    ("ops_no", re.compile(r"^\s*/?(?:no|deny|decline)\s+ops\s+(o-[0-9a-f]{6})\s*[.!]*\s*$", re.I)),
+    ("ops_update", re.compile(r"^\s*/?(?:update\s+aurix|aurix\s+update|update\s+yourself|deploy(?:\s+main)?)\s*[.!]*\s*$", re.I)),
+    ("ops_cleanup", re.compile(r"^\s*/?(?:repo\s+cleanup|clean\s*up\s+branches|prune\s+branches)\s*$", re.I)),
+    ("ops_secret", re.compile(r"^\s*/?(?:ci\s+secret|set\s+(?:the\s+)?ci\s+secret)\s*$", re.I)),
+    ("ops_status", re.compile(r"^\s*/?(?:ops|housekeeping)\s*\??\s*$", re.I)),
+]
+
+_PATTERNS = _ECON_PATTERNS + _FIELD_PATTERNS + _OPS_PATTERNS + [
     ("approve_standing", re.compile(rf"^\s*/?approve\s+standing\s+{_SID}\s*$", re.I)),
     ("deny_standing", re.compile(rf"^\s*/?deny\s+standing\s+{_SID}\s*$", re.I)),
     ("pause_standing", re.compile(rf"^\s*/?pause\s+standing\s+{_SID}\s*$", re.I)),
@@ -374,7 +384,7 @@ def parse(text: str) -> Optional[Tuple[str, str]]:
             lowered = ("approve_mission", "deny_mission", "revoke", "approve_standing", "deny_standing",
                        "pause_standing", "resume_standing", "retire_standing", "show", "files", "send_files",
                        "todo_done", "skill_show", "approve_skill", "deny_skill", "retire_skill",
-                       "teacher", "lesson_show", "approve_lesson", "deny_lesson", "retire_lesson", "fix_yes", "fix_no", "fix_undo", "repo_yes", "repo_no", "mem_yes", "mem_no", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrades_cfg", "money_set", "shard_pause", "shard_resume", "freelance_yes", "freelance_no", "fab_yes", "fab_no", "content_yes", "content_no", "learn_yes", "learn_no", "land_yes", "land_no", "integ_adopt", "integ_skip", "evolve_yes", "evolve_no", "evolve_run", "evolve_propose")
+                       "teacher", "lesson_show", "approve_lesson", "deny_lesson", "retire_lesson", "fix_yes", "fix_no", "fix_undo", "repo_yes", "repo_no", "mem_yes", "mem_no", "upgrade_yes", "upgrade_no", "upgrade_undo", "upgrade_diff", "upgrades_cfg", "money_set", "shard_pause", "shard_resume", "freelance_yes", "freelance_no", "fab_yes", "fab_no", "content_yes", "content_no", "learn_yes", "learn_no", "land_yes", "land_no", "integ_adopt", "integ_skip", "evolve_yes", "evolve_no", "evolve_run", "evolve_propose", "ops_yes", "ops_no")
             return kind, (arg.lower() if kind in lowered else arg)
     bare = _bare_skill_decision(text) or _bare_fix_decision(text) or _bare_ack(text) or _bare_repo_link(text)
     if bare:
@@ -595,6 +605,13 @@ class Foundation:
         try:                                    # upgrade lane: new proposals, outcomes, and (when on) the next draft in a background thread
             for text in upgrades.tick(now):
                 await self.notify_ui(text)
+        except Exception:
+            pass
+        try:                                    # housekeeping lane: results from the host (update, branch scan -> prune card, CI secret)
+            from src.foundation import ops
+            if ops.awaiting_results():                  # nothing sent to the host: not even a thread hop
+                for text in await asyncio.to_thread(ops.tick, now):
+                    await self.notify_ui(text, "ops")
         except Exception:
             pass
         try:                                    # memory: things worth remembering / forgetting, waiting for your yes/no (small file reads, no thread hop)
@@ -1174,6 +1191,13 @@ class Foundation:
             return await asyncio.to_thread(subscriptions.render_summary)
         if kind.startswith("econ_"):
             return await asyncio.to_thread(econ.handle, kind, arg)
+        if kind.startswith("ops_"):
+            from src.foundation import ops
+            if kind in ("ops_yes", "ops_no"):
+                return await asyncio.to_thread(ops.decide, arg, kind == "ops_yes")
+            if kind == "ops_status":
+                return await asyncio.to_thread(ops.status_text)
+            return await asyncio.to_thread(ops.propose, {"ops_update": "update", "ops_cleanup": "scan", "ops_secret": "secret"}[kind])
         if kind.startswith("field_"):
             from src.foundation import field
             parts = arg.split(econ.SEP) if arg else []

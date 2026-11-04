@@ -257,6 +257,12 @@ def cycle() -> None:
     results = process_approved(load_key())
     for r in results:                                                            # cron appends stdout to logs/upgrade.log; quiet when idle
         print(now_iso(), "upgrade:", r["id"], r["kind"], r["status"], "-", str(r["detail"])[:300], flush=True)
+    try:                                                                         # the housekeeping lane rides the same cron (aurix_ops_agent.py)
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import aurix_ops_agent                                                   # type: ignore
+        aurix_ops_agent.cycle()
+    except Exception as ex:                                                      # noqa: BLE001 - one lane failing must not stop the other
+        print(now_iso(), "ops: agent error", type(ex).__name__, str(ex)[:200], flush=True)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
