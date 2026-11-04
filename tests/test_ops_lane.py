@@ -111,6 +111,8 @@ class HostAgentTests(OpsBase):
         git(self.src, "commit", "-qm", "wip")
         git(self.src, "checkout", "-q", "main")
         git(self.src, "push", "-q", "origin", "merged-one", "leaky", "work-in-progress")
+        git(self.src, "fetch", "-q", "origin")
+        git(self.src, "remote", "set-head", "origin", "main")                         # what git >= 2.48 does on its own (CI caught this)
         info = self.src / ".git" / "info"
         info.mkdir(exist_ok=True)
         (info / "aurix-private-patterns").write_text("secret-host-7070\n")

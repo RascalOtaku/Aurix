@@ -101,11 +101,16 @@ def patterns_file() -> Path:
 def candidates() -> List[Dict[str, str]]:
     rem = remote()
     run(["git", "fetch", "--prune", "-q", rem], timeout=180)
-    refs = [x.strip() for x in run(["git", "for-each-ref", "--format=%(refname:short)", f"refs/remotes/{rem}/"]).stdout.splitlines()]
+    prefix = f"refs/remotes/{rem}/"
     pats = patterns_file()
     out = []
-    for ref in refs:
-        name = ref[len(rem) + 1:] if ref.startswith(rem + "/") else ref
+    # Full ref names, and symbolic refs skipped: git >= 2.48 records the remote's default branch as refs/remotes/<remote>/HEAD, whose
+    # short name is just "<remote>" - read naively that looks like a branch called "origin".
+    for line in run(["git", "for-each-ref", "--format=%(refname)%09%(symref)", prefix]).stdout.splitlines():
+        full, _, symref = line.partition("\t")
+        if symref.strip() or not full.startswith(prefix):
+            continue
+        ref, name = full, full[len(prefix):]
         if not BRANCH_RX.match(name) or name in NEVER_DELETE or name.startswith("dependabot/"):
             continue
         why = []
