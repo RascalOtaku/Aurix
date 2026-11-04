@@ -4,6 +4,9 @@
 #   * the GitHub Actions group takes everything together, because github/codeql-action/init and /analyze must move in lockstep (PR #16 bumped only
 #     analyze and its own CodeQL run failed);
 #   * major versions are left alone here (python 3.12 -> 3.14, actions/checkout 4 -> 7 ...): those are deliberate upgrades, done by hand with the full test suite.
+#   * the python base IMAGE stays on 3.14 for now (2026-11-04): PRs #23/#24 moved it to 3.15, but scikit-image had no 3.15 wheels, so pip tried
+#     to compile it from source in an image with no compiler and the Docker build failed. Remove the python ignores below once the
+#     dependencies publish 3.15 wheels, and do that upgrade by hand with the full suite.
 # Security updates for known-vulnerable dependencies are separate from this file and still arrive as soon as an advisory lands.
 version: 2
 updates:
@@ -31,6 +34,7 @@ updates:
       docker-minor-and-patch: {patterns: ["*"], update-types: [minor, patch]}
     ignore:
       - {dependency-name: "*", update-types: ["version-update:semver-major"]}
+      - {dependency-name: "python", versions: [">=3.15"]}
   - package-ecosystem: docker
     directory: /mission_sandbox
     schedule: {interval: monthly}
@@ -39,6 +43,7 @@ updates:
       sandbox-docker-minor-and-patch: {patterns: ["*"], update-types: [minor, patch]}
     ignore:
       - {dependency-name: "*", update-types: ["version-update:semver-major"]}
+      - {dependency-name: "python", versions: [">=3.15"]}
   - package-ecosystem: github-actions
     directory: /
     schedule: {interval: monthly}
