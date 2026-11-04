@@ -226,7 +226,7 @@ def run_all() -> Dict[str, Any]:
         return bool(b.get("ok")) and age < 36 * 3600, f"{'OK' if b.get('ok') else 'FAILED'} {_age(age)} ago"
 
     def game_pc():
-        msg = gaming.request_refresh()
+        gaming.request_refresh()
         rep = gaming.load_report()
         age = gaming.report_age_hours(rep)
         return (rep is not None and (age is None or age <= gaming.STALE_REPORT_HOURS)), ("asked for fresh facts; " + (f"last report {_age((age or 0) * 3600)} old" if rep else "no report yet"))

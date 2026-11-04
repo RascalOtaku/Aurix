@@ -243,7 +243,18 @@ class VoiceScriptTests(unittest.TestCase):
     def load(self, name):
         spec = importlib.util.spec_from_file_location("voice_" + name.replace("-", "_"), ROOT / "voice" / name)
         mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
+        # The voice scripts run on the PC and install voice/requirements.txt; `requests` is not a core
+        # app dependency, so supply a stub only while the script is being imported. Do not use
+        # mock.patch.dict here: restoring the whole sys.modules mapping would also drop the real numpy
+        # modules the import creates, and the C extension cannot be loaded twice in one process.
+        stubbed = "requests" not in sys.modules
+        if stubbed:
+            sys.modules["requests"] = mock.MagicMock()
+        try:
+            spec.loader.exec_module(mod)
+        finally:
+            if stubbed:
+                sys.modules.pop("requests", None)
         return mod
 
     def test_open_source_voice_helpers(self):

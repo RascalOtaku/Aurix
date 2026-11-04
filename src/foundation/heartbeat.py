@@ -78,7 +78,7 @@ def waiting_for_you(limit: int = 6) -> str:
     add(freelance.pending, lambda j: f"🧰 {e(j['title'][:60])} - <code>yes {j['id']}</code> / <code>no {j['id']}</code>", 'freelance')
     add(content.pending, lambda p: f"📝 {e(p['title'][:60])} - <code>yes {p['id']}</code> / <code>no {p['id']}</code>", 'content')
     add(learning.pending, lambda r: f"📚 {e(r['title'][:60])} - <code>yes {r['id']}</code> / <code>no {r['id']}</code>", 'learning')
-    add(forge.pending, lambda s: f"🛠️ Skill: {e(s['name'])} - <code>approve skill {s['name']}</code> / <code>deny skill {s['name']}</code>", 'forge')
+    add(forge.pending, lambda s: f"🛠️ Skill: {e(s['name'])} - <code>approve skill {e(s['name'])}</code> / <code>deny skill {e(s['name'])}</code>", 'forge')
     add(land.pending, lambda c: f"🏞️ Land: {e(c.get('label', c.get('property', ''))[:60])} - <code>yes land {c['id']}</code> / <code>no land {c['id']}</code>", 'land')
     add(evolve.all_pending, lambda c: f"🧬 Evolved {e(c['domain'])} (fitness {c['fitness']:.3f}) - <code>yes evolve {c['id']}</code> / <code>no evolve {c['id']}</code>", 'evolve')
     try:
@@ -143,7 +143,10 @@ def pulse_digest() -> str:
     try:
         from src.foundation import forge
         skills = forge.pending()
-        parts.append(f"🛠️ Skill requests: {len(skills)} waiting" + (" - " + ", ".join(s["name"] for s in skills[:3]) if skills else ""))
+        # Skill names are owner/agent-written text and this string is sent as Telegram HTML: escape them,
+        # like every other digest section does. Without this a name containing <b> breaks the message.
+        names = ", ".join(e(s["name"]) for s in skills[:3])
+        parts.append(f"🛠️ Skill requests: {len(skills)} waiting" + (" - " + names if skills else ""))
     except Exception:
         parts.append("🛠️ Skill requests: unavailable right now.")
 

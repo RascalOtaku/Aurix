@@ -707,8 +707,8 @@ def catalog_text(skills: List[Dict[str, str]], workspace: str) -> str:
     if not skills:
         return ""
     ws = str(workspace).replace("\\", "/")
-    lines = [f"Forged skills available (owner-approved, tested, pure functions: JSON dict in, JSON value out; no files, no network). "
-             f"Call them from a python step:",
+    lines = ["Forged skills available (owner-approved, tested, pure functions: JSON dict in, JSON value out; no files, no network). "
+             "Call them from a python step:",
              f"  import sys; sys.path.insert(0, \"{ws}\"); from {PROVISION_DIR}.<name> import run; print(run({{...}}))"]
     lines += [f"  - {s['name']}: {s['description']}" for s in skills]
     lines.append("Prefer a skill over re-writing the same logic. If a skill raises ValueError, your input was wrong - fix the input, don't edit the skill.")

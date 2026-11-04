@@ -145,6 +145,6 @@ def run(now: float = None) -> str:
     if nxt <= ln:
         nxt += timedelta(days=7)
     review_on = os.environ.get("AURIX_ECON_REVIEW", "1") != "0"
-    lines.append(f"<b>Weekly review:</b> " + (f"next {nxt.strftime('%a %Y-%m-%d %H:%M')} ({ln.tzname() or 'local'})" if review_on
+    lines.append("<b>Weekly review:</b> " + (f"next {nxt.strftime('%a %Y-%m-%d %H:%M')} ({ln.tzname() or 'local'})" if review_on
                                                else "off (AURIX_ECON_REVIEW=0)"))
     return "\n".join(lines)

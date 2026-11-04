@@ -148,7 +148,7 @@ def outline(query: str = "", path: str = "", depth: int = 2, limit: int = 120,
             label = f"[{n.id}] {n.title}" if n.level else f"[{n.id}] {n.path} - {n.title}"
             out.append(f"{indent}{label}" + (f" - {n.gist}" if n.gist and n.level else ""))
             if len(out) >= limit:
-                out.append(f"... (more: narrow with path= or a more specific query)")
+                out.append("... (more: narrow with path= or a more specific query)")
                 return "\n".join(out)
     return "\n".join(out)
 

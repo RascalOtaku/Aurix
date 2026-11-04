@@ -7,6 +7,7 @@ import { makeWindowDraggable } from './windowDrag.js';
 import { clearDockSide } from './modalSnap.js';
 import { sortModelIds } from './modelSort.js';
 import { get, post, put, patch, del, api, apiRaw, ApiError } from './api.js';
+import { integrationRemovalRequests } from './integrationActions.js';
 
 let initialized = false;
 let modalEl = null;
@@ -1987,7 +1988,7 @@ function initAccount() {
     logoutBtn.addEventListener('mouseenter', () => { logoutBtn.style.opacity = '1'; logoutBtn.style.borderColor = 'var(--red)'; logoutBtn.style.color = 'var(--red)'; });
     logoutBtn.addEventListener('mouseleave', () => { logoutBtn.style.opacity = ''; logoutBtn.style.borderColor = ''; logoutBtn.style.color = ''; });
     logoutBtn.addEventListener('click', async () => {
-      await post('/api/auth/logout'); } catch (_) {}
+      try { await post('/api/auth/logout'); } catch (_) {}
       // SECURITY: wipe all client-side state on logout so the next user that
       // signs in on this browser doesn't inherit the previous account's
       // session id, last-used model, draft chat input, or any cached lists.
@@ -3003,17 +3004,11 @@ async function initUnifiedIntegrations() {
         const type = btn.dataset.intgType;
         const id = btn.dataset.intgId;
         try {
-          await del(`/api/auth/integrations/${id}`);
-          await post('/api/calendar/config', { url: '', username: '', password: '' });
-          else if (type === 'contacts') {
-            await del('/api/contacts/clear');
+          for (const req of integrationRemovalRequests(type, id)) {
+            if (req.method === 'DELETE') await del(req.path);
+            else if (req.method === 'PUT') await put(req.path, req.body);
+            else if (req.method === 'POST') await post(req.path, req.body);
           }
-          else if (type === 'carddav') {
-            await put('/api/contacts/config', { carddav_url: '', carddav_username: '', carddav_password: '' });
-          }
-          await del(`/api/email/accounts/${id}`);
-          await del(`/api/mcp/servers/${id}`);
-          await post('/api/vault/logout');
         } catch (_) {}
         formEl.style.display = 'none';
         await renderList();

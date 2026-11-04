@@ -403,7 +403,6 @@ def trust() -> Dict[str, Any]:
     from src.foundation import fastlane, identity, teacher
     from src.foundation.commands import NOT_YET_AUTHORIZATIONS
     recs = audit.recent(5000)
-    n = lambda pred: sum(1 for r in recs if pred(r))                        # noqa: E731
     week = time.time() - 7 * 86400
     ok = True
     try:

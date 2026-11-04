@@ -261,6 +261,13 @@ class PulseDigestContentTests(unittest.TestCase):
         self.assertIn("Skill requests: unavailable right now", text)
         self.assertIn("AURIX pulse", text)                             # the rest of the pulse still renders
 
+    def test_a_skill_name_is_escaped_before_reaching_telegram_html(self):
+        from src.foundation import forge
+        with mock.patch.object(forge, "pending", return_value=[{"name": "<b>pwn</b>", "status": "pending"}]):
+            text = heartbeat.pulse_digest()
+        self.assertIn("&lt;b&gt;pwn&lt;/b&gt;", text)
+        self.assertNotIn("<b>pwn</b>", text)
+
 
 class HeartbeatTests(_Base):
     async def test_status_mentions_standing_missions(self):

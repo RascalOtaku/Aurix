@@ -37,7 +37,8 @@ the codebase, you are probably right to stay away.
 
 - More tests around endpoint probing and provider setup.
 - Better task scheduler defaults and visibility.
-- Backup/restore guide and helper flow for `data/`.
+- Backup/restore guide and helper flow for `data/`: **done** — `scripts/aurix_restore.py` (list/verify/restore), documented in
+  `docs/OPERATIONS.md`; the backup half is `scripts/aurix_backup.sh`.
 - Security hardening around admin-only tools and clear docs for their risk.
 
 ## Not The Focus Right Now

@@ -15,7 +15,9 @@
 #     fastembed_cache (a downloaded model), emoji_cache, and mission workspaces (deliver those with `send files`).
 #   * It writes <app data>/backup_status.json; the AURIX watchdog messages the owner if the last good backup is old or failed.
 #
-# Restore: copy what you need back from <NAS>/aurix-backup/snapshots/<stamp>/{brain,app}/ (brain -> ~/ai/brain, app -> odysseus/data).
+# Restore: list, verify and restore with scripts/aurix_restore.py (see its header and docs/OPERATIONS.md):
+#   python3 scripts/aurix_restore.py list
+#   python3 scripts/aurix_restore.py restore latest --to /tmp/stage --apply
 # Run by cron:   30 3 * * *  bash ~/ai-brain-sync/odysseus/scripts/aurix_backup.sh
 # Test knobs (env): AURIX_BACKUP_NAS, AURIX_BRAIN_DIR, AURIX_APP_DATA, AURIX_BACKUP_KEEP, AURIX_BACKUP_STATUS, AURIX_BACKUP_LOG,
 #                   AURIX_BACKUP_REQUIRE_MOUNT=0 (tests only: skips the mount check so a temp dir can stand in for the NAS).

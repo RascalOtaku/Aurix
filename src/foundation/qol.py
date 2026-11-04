@@ -205,7 +205,7 @@ def disk_text(warn_pct: float = 85.0, critical_pct: Optional[float] = None) -> s
         return f"I couldn't read the disk: {e(str(err))}"
     filled = min(10, int(round(d["pct"] / 10)))
     bar = "▰" * filled + "▱" * (10 - filled)
-    lines = [f"💾 <b>Server disk</b> (the 7070 - not your PC)",
+    lines = ["💾 <b>Server disk</b> (the 7070 - not your PC)",
              f"{bar} <b>{d['pct']:.0f}% used</b> · {d['free_gb']:.1f} GB free of {d['total_gb']:.0f} GB"]
     foot = []
     for label, path in (("mission workspaces", data / "workspace"), ("forged skills", data / "forge")):
@@ -238,7 +238,7 @@ def homelab_text(rows: Optional[List[dict]] = None) -> str:
     if not rows:
         return "No homelab links are configured (<code>AURIX_HOMELAB_LINKS</code>)."
     down = [r for r in rows if not r["ok"]]
-    lines = [f"🏠 <b>Homelab</b> - " + ("everything answering" if not down else f"{len(down)} of {len(rows)} not answering")]
+    lines = ["🏠 <b>Homelab</b> - " + ("everything answering" if not down else f"{len(down)} of {len(rows)} not answering")]
     for r in rows:
         lines.append(f"{'✅' if r['ok'] else '❌'} {e(r['name'])} - <code>{e(r['url'])}</code>" + ("" if r["ok"] else f" <i>({e(r['detail'])})</i>"))
     lines.append("<i>I message you on my own if one of these goes down after having been up.</i>")

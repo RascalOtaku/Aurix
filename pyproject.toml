@@ -5,3 +5,6 @@ version = "0.9.1"  # keep in sync with core.constants.APP_VERSION (served at /ap
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+# Pin the behaviour pytest-asyncio currently only warns about, so a future release cannot silently
+# change fixture loop scoping (and every run stops printing the deprecation warning).
+asyncio_default_fixture_loop_scope = "function"
