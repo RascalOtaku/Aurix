@@ -1,0 +1,61 @@
+# Patch 22 — tests/test_upgrade_outcome_bridge_deny_all_actor.py: scope the AURIX_PROJECT_ROOT patch to the whole test (2026-11-04)
+#
+# WHAT: the test fails when run through the 7070 gate (reproduced twice in the
+# 2026-11-04 audit, 1 failed in 0.17s):
+#
+#     tests/test_upgrade_outcome_bridge_deny_all_actor.py:35: in test_deny_all_records_system_actor
+#         _save(st)
+#     src/foundation/outcome_bridge.py:68: in _save
+#         _dir().mkdir(parents=True, exist_ok=True)
+#     PermissionError: [Errno 13] Permission denied: '/app'
+#
+# CAUSE: setUp() wraps only its own _save() call in
+#     with mock.patch.dict(os.environ, {"AURIX_PROJECT_ROOT": tmp}, clear=True):
+# The patch ends when setUp() returns. The test body then calls _load() and
+# _save() again with the ambient environment, where AURIX_PROJECT_ROOT is unset,
+# so outcome_bridge._dir() falls back to its "/app" default — which the gate
+# test runner cannot create, and which in a production container would be the
+# LIVE ledger directory (data/ledger/bridge.json), not a temp dir. So the test
+# is both failing in the gate and unsafe to run where /app is writable: it
+# would write test state over the real bridge state.
+#
+# The production code is NOT at fault: _dir()'s "/app" default is the container
+# app root, and _apply()'s deny_all -> system-actor logic is exactly what the
+# test pins (verified by reading _apply: stage must be "proposed", actor
+# "system" for deny_all, reason carried). Only the test's env scoping is wrong.
+#
+# FIX: start the env patch in setUp() and stop it via addCleanup, so _load()
+# and _save() in the test body resolve to the same temp dir as setUp's _save().
+# Same pattern as tests/test_cmdsense.py (which starts its env patch in setUp
+# and stops it in tearDown). Semantics unchanged: same env dict, same clear=True.
+# No production file is touched.
+#
+# RISK: minimal. The change only widens the lifetime of an existing test-only
+# env patch; it cannot affect production behavior, and the assertions are
+# untouched. After applying, the applying lane should re-run via the gate:
+#     gate tests tests/test_upgrade_outcome_bridge_deny_all_actor.py
+# and expect 1 passed (the deny_all -> system-actor assertion itself was never
+# reached before the fix, so this also becomes the first real run of it).
+# NOT VERIFIED HERE: the patch is prepared, not applied — the 7070 is read-only
+# to this audit, and the gate has no way to run a locally patched test file.
+#
+--- orig/tests/test_upgrade_outcome_bridge_deny_all_actor.py
++++ fixed/tests/test_upgrade_outcome_bridge_deny_all_actor.py
+@@ -23,8 +23,13 @@ class T(unittest.TestCase):
+     def setUp(self):
+         self.tmp = tempfile.TemporaryDirectory()
+         self.addCleanup(self.tmp.cleanup)
+-        self.env = {"AURIX_PROJECT_ROOT": self.tmp.name}
+-        with mock.patch.dict(os.environ, self.env, clear=True):
+-            _save({"offset": None, "open": {}, "last_run": 0, "last_fail_notice": 0, "counts": {}})
++        # The env patch must cover the whole test, not just setUp: the test
++        # body calls _load()/_save() too, and both resolve AURIX_PROJECT_ROOT
++        # anew. Scoped to setUp only, they fell back to "/app" (gate: permission
++        # denied; prod container: the live ledger dir, not a temp dir).
++        self._env_patch = mock.patch.dict(os.environ, {"AURIX_PROJECT_ROOT": self.tmp.name}, clear=True)
++        self._env_patch.start()
++        self.addCleanup(self._env_patch.stop)
++        _save({"offset": None, "open": {}, "last_run": 0, "last_fail_notice": 0, "counts": {}})
+ 
+     def test_deny_all_records_system_actor(self):
+         # prepare state with an open approval

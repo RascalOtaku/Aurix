@@ -1,0 +1,72 @@
+# Patch 20 — src/foundation/gpu_contention.py: timeout detection must not depend on one exception shape; all-skipped must not claim "no endpoint configured" (2026-10-28)
+#
+# WHAT: two defects in call()'s contention handling, both in the file added by HEAD 64d528af ("one shared-GPU rule").
+#
+# 1) _is_timeout() matches exactly one shape: HTTPException with status_code 502 AND "failed after" in the detail.
+#    Any other timeout surfacing from the caller (a bare TimeoutError/asyncio timeout, an httpx timeout exception,
+#    a 504, a differently-worded 502) falls through to `continue`: the same box's LAN route — the same Ollama queue —
+#    is tried for another up to 90 s, and note() is never called with timed_out=True, so no starvation is ever marked.
+#    The next call re-probes, finds "contended" again, and re-waits. The module's own rule ("ONE attempt, then skip",
+#    "a box held all day costs one 90 s probe an hour") holds only as long as llm_core's timeout wording never changes,
+#    and no test covers a non-matching timeout shape. This is a live correctness gap in the rule's core promise, not a
+#    hypothetical: any caller change that rewords the timeout silently defeats the rule.
+#
+# 2) When every candidate is "skip" (starved) — or the candidate list is empty — last_err is None and call() raises
+#    HTTPException(503, "No model endpoint configured"). The endpoint IS configured; it is deliberately resting. A caller
+#    that treats 503 as "endpoint down" (dead-host cooldown, fallback-chain handling, user-facing error) misreads a
+#    deliberate skip as an outage and can pollute host-health state.
+#
+# FIX:
+# 1) _is_timeout() now accepts: a TimeoutError (covers asyncio and builtin timeouts); status 504 (gateway timeout, by
+#    HTTP semantics); status 502 only with timeout wording in the detail ("failed after" / "timed out" / "timeout");
+#    and any exception whose class name contains "timeout" (httpx.TimeoutException and friends, without importing httpx).
+#    The previously-matching shape still matches. Deliberately NOT a timeout: a connect failure — status 503, and the
+#    gate's own 502 "the model server is not running" (no timeout wording in the detail) — because the box is down,
+#    not busy, and marking it starved would hide an outage behind a rest.
+# 2) call() tracks whether any candidate was skipped and says so in the 503: "All model endpoints skipped (starved under
+#    contention)" when that is what happened; the old "No model endpoint configured" message survives for the genuinely
+#    empty-candidates case. Status code stays 503, so existing caller handling is unchanged.
+#
+# RISK: low. The previously-matching timeout shape still returns True, and the skip message changes text only (same
+# status). The new True cases are all genuine timeouts of the call being attempted; note() is only invoked for
+# how == "contended" as before, so a timeout on a "normal" call still marks nothing. Existing tests for the matching
+# shape are unaffected; new tests worth adding in the applying lane: a non-502 timeout shape through call() (starvation
+# marked, LAN route not retried), and the all-skipped 503 message.
+# NOT VERIFIED HERE: the patch is prepared, not applied — the applying lane must run tests/test_gpu_contention.py
+# against the patched file (currently 14 passed on the unpatched file) plus a new non-matching-timeout test.
+#
+--- orig/src/foundation/gpu_contention.py
++++ fixed/src/foundation/gpu_contention.py
+@@ -164,4 +164,14 @@
+ def _is_timeout(ex: BaseException) -> bool:
+-    """llm_core turns a read timeout into HTTPException(502, '... failed after N attempts: ...'); a connect failure is a 503 (not ours to judge)."""
+-    detail = str(getattr(ex, "detail", "") or ex)
+-    return getattr(ex, "status_code", None) == 502 and "failed after" in detail
++    """True when `ex` is a timeout, in any shape the callers surface. llm_core turns a read timeout into HTTPException(502,
++    '... failed after N attempts: ...'); that is the normal shape, but it must not be the ONLY shape: any other timeout
++    (a bare TimeoutError, an httpx timeout, a 504) used to fall through to `continue`, re-probing the same box's LAN route
++    for another 90 s and never marking starvation - the "ONE attempt, then skip" rule silently defeated. A connect failure
++    (503, or the gate's 502 "the model server is not running") is NOT a timeout: the box is down, not busy."""
++    if isinstance(ex, TimeoutError):
++        return True
++    if getattr(ex, "status_code", None) == 504:
++        return True
++    if getattr(ex, "status_code", None) == 502:
++        detail = str(getattr(ex, "detail", "") or ex).lower()
++        return "failed after" in detail or "timed out" in detail or "timeout" in detail
++    return "timeout" in type(ex).__name__.lower()
+@@ -177,6 +177,8 @@
+     last_err: Optional[BaseException] = None
++    skipped = False
+     for cand in [c for c in candidates if c and c[0] and c[1]]:
+         url, model = cand[0], cand[1]
+         how = await plan(url, model, now)
+         if how == "skip":
++            skipped = True
+             continue
+@@ -197,4 +197,4 @@
+     if last_err is not None:
+         raise last_err
+     from fastapi import HTTPException
+-    raise HTTPException(503, "No model endpoint configured")
++    raise HTTPException(503, "All model endpoints skipped (starved under contention)" if skipped else "No model endpoint configured")

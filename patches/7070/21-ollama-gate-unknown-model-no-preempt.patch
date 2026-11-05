@@ -1,0 +1,35 @@
+# Patch 21 — operator_agent/aurix_ollama_gate.py: never preempt on an unknown model (2026-10-28)
+#
+# WHAT: _handle() parses the model only from a non-chunked body with Content-Length. For a chunked (or otherwise
+# body-less) generation request, model stays "" — and _run_high() then treats it as a DIFFERENT model from everything:
+#     if m != model:    # a different model holds the GPU: free it now
+# So a high request preempts every inflight low request when its own model is unknown ("" != any real model), and a
+# low chunked request registered as "" is cut by ANY high request. Both contradict the file's own rule ("Same model:
+# no cut") and the owner's directive behind the gate (Mac work yields, but is slowed, never gratuitously killed).
+# Impact is Mac-side, not AURIX-side: same-model Mac work that could have shared the loaded model is killed
+# unnecessarily. Most current clients send Content-Length, so this bites only chunked/no-length clients — but it is
+# unconditional logic, not a race.
+#
+# FIX: one condition — preempt only when BOTH models are known and differ:
+#     if m and model and m != model:
+# Unknown on either side now means "do not cut": the high request still runs (its own relay is unaffected), and future
+# low requests are still held while AURIX is busy, so the gate's priority still holds; only the destructive cut is
+# withheld when the gate cannot identify what it would cut. Known-model behavior is byte-for-byte unchanged.
+#
+# NOTE ON LINE ENDINGS: the live file uses CRLF. The hunk below is written with LF for readability; convert to CRLF
+# (or hand-apply the one-line condition change) when applying, or `patch` may report the hunk as not matching.
+#
+# RISK: minimal. The change narrows preemption; it cannot preempt anything the old code would not have preempted, and
+# it cannot delay a high request. Existing gate tests (7 passed on the unpatched file) do not pin unknown-model
+# preemption. A test worth adding in the applying lane: chunked low + chunked high requests produce zero preemptions.
+# NOT VERIFIED HERE: the patch is prepared, not applied — the applying lane must run tests/test_ollama_gate.py against
+# the patched file (currently 7 passed on the unpatched file) plus the new chunked test.
+#
+--- orig/operator_agent/aurix_ollama_gate.py
++++ fixed/operator_agent/aurix_ollama_gate.py
+@@ -119,4 +119,4 @@
+         try:
+             for key, (m, uw, lcw) in list(self.low_inflight.items()):
+-                if m != model:                                       # a different model holds the GPU: free it now
++                if m and model and m != model:                       # a different model holds the GPU: free it now; unknown on either side never cuts
+                     self.stats["preempted"] += 1
