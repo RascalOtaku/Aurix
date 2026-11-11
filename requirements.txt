@@ -3,7 +3,7 @@ uvicorn
 python-multipart
 python-dotenv
 httpx
-pydantic>=2.14.1
+pydantic>=2.14.2
 pydantic-settings>=2.16.2
 SQLAlchemy
 pypdf
