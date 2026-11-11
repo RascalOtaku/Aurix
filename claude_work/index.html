@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude's work</title>
+<style>
+:root{--bg:#0a0a0f;--panel:#11111a;--line:#24243a;--text:#d8d8e8;--dim:#6a6a85;
+--cyan:#00F0FF;--magenta:#FF2BD6;--green:#39FF14;--amber:#FFB000;--red:#FF003C;--violet:#9D5CFF}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:"Fira Code",monospace;font-size:13px;min-height:100vh}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+h1{font-size:15px;color:var(--cyan);letter-spacing:.12em;text-transform:uppercase;text-shadow:0 0 8px #00f0ff66}
+#count{color:var(--dim)}
+.filters{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+.filters button{background:none;border:1px solid var(--line);color:var(--dim);font:inherit;padding:4px 10px;cursor:pointer}
+.filters button.on{color:var(--cyan);border-color:var(--cyan)}
+main{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;padding:16px}
+.card{background:var(--panel);border:1px solid var(--line);display:flex;flex-direction:column;cursor:pointer;transition:border-color .15s}
+.card:hover{border-color:var(--k)}
+.thumb{aspect-ratio:630/500;background:#06060a center/contain no-repeat;border-bottom:1px solid var(--line)}
+.body{padding:10px 12px;display:flex;flex-direction:column;gap:6px}
+.top{display:flex;justify-content:space-between;gap:8px}
+.kind{color:var(--k);text-transform:uppercase;font-size:11px;letter-spacing:.1em}
+.date{color:var(--dim);font-size:11px}
+.title{font-size:14px;color:#fff}
+.note{color:var(--text);opacity:.8;line-height:1.45}
+.k-pack{--k:var(--magenta)}.k-art{--k:var(--violet)}.k-spec{--k:var(--cyan)}
+.k-checklist{--k:var(--amber)}.k-script{--k:var(--green)}.card{--k:var(--cyan)}
+#detail{position:fixed;inset:0;background:#000c;display:none;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+#detail.on{display:flex}
+.sheet{background:var(--panel);border:1px solid var(--k);max-width:760px;width:100%;padding:16px;display:flex;flex-direction:column;gap:10px}
+.sheet a{color:var(--cyan)}
+.sheet ul{list-style:none;display:flex;flex-direction:column;gap:4px}
+.sheet img{max-width:100%;border:1px solid var(--line)}
+.sheet pre{white-space:pre-wrap;background:#06060a;border:1px solid var(--line);padding:10px;max-height:50vh;overflow:auto;font:inherit}
+.close{align-self:flex-end;background:none;border:1px solid var(--line);color:var(--dim);font:inherit;padding:2px 8px;cursor:pointer}
+.empty{padding:40px 16px;color:var(--dim)}
+</style></head><body>
+<header><h1>Claude's work</h1><span id="count"></span><div class="filters" id="filters"></div></header>
+<main id="grid"></main>
+<div id="detail"></div>
+<script>
+const KINDS=["all","pack","art","spec","checklist","script"];
+let items=[],kind="all";
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const isImg=f=>/\.(png|gif|jpe?g|webp|svg)$/i.test(f), isText=f=>/\.(md|txt|py|sh|json)$/i.test(f);
+function render(){
+  const list=items.filter(i=>kind==="all"||i.kind===kind);
+  document.getElementById("count").textContent=list.length+" items";
+  const g=document.getElementById("grid");
+  if(!list.length){g.innerHTML='<p class="empty">Nothing here yet.</p>';return}
+  g.innerHTML=list.map((i,n)=>`<article class="card k-${esc(i.kind)}" data-id="${esc(i.id)}">
+    ${i.thumb?`<div class="thumb" style="background-image:url('${esc(i.thumb)}')"></div>`:""}
+    <div class="body"><div class="top"><span class="kind">${esc(i.kind)}</span><span class="date">${esc(i.date)}</span></div>
+    <div class="title">${esc(i.title)}</div><div class="note">${esc(i.note)}</div></div></article>`).join("");
+  g.querySelectorAll(".card").forEach(c=>c.onclick=()=>open(items.find(i=>i.id===c.dataset.id)));
+}
+async function open(i){
+  const d=document.getElementById("detail");
+  const imgs=i.files.filter(isImg), docs=i.files.filter(isText);
+  d.innerHTML=`<div class="sheet k-${esc(i.kind)}"><button class="close">close</button>
+    <div class="top"><span class="kind">${esc(i.kind)}</span><span class="date">${esc(i.date)}</span></div>
+    <div class="title">${esc(i.title)}</div><div class="note">${esc(i.note)}</div>
+    ${imgs.slice(0,4).map(f=>`<img src="${esc(f)}" alt="">`).join("")}
+    <ul>${i.files.map(f=>`<li><a href="${esc(f)}" target="_blank">${esc(f.split("/").filter(Boolean).pop())}</a></li>`).join("")}</ul>
+    ${i.external.length?`<div class="note">Kept outside the library (too big):</div><ul>${i.external.map(e=>`<li>${esc(e.name)} · ${e.mb} MB · ${esc(e.path)}</li>`).join("")}</ul>`:""}
+    <pre id="doc"></pre></div>`;
+  d.classList.add("on");
+  d.querySelector(".close").onclick=()=>d.classList.remove("on");
+  d.onclick=e=>{if(e.target===d)d.classList.remove("on")};
+  const pre=d.querySelector("#doc"), first=docs.find(f=>/\.md$/i.test(f))||docs[0];
+  if(first){try{pre.textContent=await (await fetch(first)).text()}catch{pre.remove()}}else pre.remove();
+}
+document.getElementById("filters").innerHTML=KINDS.map(k=>`<button data-k="${k}" class="${k==="all"?"on":""}">${k}</button>`).join("");
+document.querySelectorAll("#filters button").forEach(b=>b.onclick=()=>{kind=b.dataset.k;
+  document.querySelectorAll("#filters button").forEach(x=>x.classList.toggle("on",x===b));render()});
+fetch("manifest.json",{cache:"no-store"}).then(r=>r.json()).then(m=>{items=m.items||[];render()})
+  .catch(()=>{document.getElementById("grid").innerHTML='<p class="empty">Could not read manifest.json. Serve this folder over HTTP.</p>'});
+</script>
+</body></html>

@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "updated": "2026-11-11",
+  "items": [
+    {
+      "id": "saloon-interior",
+      "title": "Frontier Saloon Interior",
+      "kind": "pack",
+      "date": "2026-11-11",
+      "note": "Second western pack, saloon props and bartender. $3 suggested, list after Frontier.",
+      "path": "items/saloon-interior/",
+      "files": [
+        "items/saloon-interior/cover_630x500.png",
+        "items/saloon-interior/LISTING.md",
+        "items/saloon-interior/PROP_LIST.md",
+        "items/saloon-interior/shot_saloon_3d.png",
+        "items/saloon-interior/preview_all_96px.png"
+      ],
+      "external": [
+        {
+          "name": "FrontierSaloon.zip",
+          "path": "aurix/economic/pack2_saloon/dist/FrontierSaloon.zip",
+          "mb": 3.5
+        },
+        {
+          "name": "FrontierSaloon_Starter.zip",
+          "path": "aurix/economic/pack2_saloon/dist/FrontierSaloon_Starter.zip",
+          "mb": 0.5
+        }
+      ],
+      "thumb": "items/saloon-interior/cover_630x500.png"
+    },
+    {
+      "id": "rainwire-2089",
+      "title": "Rainwire 2089",
+      "kind": "pack",
+      "date": "2026-11-11",
+      "note": "Cyberpunk props, sprites and UI kit. Higher-poly pass done, approved to list.",
+      "path": "items/rainwire-2089/",
+      "files": [
+        "items/rainwire-2089/cover_630x500.png",
+        "items/rainwire-2089/LISTING.md",
+        "items/rainwire-2089/UPLOAD_CHECKLIST.md",
+        "items/rainwire-2089/PROP_LIST.md",
+        "items/rainwire-2089/01_street_3d.png",
+        "items/rainwire-2089/05_ui_kit.png",
+        "items/rainwire-2089/06_hud_mockup.png",
+        "items/rainwire-2089/08_animated_sprites.gif"
+      ],
+      "external": [
+        {
+          "name": "Rainwire2089.zip",
+          "path": "aurix/economic/cyberpunk/dist/Rainwire2089.zip",
+          "mb": 24.1
+        },
+        {
+          "name": "Rainwire2089_Starter.zip",
+          "path": "aurix/economic/cyberpunk/dist/Rainwire2089_Starter.zip",
+          "mb": 2.0
+        }
+      ],
+      "thumb": "items/rainwire-2089/cover_630x500.png"
+    },
+    {
+      "id": "capri-status-art",
+      "title": "Capri status art",
+      "kind": "art",
+      "date": "2026-11-11",
+      "note": "Idle, listen, think, talk, focus and error art for Capri's display, from Rainwire. Full art set stays out of the repo because it ships in the paid pack.",
+      "path": "items/capri-status-art/",
+      "files": [
+        "items/capri-status-art/07_assistant_status.png",
+        "items/capri-status-art/README.txt"
+      ],
+      "external": [
+        {
+          "name": "capri_dropin/assistant (sold in Rainwire 2089)",
+          "path": "aurix/economic/cyberpunk/dist/capri_dropin/assistant",
+          "mb": 0.6
+        }
+      ],
+      "thumb": "items/capri-status-art/07_assistant_status.png"
+    },
+    {
+      "id": "tonight-setup",
+      "title": "Tonight's setup list (Nov 11)",
+      "kind": "checklist",
+      "date": "2026-11-11",
+      "note": "itch.io account, three pack pages, tracker, AURIX 7070 sync, Immich.",
+      "path": "items/tonight-setup/",
+      "files": [
+        "items/tonight-setup/TONIGHT_NOV11.md",
+        "items/tonight-setup/TONIGHT_ALL_PACKS.md"
+      ],
+      "external": [
+        {
+          "name": "tonight_nov11.zip",
+          "path": "tonight/tonight_nov11.zip",
+          "mb": 40.4
+        }
+      ]
+    },
+    {
+      "id": "immich-setup",
+      "title": "Immich photo backup setup",
+      "kind": "script",
+      "date": "2026-11-11",
+      "note": "Install Immich on the Tower and point the iPhone at it.",
+      "path": "items/immich-setup/",
+      "files": [
+        "items/immich-setup/install_immich.sh",
+        "items/immich-setup/PHONE_SETUP.md",
+        "items/immich-setup/WINDOWS_RUN.md",
+        "items/immich-setup/scout_immich.sh"
+      ],
+      "external": []
+    },
+    {
+      "id": "frontier-1864",
+      "title": "Frontier 1864",
+      "kind": "pack",
+      "date": "2026-11-10",
+      "note": "Low-poly western props + pixel sprites. $4 on itch.io, ready to list.",
+      "path": "items/frontier-1864/",
+      "files": [
+        "items/frontier-1864/cover_630x500.png",
+        "items/frontier-1864/LISTING.md",
+        "items/frontier-1864/UPLOAD_CHECKLIST.md",
+        "items/frontier-1864/PROP_LIST.md",
+        "items/frontier-1864/01_town_3d.png",
+        "items/frontier-1864/04_sprites_catalog.png",
+        "items/frontier-1864/06_prospector_walk.gif"
+      ],
+      "external": [
+        {
+          "name": "Frontier1864.zip",
+          "path": "aurix/economic/pack/dist/Frontier1864.zip",
+          "mb": 4.0
+        },
+        {
+          "name": "Frontier1864_Starter.zip",
+          "path": "aurix/economic/pack/dist/Frontier1864_Starter.zip",
+          "mb": 0.5
+        }
+      ],
+      "thumb": "items/frontier-1864/cover_630x500.png"
+    },
+    {
+      "id": "busy-bar-spec",
+      "title": "BUSY Bar backend spec",
+      "kind": "spec",
+      "date": "2026-11-10",
+      "note": "How Capri drives a BUSY Bar desk display like Rose does. Spec, not built.",
+      "path": "items/busy-bar-spec/",
+      "files": [
+        "items/busy-bar-spec/BUSY_BAR_BACKEND_SPEC.md"
+      ],
+      "external": []
+    },
+    {
+      "id": "itch-ledger",
+      "title": "itch.io sales tracker",
+      "kind": "script",
+      "date": "2026-11-10",
+      "note": "Logs pack sales into a ledger. Installer included.",
+      "path": "items/itch-ledger/",
+      "files": [
+        "items/itch-ledger/itch_ledger.py",
+        "items/itch-ledger/install_itch_ledger.sh"
+      ],
+      "external": []
+    },
+    {
+      "id": "photo-scout",
+      "title": "Photo scout",
+      "kind": "script",
+      "date": "2026-11-10",
+      "note": "Finds the best shots in the photo library after backup. Runs locally.",
+      "path": "items/photo-scout/",
+      "files": [
+        "items/photo-scout/README.md",
+        "items/photo-scout/photo_scout.py",
+        "items/photo-scout/test_photo_scout.py"
+      ],
+      "external": []
+    }
+  ]
+}
