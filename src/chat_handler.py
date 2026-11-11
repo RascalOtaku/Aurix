@@ -41,6 +41,8 @@ class ChatHandler:
         research_handler,
         preset_manager,
         upload_handler,
+        agent_manager=None,
+        agent_skill_registry=None,
     ):
         self.session_manager = session_manager
         self.memory_manager = memory_manager
@@ -48,6 +50,8 @@ class ChatHandler:
         self.research_handler = research_handler
         self.preset_manager = preset_manager
         self.upload_handler = upload_handler
+        self.agent_manager = agent_manager
+        self.agent_skill_registry = agent_skill_registry
 
     # ------------------------------------------------------------------
     # Preset helpers
@@ -89,6 +93,41 @@ class ChatHandler:
     def enhance_message_if_needed(self, message: str) -> str:
         """CoT enhancement disabled — modern models reason natively."""
         return message
+
+    async def maybe_route_agent_task(self, message: str, session=None) -> Optional[str]:
+        """If the user explicitly asks for the agent framework, delegate the task.
+
+        This is intentionally low-risk: it only triggers on explicit agent-style requests
+        or a literal `@agent` token, ensuring normal chat conversations are unaffected.
+        """
+        if self.agent_manager is None:
+            return None
+
+        text = (message or "").strip()
+        if not text:
+            return None
+
+        lowered = text.lower()
+        trigger = (
+            "@agent" in lowered or
+            "agent:" in lowered or
+            "multi-agent" in lowered or
+            "agent mode" in lowered or
+            "run the agent" in lowered or
+            "delegate this to an agent" in lowered
+        )
+        if not trigger:
+            return None
+
+        logger.info("Agent delegation triggered for session=%s", getattr(session, "id", None))
+        result = await self.agent_manager.dispatch_task(
+            task_description=text,
+            priority=1,
+        )
+        task = self.agent_manager.tasks.get(result)
+        if task and task.result:
+            return f"Agent delegation completed: {task.result}"
+        return "Agent delegation completed."
 
     # ------------------------------------------------------------------
     # Preprocessing — shared between /api/chat and /api/chat_stream
