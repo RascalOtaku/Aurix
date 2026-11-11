@@ -21,6 +21,9 @@ from src.chat_handler import ChatHandler
 from src.research_handler import ResearchHandler
 from src.upload_handler import UploadHandler
 from src.search import update_search_config
+from core.agents import AgentManager
+from core.skills import SkillRegistry
+from core.skills.builtin_skills import register_builtin_skills
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +54,11 @@ def initialize_managers(base_dir: str, rag_manager=None) -> Dict[str, Any]:
     personal_docs_manager = PersonalDocsManager(PERSONAL_DIR, rag_manager)
     api_key_manager = APIKeyManager(DATA_DIR)
     preset_manager = PresetManager(DATA_DIR)
+
+    # Initialize multi-agent framework and skill registry
+    agent_manager = AgentManager(name="Aurix")
+    agent_skill_registry = SkillRegistry()
+    register_builtin_skills(agent_skill_registry)
 
     # Initialize memory vector store (share embedding model with RAG if available)
     memory_vector = None
@@ -85,6 +93,8 @@ def initialize_managers(base_dir: str, rag_manager=None) -> Dict[str, Any]:
         research_handler=research_handler,
         preset_manager=preset_manager,
         upload_handler=upload_handler,
+        agent_manager=agent_manager,
+        agent_skill_registry=agent_skill_registry,
     )
     
     # Initialize model discovery
@@ -110,5 +120,7 @@ def initialize_managers(base_dir: str, rag_manager=None) -> Dict[str, Any]:
         "chat_handler": chat_handler,
         "model_discovery": model_discovery,
         "current_presets": preset_manager.presets,
-        "PERSONAL_INDEX": personal_docs_manager.index
+        "PERSONAL_INDEX": personal_docs_manager.index,
+        "agent_manager": agent_manager,
+        "agent_skill_registry": agent_skill_registry,
     }
