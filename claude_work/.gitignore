@@ -1,0 +1,3 @@
+# Library images are part of the work; the repo-wide png/gif ignore does not apply here.
+!*.png
+!*.gif
