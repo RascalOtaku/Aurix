@@ -1,5 +1,13 @@
 # Code Review Fixes — 2026-10-03
 
+## Obsolete patches (kept for the record, do not apply)
+
+- **`15-sandbox-venv-cache-never-hits.patch`** — OBSOLETE (marked 2026-11-12). It patches
+  `mission_sandbox/sandbox_venv_cache.py`, which does not exist on `main` or on any branch of this
+  repo; the module was a 7070-only self-upgrade draft that was never wired into `server.py`.
+  `patch -p1` will fail against this repo. If that module ever lands here, re-check the cache-hit
+  logic it describes (validate the venv by its interpreter, not by probing the CWD) before reusing it.
+
 In order of importance. Patch files are unified diffs against the 7070's code.
 Apply with `patch -p1 < <patchfile>` from the repo root, then run the
 related tests.
