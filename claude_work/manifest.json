@@ -1,7 +1,19 @@
 {
   "version": 1,
-  "updated": "2026-11-11",
+  "updated": "2026-11-13",
   "items": [
+    {
+      "id": "aurix-agents-in-chat",
+      "title": "AURIX agents in chat",
+      "kind": "script",
+      "date": "2026-11-13",
+      "note": "Five agents you call from chat with @agent; actions wait for your approval. On a branch, not merged.",
+      "path": "items/aurix-agents-in-chat/",
+      "files": [
+        "items/aurix-agents-in-chat/README.md"
+      ],
+      "external": []
+    },
     {
       "id": "saloon-interior",
       "title": "Frontier Saloon Interior",
