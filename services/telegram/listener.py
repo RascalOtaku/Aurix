@@ -184,6 +184,8 @@ class TelegramListener:
         try:
             if kind == "new":
                 await self._notify("planning... (working out what this needs)")
+            elif kind in ("delegate", "delegate_auto", "delegate_answer"):
+                await self._notify("on it, thinking it through...")
             reply = await self._foundation_obj().handle(kind, arg)
             await self._notify(reply, buttons_mod.for_reply(kind, reply))
         except asyncio.CancelledError:

@@ -78,3 +78,9 @@ def checks() -> Dict[str, Any]:
         for k, v in h.get("tiers", {}).items():
             tiers.setdefault(k, {"passed": v.get("passed"), "total": v.get("total", 0), "failed": list(v.get("failed", []))[:6], "ts": str(h.get("ts", ""))[:16].replace("T", " ")})
     return {"have": True, "ts": str(hist[-1].get("ts", ""))[:16].replace("T", " "), "tiers": tiers}
+
+
+def autonomy() -> Dict[str, Any]:
+    """Tasks handed over with `do:` - the ask, how AURIX read it, where each step stands, and its plain report."""
+    from src.foundation import autonomy as auto
+    return auto.board()

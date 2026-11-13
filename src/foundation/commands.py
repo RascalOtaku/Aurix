@@ -1,6 +1,7 @@
 """src/foundation/commands.py - the OWNER's control surface (via the authenticated Telegram path).
 
     mission: <goal>          plan it and show the contract for approval
+    do: <anything>           hand over a vague task: understand -> plan -> do -> self-check -> plain report (autonomy.py)
     approve mission <id>     activate the contract and start working
     deny mission <id>
     stop                     STOP is absolute: halts everything immediately
@@ -75,6 +76,7 @@ from src.foundation import standing as st
 from src.foundation import watchdog
 from src.foundation import xp
 from src.foundation.runner import MissionRunner
+from src.foundation import autonomy
 
 # Spec section 11: not yet. Refused in code even if the owner asks.
 NOT_YET_AUTHORIZATIONS = {
@@ -307,6 +309,8 @@ _PATTERNS = _ECON_PATTERNS + _FIELD_PATTERNS + _OPS_PATTERNS + [
     ("integrations", re.compile(r"^\s*/?(?:integrations?|integration\s+plans?)\s*\??\s*$", re.I)),
     ("workers", re.compile(r"^\s*/?(?:router|models|worker\s+registry|who\s+does\s+what)\s*\??\s*$", re.I)),   # "workers" = shards
     ("new", re.compile(r"^\s*/?mission\s*[:\-]?\s+(\S.{2,})$", re.I | re.S)),
+    # autonomy (src/foundation/autonomy.py): hand AURIX a vague task like you would a colleague; it reads it, plans, does, checks, reports
+    ("delegate", re.compile(r"^\s*/?(?:do|handle|delegate|take care of)\s*[:\-]\s*(\S.{2,})$", re.I | re.S)),
 ]
 
 HELP = qol.HELP
@@ -395,6 +399,13 @@ def parse(text: str) -> Optional[Tuple[str, str]]:
     m = _GAMES_ASK.match(text or "")
     if m and not (text or "").lstrip().lower().startswith(("mission", "standing", "forge", "project", "todo", "approve", "deny")):
         return "games_ask", m.group(1).strip()
+    try:                                                   # autonomy: answering the one question it asked, or (opt-in) a task said plainly
+        if autonomy.enabled() and autonomy.pending() is not None and (text or "").strip():
+            return "delegate_answer", (text or "").strip()
+        if autonomy.autodetect_enabled() and autonomy.looks_like_task(text):
+            return "delegate_auto", (text or "").strip()
+    except Exception:
+        pass
     return None
 
 
@@ -539,9 +550,45 @@ class Foundation:
                 "<i>Audited as policy:fast_lane. <code>status</code> any time, <code>stop</code> to kill it, "
                 "<code>fast lane off</code> to always ask.</i>")
 
+    async def _delegate(self, kind: str, arg: str) -> str:
+        """`do: <anything>` - understand the ask, ask one question only if it would change the goal, then plan and run it
+        through the normal mission path (fast lane when it qualifies, otherwise the contract waits for `approve mission`)."""
+        if kind == "delegate_answer":
+            p = autonomy.pending()
+            autonomy.clear_pending()
+            if p is None:
+                return await self.run_agent(arg)
+            arg = f"{p.get('ask', '')} (asked: {p.get('question', '')} answer: {arg})"
+        try:
+            brief = await autonomy.understand(arg, self.llm)
+        except ValueError:
+            return "Tell me what you need, e.g. <code>do: figure out why my backups stopped landing</code>."
+        if brief.kind == "chat" and kind == "delegate_auto":
+            return await self.run_agent(arg)                      # it was conversation after all: answer it normally
+        if brief.question and kind != "delegate_answer":
+            autonomy.set_pending(brief)
+            audit.append("autonomy_question")
+            return html.escape(brief.question) + "\n<i>(Just reply; that's the only thing I need before I start.)</i>"
+        try:
+            sandboxed = await asyncio.to_thread(sandbox.available)
+            m = await planner.propose_mission(brief.to_goal(), llm=self.llm, session_id=self.session_id,
+                                              store=self.store, sandboxed=sandboxed, **(await self._presence()))
+        except ValueError:
+            return "I couldn't turn that into a plan. Can you say what you want to end up with?"
+        autonomy.save_brief(m.id, brief)
+        audit.append("autonomy_delegated", mission=m.id, auto=(kind == "delegate_auto"))
+        try:
+            autonomy.update_board(m, "planned")
+        except OSError:
+            pass
+        return autonomy.render_brief(brief) + "\n\n" + await self._maybe_fast_lane(m)
+
     async def _start_runner(self, mission_id: str) -> None:
         kw = await self._presence()
-        runner = MissionRunner(mission_id, self.run_agent, self.notify, store=self.store, **kw)
+        if autonomy.enabled() and self.llm is not None:          # rethinking and self-checks need a model to reason with
+            runner = autonomy.AutonomousRunner(mission_id, self.run_agent, self.notify, store=self.store, llm=self.llm, **kw)
+        else:
+            runner = MissionRunner(mission_id, self.run_agent, self.notify, store=self.store, **kw)
         self.runner_task = asyncio.create_task(runner.run())
 
     async def tick_standing(self, now: Optional[float] = None) -> list:
@@ -904,6 +951,9 @@ class Foundation:
             except ValueError:
                 return "Give me a goal, e.g. `mission: convert my CT scan of a skull into an STL`."
             return await self._maybe_fast_lane(m)
+
+        if kind in ("delegate", "delegate_auto", "delegate_answer"):
+            return await self._delegate(kind, arg)
 
         if kind == "approve_mission":
             reply = self.store.activate(arg, decided_by="owner")

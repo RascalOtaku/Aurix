@@ -29,6 +29,7 @@ _STATUS_ICON = {"active": "▶️", "completed": "✅", "failed": "❌", "stoppe
 
 HELP = """<b>AURIX - what you can say</b>
 <b>Missions</b>
+• <code>do: &lt;anything, vague is fine&gt;</code> - hand it over: I work out what you mean, plan, do it, check it and report back
 • <code>mission: &lt;goal&gt;</code> - plan it; I show the contract first
 • <code>approve mission &lt;id&gt;</code> / <code>deny mission &lt;id&gt;</code>
 • <code>status</code> - live self-report · <code>resume</code> · <code>stop</code> (absolute)
