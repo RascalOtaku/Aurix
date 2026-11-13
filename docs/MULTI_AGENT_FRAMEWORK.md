@@ -27,27 +27,18 @@ task_id = await manager.dispatch_task(
 )
 ```
 
-### 2. Integration with FastAPI
+### 2. What is wired into AURIX today
 
-Add to `app.py`:
-```python
-from routes.agent_routes import setup_agent_routes
-app.include_router(setup_agent_routes(app.state))
-```
+The framework is a library for now. There are **no HTTP routes** for it yet (no `/api/agents/...`).
 
-Then use the API:
-```bash
-# Dispatch task
-curl -X POST http://localhost:8000/api/agents/task/dispatch \
-  -d 'task_description=Analyze code' \
-  -d 'priority=1'
+- `src/app_initializer.py` builds one `AgentManager(name="Aurix")` and a `SkillRegistry` with the
+  built-in skills at startup, and hands both to `ChatHandler`.
+- `ChatHandler.maybe_route_agent_task()` can delegate a chat message to the manager when it
+  explicitly asks for an agent (`@agent`, `agent:`, `agent mode`, and similar). Nothing calls it
+  yet, so normal chat is unchanged.
+- No agents are registered at startup; register them from code as in section 1.
 
-# Get status
-curl http://localhost:8000/api/agents/status
-
-# List agents
-curl http://localhost:8000/api/agents/list
-```
+Web routes and wiring the chat hook into the chat flow are still to come (see Future Enhancements).
 
 ### 3. Using LLM-Powered Agents
 
@@ -158,7 +149,7 @@ agent.subscribe(on_agent_event)
 
 ## Integration Points
 
-1. **Existing Chat Handler**: Call agent.think() from chat routes
+1. **Existing Chat Handler**: `ChatHandler.maybe_route_agent_task()` exists but is not called from the chat flow yet
 2. **Research Handler**: Use WebSearch skill for background research
 3. **Session Manager**: Store agent state per session
 4. **Memory Manager**: Integrate with existing memory system
@@ -166,6 +157,8 @@ agent.subscribe(on_agent_event)
 
 ## Future Enhancements
 
+- [ ] HTTP routes for dispatching tasks and checking agent status
+- [ ] Call `maybe_route_agent_task()` from the chat flow
 - [ ] Tool use / function calling via LLM
 - [ ] Streaming responses
 - [ ] Agent-to-agent communication
