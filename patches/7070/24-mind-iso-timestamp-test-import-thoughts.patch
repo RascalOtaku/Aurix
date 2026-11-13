@@ -1,0 +1,71 @@
+# Patch 24 — tests/test_upgrade_mind_iso_timestamp.py: import src.foundation.thoughts before patching it (2026-11-12)
+#
+# WHAT: the NEW regression test for the mind.py ISO-timestamp fix fails on its
+# own setup, before it ever calls day_entries — reproduced twice via the gate
+# (1 failed in 0.17s, same error both times):
+#
+#     tests/test_upgrade_mind_iso_timestamp.py:29: in test_day_entries_parses_iso_format_timestamps
+#         with mock.patch("src.foundation.thoughts") as mock_thoughts:
+#     /usr/lib/python3.12/unittest/mock.py:1431: AttributeError
+#     AttributeError: <module 'src.foundation' from '.../src/foundation/__init__.py'>
+#         does not have the attribute 'thoughts'
+#
+# CAUSE: mock.patch("src.foundation.thoughts") patches an ATTRIBUTE of the
+# src.foundation package, so it needs that submodule already imported when the
+# patch call runs. In a fresh process running only this file, nothing has
+# imported thoughts yet: mind is imported lazily inside the test (line ~40,
+# after the patch), and mind.py itself imports only
+# src.foundation._io at module top. So the patch target does not exist and the
+# test errors before reaching day_entries. The sibling test file does it right:
+# tests/test_mind.py line 15 does
+#     from src.foundation import commands, mind, thoughts
+# at module top, which is why the same patch style works there. (The
+# understanding patch on the line above works for a different reason: its
+# target is src.foundation.understanding.owner_messages, so mock imports the
+# understanding submodule itself while resolving the target.)
+#
+# CONSEQUENCE, not just a red test: the ISO-timestamp fix in mind.py that this
+# test was written to pin is currently UNVERIFIED — the test never reaches its
+# assertions, so a regression in day_entries' timestamp parsing would pass
+# silently. In a full-suite run test_mind.py happens to import thoughts first,
+# so the test may pass there by ordering luck; standalone (which is how the
+# gate runs it) it always fails.
+#
+# FIX: import the submodule at the top of the test file, matching test_mind.py's
+# convention. The import only makes the patch target exist; the patch still
+# replaces it with the mock for the test, and the assertions are untouched.
+# No production file is touched.
+#
+# RISK: minimal. One test-only import; it cannot affect production behavior.
+# After applying, the applying lane should re-run via the gate:
+#     gate tests tests/test_upgrade_mind_iso_timestamp.py
+# and expect 1 passed. If the assertions then fail for a different reason
+# (e.g. day_entries' import style for thoughts), that is a follow-up finding
+# about mind.py, not about this patch — report it rather than widening this
+# patch by guessing.
+# NOT VERIFIED HERE: the patch is prepared, not applied — the 7070 is read-only
+# to this audit, and the gate has no way to run a locally patched test file.
+# Applicability WAS verified here: the diff applies cleanly with `git apply`
+# against the verbatim gate-read copy of the file, and the patched file
+# compiles. (This environment's GNU `patch` rejects the hunk — a quirk of the
+# empty added line — `git apply` is the tool to use.)
+#
+--- orig/tests/test_upgrade_mind_iso_timestamp.py
++++ fixed/tests/test_upgrade_mind_iso_timestamp.py
+@@ -1,9 +1,16 @@
+ import unittest
+ from unittest import mock
+ import os
+ import tempfile
+ import time
+ from pathlib import Path
++
++# mock.patch("src.foundation.thoughts") below needs the submodule imported
++# first: patching a package attribute fails in a fresh process where nothing
++# has imported it yet (tests/test_mind.py imports it at module top, which is
++# why the same patch style works there). This only makes the target exist;
++# the patch still replaces it with the mock for the test.
++import src.foundation.thoughts  # noqa: F401
+ 
+ class T(unittest.TestCase):
+     def test_day_entries_parses_iso_format_timestamps(self):
