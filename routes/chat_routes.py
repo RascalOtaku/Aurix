@@ -112,6 +112,36 @@ def setup_chat_routes(
     # ------------------------------------------------------------------ #
     # POST /api/chat (non-streaming)
     # ------------------------------------------------------------------ #
+    async def _maybe_agent_reply(request: Request, sess, session_id: str, message: str,
+                                 incognito: bool = False):
+        """Run an explicit agent ask (see core/agents/routing.py); None if it isn't one.
+
+        The agent thinks with this session's own model and acts only through the owner approval
+        gate. The exchange is saved to the session like any other turn.
+        """
+        from src.agent_chat import session_llm
+        if not isinstance(message, str):
+            return None
+        _privs = {}
+        _owner = get_current_user(request)
+        _auth = getattr(request.app.state, "auth_manager", None)
+        if _owner and _auth:
+            _privs = _auth.get_privileges(_owner) or {}
+        if _privs and not _privs.get("can_use_agent", True):
+            return None
+        reply = await chat_handler.maybe_route_agent_task(
+            message, session=sess, llm=session_llm(sess), owner=_owner,
+        )
+        if reply is None:
+            return None
+        sess.add_message(ChatMessage("user", message))
+        sess.add_message(ChatMessage("assistant", reply, metadata={"agent_routed": True}))
+        if not incognito:
+            from core.database import update_session_last_accessed
+            update_session_last_accessed(session_id)
+            session_manager.save_sessions()
+        return reply
+
     @router.post("/api/chat", response_model=Dict[str, str])
     async def chat_endpoint(request: Request, chat_request: ChatRequest) -> Dict[str, str]:
         message = chat_request.message
@@ -141,6 +171,11 @@ def setup_chat_routes(
         memory_response = await chat_handler.handle_memory_command(sess, message)
         if memory_response:
             return {"response": memory_response}
+
+        # Explicit asks for the agents (@agent, agent:, @researcher, ...) go to core/agents.
+        agent_reply = await _maybe_agent_reply(request, sess, session, message)
+        if agent_reply is not None:
+            return {"response": agent_reply}
 
         # Build shared context (preset, preprocess, preface, compact)
         ctx = await build_chat_context(
@@ -295,6 +330,25 @@ def setup_chat_routes(
 
         # Ensure session has auth headers
         resolve_session_auth(sess, session)
+
+        # Explicit asks for the agents (@agent, agent:, @researcher, ...) go to core/agents,
+        # detached like every other run so the reply survives a closed tab.
+        if not compare_mode and isinstance(message, str):
+            from core.agents.routing import parse_agent_request
+            if parse_agent_request(message) is not None:
+                async def _agent_stream() -> AsyncGenerator[str, None]:
+                    from src.agent_chat import agent_sse
+                    try:
+                        _reply = await _maybe_agent_reply(request, sess, session, message,
+                                                          incognito=incognito)
+                    except Exception as e:
+                        logger.exception("Agent routing failed for session %s", session)
+                        _reply = f"The agents hit an error and nothing was run: {e}"
+                    async for _chunk in agent_sse(_reply or "The agents returned nothing."):
+                        yield _chunk
+
+                agent_runs.start(session, _agent_stream())
+                return StreamingResponse(agent_runs.subscribe(session), media_type="text/event-stream")
 
         # Check for research_pending BEFORE mode persist overwrites it
         do_research = str(use_research).lower() == "true"

@@ -59,6 +59,12 @@ def initialize_managers(base_dir: str, rag_manager=None) -> Dict[str, Any]:
     agent_manager = AgentManager(name="Aurix")
     agent_skill_registry = SkillRegistry()
     register_builtin_skills(agent_skill_registry)
+    # Start AURIX with its agents: one per role (core/agents/routing.py). In chat they think with
+    # the session's model; outside chat, with the default endpoint.
+    from core.agents.routing import build_default_fleet
+    from src.agent_chat import default_agent_llm
+    build_default_fleet(agent_manager, llm=default_agent_llm)
+    logger.info("Agent fleet ready: %d agents", len(agent_manager.agents))
 
     # Initialize memory vector store (share embedding model with RAG if available)
     memory_vector = None

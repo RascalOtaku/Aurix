@@ -4,8 +4,9 @@ This module provides ready-made skills for common tasks.
 Add skills here and register them via SkillRegistry.
 """
 
-from typing import Any, Dict
+import asyncio
 import logging
+from typing import Any, Callable, Dict, Optional
 
 from core.skills.base import Skill
 from core.skills.types import SkillCategory, SkillExecutionContext, SkillMetadata
@@ -26,13 +27,31 @@ class CodeAnalysisSkill(Skill):
         }
 
 
+def _default_web_search(query: str, max_pages: int):
+    """The same search chat's web_search tool uses (src/search): returns (text, sources)."""
+    from src.search import comprehensive_web_search
+    return comprehensive_web_search(query, max_pages=max_pages, return_sources=True)
+
+
 class WebSearchSkill(Skill):
-    """Search the web for information."""
-    
+    """Search the web for information, through AURIX's own search providers."""
+
+    def __init__(self, metadata: SkillMetadata, search_fn: Optional[Callable] = None):
+        super().__init__(metadata)
+        self._search = search_fn or _default_web_search
+
     async def execute(self, context: SkillExecutionContext) -> Dict[str, Any]:
-        query = context.inputs.get("query", "")
-        # TODO: Integrate with your existing web search (research_handler)
-        return {"query": query, "results": []}
+        query = (context.inputs.get("query") or "").strip()
+        if not query:
+            return {"query": query, "summary": "", "results": [], "error": "empty query"}
+        max_pages = int(context.inputs.get("max_pages", 3))
+        try:
+            found = await asyncio.to_thread(self._search, query, max_pages)
+        except Exception as e:
+            logger.warning("web_search skill failed for %r: %r", query, e)
+            return {"query": query, "summary": "", "results": [], "error": str(e)}
+        summary, sources = found if isinstance(found, tuple) else (found, [])
+        return {"query": query, "summary": summary or "", "results": list(sources or [])}
 
 
 class DataProcessingSkill(Skill):
@@ -78,7 +97,7 @@ def register_builtin_skills(registry) -> None:
         description="Search the web for information",
         version="1.0.0",
         inputs={"query": str},
-        outputs={"results": list},
+        outputs={"summary": str, "results": list},
     )))
     
     registry.register(DataProcessingSkill(SkillMetadata(
