@@ -1,11 +1,13 @@
-fastapi
-uvicorn
+# Core web/DB stack pinned to what a clean install resolved on 2026-11-12 (Dependabot bumps them),
+# so a surprise major release can't change the app under a running deploy.
+fastapi==0.162.5
+uvicorn==0.54.0
 python-multipart
 python-dotenv
-httpx
+httpx==0.28.1
 pydantic>=2.14.2
 pydantic-settings>=2.16.2
-SQLAlchemy
+SQLAlchemy==2.1.8
 pypdf
 beautifulsoup4
 charset-normalizer

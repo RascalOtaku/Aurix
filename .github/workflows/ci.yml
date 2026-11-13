@@ -85,6 +85,25 @@ jobs:
           mkdir -p data logs
           python -m pytest tests -q -p no:cacheprovider
 
+  audit:
+    name: Dependency audit (pip-audit)
+    # Checks requirements.txt against the PyPA advisory database. Findings fail this job on purpose:
+    # fix or pin around them, never add --ignore-vuln without writing down why.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.14"
+          cache: pip
+      - name: Install pip-audit
+        run: python -m pip install pip-audit==2.10.1
+      - name: pip-audit -r requirements.txt
+        run: pip-audit -r requirements.txt --progress-spinner off
+
   images:
     name: Docker images (build and boot)
     runs-on: ubuntu-latest

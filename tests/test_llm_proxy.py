@@ -160,5 +160,98 @@ class ProxyTests(unittest.TestCase):
             self.assertEqual(self.call("POST", "/v1/chat/completions", {"x": "y" * 500})[0], 413)
 
 
+class TokenTests(unittest.TestCase):
+    """LLM_PROXY_TOKEN: same pattern as the sandbox server's X-Sandbox-Token (constant-time, never forwarded)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.upstream = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeOllama)
+        threading.Thread(target=cls.upstream.serve_forever, daemon=True).start()
+        cls.patch = mock.patch.object(proxy, "UPSTREAM", f"127.0.0.1:{cls.upstream.server_address[1]}")
+        cls.patch.start()
+        cls.srv = proxy.make_server(port=0, host="127.0.0.1")
+        threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
+        cls.base = f"http://127.0.0.1:{cls.srv.server_address[1]}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.upstream.shutdown()
+        cls.patch.stop()
+
+    def setUp(self):
+        FakeOllama.seen.clear()
+        self.env = mock.patch.dict(os.environ, {"LLM_PROXY_TOKEN": "s3cret-token"})
+        self.env.start()
+
+    def tearDown(self):
+        self.env.stop()
+
+    def call(self, method, path, headers=None, body=b"{}"):
+        req = urllib.request.Request(self.base + path, data=body if method != "GET" else None, method=method,
+                                     headers={"Content-Type": "application/json", **(headers or {})})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return r.status, r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.read()
+
+    def test_missing_or_wrong_token_is_refused_before_the_upstream(self):
+        for headers in (None, {"Authorization": "Bearer nope"}, {"X-LLM-Proxy-Token": "nope"},
+                        {"Authorization": "s3cret-token"}, {"Authorization": "Bearer "},
+                        {"X-LLM-Proxy-Token": "s3cret-token-and-more"}):
+            self.assertEqual(self.call("POST", "/v1/chat/completions", headers)[0], 401, headers)
+            self.assertEqual(self.call("GET", "/api/tags", headers)[0], 401, headers)
+        self.assertEqual(FakeOllama.seen, [])
+
+    def test_right_token_passes_as_bearer_or_header(self):
+        for headers in ({"Authorization": "Bearer s3cret-token"}, {"authorization": "bearer s3cret-token"},
+                        {"X-LLM-Proxy-Token": "s3cret-token"}):
+            code, body = self.call("POST", "/v1/chat/completions", headers)
+            self.assertEqual(code, 200, headers)
+            self.assertEqual(json.loads(body)["path"], "/v1/chat/completions")
+        self.assertEqual(len(FakeOllama.seen), 3)
+
+    def test_token_does_not_unlock_blocked_endpoints(self):
+        self.assertEqual(self.call("POST", "/api/pull", {"Authorization": "Bearer s3cret-token"})[0], 403)
+        self.assertEqual(FakeOllama.seen, [])
+
+    def test_token_is_not_forwarded_upstream(self):
+        captured = {}
+
+        class Spy(FakeOllama):
+            def do_POST(self):
+                captured.update({k.lower(): v for k, v in self.headers.items()})
+                super().do_POST()
+
+        spy = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Spy)
+        threading.Thread(target=spy.serve_forever, daemon=True).start()
+        try:
+            with mock.patch.object(proxy, "UPSTREAM", f"127.0.0.1:{spy.server_address[1]}"):
+                code, _ = self.call("POST", "/v1/chat/completions",
+                                    {"Authorization": "Bearer s3cret-token", "X-LLM-Proxy-Token": "s3cret-token"})
+        finally:
+            spy.shutdown()
+        self.assertEqual(code, 200)
+        self.assertNotIn("authorization", captured)
+        self.assertNotIn("x-llm-proxy-token", captured)
+
+    def test_non_ascii_token_header_is_refused_not_crashed(self):
+        self.assertFalse(proxy.token_ok({"X-LLM-Proxy-Token": "s3cret-tökén"}))
+
+    def test_require_token_fails_closed_at_startup(self):
+        with mock.patch.dict(os.environ, {"LLM_PROXY_REQUIRE_TOKEN": "1", "LLM_PROXY_TOKEN": ""}):
+            with self.assertRaises(SystemExit):
+                proxy.make_server(port=0, host="127.0.0.1")
+        with mock.patch.dict(os.environ, {"LLM_PROXY_REQUIRE_TOKEN": "1"}):
+            srv = proxy.make_server(port=0, host="127.0.0.1")       # token set in setUp: starts
+            srv.server_close()
+
+    def test_no_token_configured_keeps_the_old_open_behaviour(self):
+        with mock.patch.dict(os.environ, {"LLM_PROXY_TOKEN": ""}):
+            self.assertTrue(proxy.token_ok({}))
+            self.assertEqual(self.call("POST", "/v1/chat/completions")[0], 200)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -180,6 +180,8 @@ services:
     command: ["python", "/opt/llm_proxy.py"]
     environment:
       - LLM_UPSTREAM=${LLM_UPSTREAM:-host.docker.internal:11434}
+      # Optional caller token (see .env.example before setting it: sandbox clients do not send it yet).
+      - LLM_PROXY_TOKEN=${LLM_PROXY_TOKEN:-}
     volumes:
       - ./mission_sandbox/llm_proxy.py:/opt/llm_proxy.py:ro
     extra_hosts:
