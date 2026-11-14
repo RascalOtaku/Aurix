@@ -1,0 +1,74 @@
+# Patch 25 — src/foundation/shortreply.py: resolve() strips surrounding quotes before the retry match, like is_bare() already does (2026-11-13)
+#
+# WHAT: a quoted retry — '"try again"', '`retry`' — gets the WRONG follow-up
+# question. Reproduced here against the verbatim gate-read copy:
+#
+#     is_bare('"try again"')   -> True            (the gate strips quotes)
+#     resolve('"try again"')   -> "Which part are you saying yes to? ..."
+#     resolve('try again')     -> "Tell me in one sentence what to run again ..."
+#
+# The user asked to retry and is asked what they are saying yes to.
+#
+# CAUSE: is_bare() normalises the text before matching — it strips
+# surrounding quotes/backticks AND trailing punctuation:
+#     t = t.strip('\'"`')
+#     t = t.rstrip('.!?,;:')
+# but resolve() builds its retry check from a differently cleaned copy that
+# strips only trailing punctuation:
+#     cleaned = " ".join(text.strip().split()).rstrip('.!?,;:')
+# so _RETRY.match(cleaned) fails on the leading quote and the code falls
+# through to the yes-branch ask. The new test file the lane committed today
+# (tests/test_upgrade_is_bare_quotes.py) pins the quote handling in is_bare()
+# only, so nothing caught the resolve() side disagreeing.
+#
+# FIX: one line — strip surrounding quotes/backticks in `cleaned` the same
+# way is_bare() does, before the _RETRY match. Plain retries, plain yeses
+# and quoted yeses are unchanged (verified below); only quoted/backticked
+# retries move to the retry branch. The pin test is added to the lane's own
+# quotes test file.
+#
+# RISK: minimal. One normalisation step on a string that is only used for
+# the _RETRY match; _POINTER still searches the raw text, and the yes/ask
+# branches are untouched.
+# After applying, the applying lane should re-run via the gate:
+#     gate tests tests/test_upgrade_is_bare_quotes.py
+# and expect 5 passed (3 existing + 2 new pins). The two new tests FAIL on
+# the unpatched file (the retry pin gets the yes-branch text), so they pin
+# the fix rather than the status quo.
+# NOT VERIFIED HERE end to end: the patch is prepared, not applied — the
+# 7070 is read-only to this audit, and the gate has no way to run a locally
+# patched test file. Applicability WAS verified here: the diff applies
+# cleanly with `git apply -p1` against verbatim gate-read copies of both
+# files, both patched files compile, and the 5 tests pass against the patched
+# module in a stub sandbox (src.foundation.smalltalk stubbed to reply None).
+# The pre-fix wrong-branch behaviour was reproduced in the same sandbox
+# before the fix was applied.
+#
+--- orig/src/foundation/shortreply.py
++++ fixed/src/foundation/shortreply.py
+@@ -56,7 +56,7 @@
+             return talk
+         if not is_bare(text):
+             return None
+-        cleaned = " ".join(text.strip().split()).rstrip('.!?,;:')
++        cleaned = " ".join(text.strip().split()).strip('\'"`').rstrip('.!?,;:')
+         retry = bool(_RETRY.match(cleaned))
+         ref = _gist(said) or _gist(last_reply)
+         if ref:
+--- orig/tests/test_upgrade_is_bare_quotes.py
++++ fixed/tests/test_upgrade_is_bare_quotes.py
+@@ -10,3 +10,14 @@
+ 
+     def test_mixed_quote_and_punct(self):
+         self.assertTrue(is_bare('"yes!"'))
++
++
++class TestResolveQuotedRetry(unittest.TestCase):
++    def test_quoted_retry_takes_the_retry_branch(self):
++        from src.foundation.shortreply import resolve
++        self.assertIn("run again", resolve('"try again"') or "")
++        self.assertIn("run again", resolve("`retry`") or "")
++
++    def test_quoted_yes_still_takes_the_yes_branch(self):
++        from src.foundation.shortreply import resolve
++        self.assertIn("saying yes to", resolve('"yes"') or "")
