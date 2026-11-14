@@ -279,6 +279,7 @@
     <div id="upgrades"></div></section>
   <section class="card c6"><h2>Self-check exam <span class="small" id="checks-n"></span></h2><div id="checks"></div></section>
   <section class="card c6"><h2>Lessons from the teacher <span class="small" id="lessons-n"></span></h2><div id="lessons"></div></section>
+  <section class="card c6"><h2>Handed over <span class="small" id="autonomy-n"></span></h2><div id="autonomy"></div></section>
   <section class="card c7"><h2>Skills <span class="small" id="skills-n"></span></h2><div id="skills"></div>
     <div class="dim small" style="margin-top:10px">Make one in Telegram: <code>forge: &lt;a small tool&gt;</code>. It is tested in the sandbox first; nothing runs until you approve it here or with <code>approve skill &lt;name&gt;</code>.</div></section>
   <section class="card c7"><h2>Missions <span class="small">say <code>mission: &lt;goal&gt;</code> in Telegram</span></h2><div id="missions"></div>
@@ -1136,6 +1137,20 @@ function drawLessons(list) {
   });
 }
 
+function drawAutonomy(a) {
+  const box = $("autonomy"), runs = (a && a.runs) || []; box.replaceChildren();
+  $("autonomy-n").textContent = runs.length ? runs.length + " recent" : "";
+  if (!runs.length) { empty(box, "Nothing yet. Tell AURIX \"do: <anything>\" and it reads it, plans, does, checks and reports here."); return; }
+  runs.forEach((r) => {
+    const row = el("div", { class: "row" }); row.appendChild(el("b", {}, r.goal || r.ask));
+    row.appendChild(el("span", { class: "tag " + (r.state === "completed" ? "active" : r.state === "blocked" ? "pending" : r.state) }, r.state));
+    const done = (r.steps || []).filter((x) => x.status === "done").length;
+    row.appendChild(el("div", { class: "dim small" }, r.mission + " · " + done + "/" + (r.steps || []).length + " steps · " + r.updated));
+    if (r.report) row.appendChild(el("div", { class: "dim small" }, r.report));
+    box.appendChild(row);
+  });
+}
+
 function render() {
   $("clock").textContent = state.local_time;
   if (changed("xp", state.xp)) drawLevel(state.xp);
@@ -1170,6 +1185,7 @@ function render() {
   if (changed("trading", state.trading)) drawTrading(state.trading);
   if (changed("checks", state.checks)) drawChecks(state.checks);
   if (changed("lessons", state.lessons)) drawLessons(state.lessons || []);
+  if (changed("autonomy", state.autonomy)) drawAutonomy(state.autonomy || { runs: [] });
   if (changed("addons", state.addons)) drawAddons(state.addons || []);
   if (changed("monitors", state.monitors)) drawMonitors(state.monitors || []);
   if (changed("memory", state.memory)) drawMemory(state.memory || {});

@@ -288,6 +288,11 @@ class MissionRunner:
             audit.append("skills_provisioned", mission=m.id, names=[s["name"] for s in found])
         return forge.catalog_text(found, m.workspace)
 
+    async def _step_extra(self, m: ms.MissionContract, index: int) -> str:
+        """Advisory text appended to a step's brief (never part of the signed contract). The autonomy layer
+        (src/foundation/autonomy.py) extends this with working memory and a new approach after a failed try."""
+        return await self._forged_skills_note(m)
+
     async def _run_step(self, m: ms.MissionContract, index: int) -> Dict[str, str]:
         if m.steps[index].executor == "openhands":
             outcome = await self._run_openhands(m, index)
@@ -297,7 +302,7 @@ class MissionRunner:
             outcome = await self._run_openclaw(m, index)
             if outcome is not None:
                 return outcome
-        prompt = build_step_prompt(m, index, await self._forged_skills_note(m))
+        prompt = build_step_prompt(m, index, await self._step_extra(m, index))
         last = {"state": "unclear", "text": "no reply"}
         prev_reply = ""
         for attempt in range(MAX_ATTEMPTS_PER_STEP):
