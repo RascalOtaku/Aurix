@@ -53,6 +53,28 @@ logger = logging.getLogger(__name__)
 _route: "contextvars.ContextVar[Optional[str]]" = contextvars.ContextVar("aurix_sandbox_route", default=None)
 
 
+# Set by force_gate(): every consequential call made inside it is gated whatever the session or
+# APPROVAL_GATE_MODE says (even "off"). Used for actions the multi-agent framework takes on its own
+# initiative (core/agents/execution.py), so an agent can never act without the owner's go/no-go.
+_forced: "contextvars.ContextVar[bool]" = contextvars.ContextVar("aurix_forced_gate", default=False)
+
+
+class force_gate:
+    """Context manager: gate every consequential tool call made inside it, in any session or mode."""
+
+    def __enter__(self):
+        self._token = _forced.set(True)
+        return self
+
+    def __exit__(self, *exc):
+        _forced.reset(self._token)
+        return False
+
+
+def gate_forced() -> bool:
+    return _forced.get()
+
+
 def consume_route() -> Optional[str]:
     """Mission id if the call the gate just allowed must execute in the sandbox, else None."""
     mission_id = _route.get()
@@ -142,6 +164,8 @@ def _is_consequential(tool: str) -> bool:
 
 
 def _session_is_gated(session_id: Optional[str]) -> bool:
+    if gate_forced():
+        return True
     mode = gate_mode()
     if mode == "off":
         return False

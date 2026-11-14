@@ -94,40 +94,99 @@ class ChatHandler:
         """CoT enhancement disabled — modern models reason natively."""
         return message
 
-    async def maybe_route_agent_task(self, message: str, session=None) -> Optional[str]:
-        """If the user explicitly asks for the agent framework, delegate the task.
+    async def maybe_route_agent_task(
+        self,
+        message: str,
+        session=None,
+        llm=None,
+        owner: Optional[str] = None,
+    ) -> Optional[str]:
+        """Hand the message to AURIX's agents when the owner asks for them; else return None.
 
-        This is intentionally low-risk: it only triggers on explicit agent-style requests
-        or a literal `@agent` token, ensuring normal chat conversations are unaffected.
+        Triggers only on an explicit ask (``@agent``, ``agent:``, a role mention such as
+        ``@researcher``, or "multi-agent" / "agent mode"), so ordinary chat is unaffected. The ask
+        is routed to one agent by core/agents/routing.py, which thinks with ``llm`` (the session's
+        own model). Agents only think here: an executor's proposed steps run solely through the
+        owner approval gate, and only when AURIX_AGENT_EXECUTE=1.
         """
         if self.agent_manager is None:
             return None
+        from core.agents.context import agent_context
+        from core.agents.routing import build_default_fleet, parse_agent_request, role_name
+        from core.agents.types import AgentRole
 
-        text = (message or "").strip()
-        if not text:
+        request = parse_agent_request(message)
+        if request is None:
             return None
 
-        lowered = text.lower()
-        trigger = (
-            "@agent" in lowered or
-            "agent:" in lowered or
-            "multi-agent" in lowered or
-            "agent mode" in lowered or
-            "run the agent" in lowered or
-            "delegate this to an agent" in lowered
-        )
-        if not trigger:
-            return None
+        build_default_fleet(self.agent_manager)
+        agent = self.agent_manager.get_agent_for_role(request.role)
+        if agent is None:
+            return "No agents are set up, so nothing ran."
+        role = agent.config.role
+        name = agent.config.name or role_name(role)
+        logger.info("Agent routing: session=%s role=%s explicit=%s",
+                    getattr(session, "id", None), role.value, request.explicit_role)
 
-        logger.info("Agent delegation triggered for session=%s", getattr(session, "id", None))
-        result = await self.agent_manager.dispatch_task(
-            task_description=text,
-            priority=1,
-        )
-        task = self.agent_manager.tasks.get(result)
-        if task and task.result:
-            return f"Agent delegation completed: {task.result}"
-        return "Agent delegation completed."
+        task = request.task
+        if role == AgentRole.RESEARCHER:
+            task = await self._with_web_results(task)
+
+        with agent_context(llm=llm, session_id=getattr(session, "id", None), owner=owner):
+            task_id = await self.agent_manager.dispatch_task(
+                task_description=task, agent_id=agent.id, priority=1,
+            )
+            assignment = self.agent_manager.tasks.get(task_id)
+            if assignment is None or assignment.status != "completed":
+                why = assignment.result if assignment else "no result"
+                return f"**{name}** couldn't finish this: {why}. Nothing was run."
+            reply = str(assignment.result or "").strip() or "(no answer)"
+            if role == AgentRole.EXECUTOR:
+                reply += await self._run_or_hold_steps(agent, reply)
+
+        return f"**{name}** ({role.value} agent)\n\n{reply}"
+
+    async def _with_web_results(self, task: str) -> str:
+        """Prefix the researcher's task with web results, marked as untrusted data."""
+        skill = self.agent_skill_registry.get("web_search") if self.agent_skill_registry else None
+        if skill is None:
+            return task
+        try:
+            found = await skill.run(agent_id="chat", inputs={"query": task}, timeout=60.0)
+        except Exception as e:
+            logger.warning("Researcher web search failed: %r", e)
+            return f"{task}\n\n(Web search failed: {e}. Say so, and answer only from what you know.)"
+        summary = (found or {}).get("summary") or ""
+        if not summary.strip():
+            return f"{task}\n\n(Web search returned nothing. Say so.)"
+        from src.prompt_security import untrusted_context_message
+        return f"{task}\n\n" + untrusted_context_message("web search", summary[:12000])["content"]
+
+    async def _run_or_hold_steps(self, agent, reply: str) -> str:
+        """Executor follow-up: run its tool blocks through the approval gate, or hold them."""
+        try:
+            from src.tool_parsing import parse_tool_blocks
+            blocks = parse_tool_blocks(reply)
+        except Exception as e:
+            logger.warning("Could not parse executor steps: %r", e)
+            blocks = []
+        if not blocks:
+            return ""
+        if os.environ.get("AURIX_AGENT_EXECUTE", "0").strip() != "1":
+            return (f"\n\nNothing has run. {len(blocks)} step(s) above wait for you: run them "
+                    "yourself, or set AURIX_AGENT_EXECUTE=1 so each one is sent to you for "
+                    "approve/deny on Telegram before it runs.")
+        lines = []
+        for block in blocks:
+            outcome = await agent.execute(block.tool_type, {"content": block.content})
+            status = outcome.get("status", "error")
+            result = outcome.get("result") or {}
+            detail = str(result.get("error") or result.get("output") or "").strip().splitlines()
+            lines.append(f"- {block.tool_type}: {status}" + (f" ({detail[0][:160]})" if detail else ""))
+            if status != "executed":
+                lines.append("- Stopped here; later steps were not run.")
+                break
+        return "\n\nWhat ran:\n" + "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Preprocessing — shared between /api/chat and /api/chat_stream

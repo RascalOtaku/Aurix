@@ -29,23 +29,44 @@ task_id = await manager.dispatch_task(
 
 ### 2. What is wired into AURIX today
 
-The framework is a library for now. There are **no HTTP routes** for it yet (no `/api/agents/...`).
+**Agents start with AURIX and chat can call them.** There are still no `/api/agents/...` routes.
 
-- `src/app_initializer.py` builds one `AgentManager(name="Aurix")` and a `SkillRegistry` with the
-  built-in skills at startup, and hands both to `ChatHandler`.
-- `ChatHandler.maybe_route_agent_task()` can delegate a chat message to the manager when it
-  explicitly asks for an agent (`@agent`, `agent:`, `agent mode`, and similar). Nothing calls it
-  yet, so normal chat is unchanged.
-- No agents are registered at startup; register them from code as in section 1.
+- At startup `src/app_initializer.py` builds `AgentManager(name="Aurix")`, a `SkillRegistry` with the
+  built-in skills, and one agent per role (`core/agents/routing.py: build_default_fleet`):
+  Planner (orchestrator), Researcher, Reviewer, Coder (specialist) and Executor.
+- In chat (`/api/chat`, `/api/chat_stream`, so the web UI and Telegram), a message that explicitly
+  asks for the agents goes to them instead of the normal chat path:
+  - `@agent <ask>` or `agent: <ask>` (or "multi-agent", "agent mode") picks the agent by keywords;
+  - `@planner`, `@researcher`, `@reviewer`, `@coder`, `@executor` pick one directly.
+  Plain chat is unchanged. The turn is saved to the session like any other.
+- Routing (first match wins): run/install/delete/send/deploy... -> Executor;
+  review/critique/double-check... -> Reviewer; code/bug/traceback/refactor... -> Coder;
+  research/look up/compare/find out... -> Researcher; anything else -> Planner.
+  Executor is checked first so a mixed ask ("look into X and delete Y") lands with the gated agent.
+- Agents think with the **session's own model** (`src/agent_chat.py: session_llm`), bound per call
+  through `core/agents/context.py`; outside chat they use AURIX's default endpoint.
+- The Researcher gets web results first (`web_search` skill -> `src/search`), passed to the model
+  as untrusted data.
 
-Web routes and wiring the chat hook into the chat flow are still to come (see Future Enhancements).
+### Acting: always through the approval gate
+
+`Agent.execute()` used to return a canned `"executed"` without running anything. Every agent now
+acts through `core/agents/execution.py: run_gated_action`, which calls the real
+`src.tool_execution.execute_tool_block` inside `approval_gate.force_gate()`. Inside that block every
+consequential tool (shell, file writes, email, settings, ...) is held for the owner's approve/deny on
+Telegram in **every session and gate mode, including `APPROVAL_GATE_MODE=off`**, and fails closed.
+The result says what really happened: `executed`, `failed`, `denied` or `error`.
+
+In chat the agents only think by default. The Executor drafts its steps as tool blocks and the
+reply says nothing has run. With `AURIX_AGENT_EXECUTE=1` each step is sent through the gate in
+order, and the run stops at the first step that is denied or fails.
 
 ### 3. Using LLM-Powered Agents
 
 ```python
 from core.agents.implementations import ClaudeAgent, OpenAIAgent, LocalLLMAgent
 
-# Claude
+# Claude (AsyncAnthropic; model defaults to claude-opus-5-5, AURIX_CLAUDE_MODEL overrides)
 agent = ClaudeAgent(config, api_key="sk-ant-...")
 
 # OpenAI
@@ -149,8 +170,8 @@ agent.subscribe(on_agent_event)
 
 ## Integration Points
 
-1. **Existing Chat Handler**: `ChatHandler.maybe_route_agent_task()` exists but is not called from the chat flow yet
-2. **Research Handler**: Use WebSearch skill for background research
+1. **Chat**: `ChatHandler.maybe_route_agent_task()` is called from `/api/chat` and `/api/chat_stream`
+2. **Web search**: the `web_search` skill uses AURIX's own search providers (`src/search`)
 3. **Session Manager**: Store agent state per session
 4. **Memory Manager**: Integrate with existing memory system
 5. **Skills Manager**: Merge with existing skills loading
@@ -158,8 +179,10 @@ agent.subscribe(on_agent_event)
 ## Future Enhancements
 
 - [ ] HTTP routes for dispatching tasks and checking agent status
-- [ ] Call `maybe_route_agent_task()` from the chat flow
-- [ ] Tool use / function calling via LLM
+- [x] Call `maybe_route_agent_task()` from the chat flow
+- [x] Gated tool execution for agent actions
+- [ ] Native tool use / function calling via the LLM APIs
+- [ ] Agents as thinkers inside the `do:` autonomy loop (reviewer for self-checks, researcher for re-planning)
 - [ ] Streaming responses
 - [ ] Agent-to-agent communication
 - [ ] Distributed execution (multiple workers)

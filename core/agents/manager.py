@@ -79,7 +79,10 @@ class AgentManager:
 
         # Execute task
         agent = self.get_agent(agent_id)
-        if agent:
+        if agent is None:
+            assignment.status = "failed"
+            assignment.result = f"no agent with id {agent_id}"
+        else:
             try:
                 result = await agent.think(task_description)
                 assignment.status = "completed"
@@ -87,8 +90,24 @@ class AgentManager:
             except Exception as e:
                 assignment.status = "failed"
                 assignment.result = str(e)
+        self.workflow_history.append({
+            "task_id": task_id,
+            "agent_id": agent_id,
+            "agent": agent.config.name if agent else None,
+            "status": assignment.status,
+            "at": datetime.now().isoformat(),
+        })
+        del self.workflow_history[:-200]
 
         return task_id
+
+    def get_agent_for_role(self, role: AgentRole) -> Optional[Agent]:
+        """First agent with this role, else the orchestrator, else any agent, else None."""
+        for candidate_role in (role, AgentRole.ORCHESTRATOR):
+            agents = self.get_agents_by_role(candidate_role)
+            if agents:
+                return agents[0]
+        return next(iter(self.agents.values()), None)
 
     async def _select_best_agent(self, task_description: str) -> str:
         """Select best agent for task (can be improved with ML)."""
@@ -148,5 +167,5 @@ class AgentManager:
             "manager": self.name,
             "agents": len(self.agents),
             "tasks_total": len(self.tasks),
-            "history": self.workflow_history[:50],  # Last 50 events
+            "history": self.workflow_history[-50:],  # Last 50 events
         }, indent=2, default=str)
