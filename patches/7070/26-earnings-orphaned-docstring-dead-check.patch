@@ -1,0 +1,73 @@
+# Patch 26 — src/foundation/earnings.py: orphaned docstrings + dead duplicate checks after the non-finite guard (2026-11-15)
+#
+# WHAT: today's self-upgrade (the finiteness guard, pinned by
+# tests/test_upgrade_earnings_nonfinite.py) inserted its new check ABOVE the
+# existing docstrings of record() and auto_estimate(). That left, in each
+# function, a bare string literal sitting mid-body and a second
+# `if amount <= 0` check that can never fire:
+#
+#     if not math.isfinite(amount) or amount <= 0:
+#         return "That has to be a positive amount."
+#     """The owner reporting real income. ..."""      <- no-op LOAD_CONST + POP_TOP
+#     if amount <= 0:                                  <- unreachable: the guard above already returned
+#         return "That has to be a positive amount."
+#
+# Reproduced here against the verbatim gate-read copy:
+#     earnings.record.__doc__        -> None
+#     earnings.auto_estimate.__doc__ -> None
+#     record() carries two "That has to be a positive amount." returns.
+# Same class of editing artifact as patch 18 (stray docstring) and patch 16
+# (dead branch after return).
+#
+# FIX: move each docstring back to the top of its function (so it is the
+# function's __doc__ again) and delete the now-unreachable duplicate check.
+# The guard itself is untouched.
+#
+# VERIFIED HERE (verbatim gate-read copy, stubbed audit/_io only for import):
+#   * patched vs unpatched through identical scenarios (NaN, +inf, -inf, 0,
+#     -5, "abc", a real 20.00 record, a 5.50 auto-estimate): outputs, totals
+#     (25.50 / 20.00 confirmed), finiteness and ledger rows identical — the
+#     only difference is the restored docstrings.
+#   * the lane's own tests/test_upgrade_earnings_nonfinite.py passes on the
+#     patched copy: 3 passed.
+#   * this diff applies cleanly (patch -p1 --dry-run) to the verbatim copy.
+# NOT VERIFIED HERE end to end: the patch is prepared, not applied — the 7070
+# is read-only to this audit. After applying, the applying lane should re-run
+# via the gate:
+#     gate tests tests/test_upgrade_earnings_nonfinite.py
+# and expect 3 passed.
+#
+--- orig/src/foundation/earnings.py
++++ fixed/src/foundation/earnings.py
+@@ -46,29 +46,25 @@
+ 
+ 
+ def record(amount: float, source: str, note: str = "") -> str:
++    """The owner reporting real income. Returns the owner-facing confirmation text."""
+     try:
+         amount = float(amount)
+     except Exception:
+         return "Invalid amount."
+     if not math.isfinite(amount) or amount <= 0:
+         return "That has to be a positive amount."
+-    """The owner reporting real income. Returns the owner-facing confirmation text."""
+-    if amount <= 0:
+-        return "That has to be a positive amount."
+     row = _add(amount, source, note, confirmed=True, now=None)
+     return f"💰 Logged <b>${row['amount']:,.2f}</b> from <b>{e(source)}</b>{(' - ' + e(note)) if note else ''}. Confirmed total: ${total(confirmed_only=True):,.2f}."
+ 
+ 
+ def auto_estimate(amount: float, source: str, note: str = "", now: Optional[float] = None) -> dict:
++    """A workstream logging what its own finished work is roughly worth - never a promise, never money AURIX touched."""
+     try:
+         amount = float(amount)
+     except Exception:
+         return {}
+     if not math.isfinite(amount) or amount <= 0:
+         return {}
+-    """A workstream logging what its own finished work is roughly worth - never a promise, never money AURIX touched."""
+-    if amount <= 0:
+-        return {}
+     return _add(amount, source, note, confirmed=False, now=now)
+ 
+ 
