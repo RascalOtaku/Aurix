@@ -271,6 +271,42 @@ class CommandTests(_Base):
         self.assertIn("Western or cyberpunk", llm.calls[1][1])      # the answer is read with its question
         self.assertIsNone(autonomy.pending())
 
+    async def test_second_unclear_ask_keeps_the_first_question(self):
+        llm = llm_from({"goal": "Make an asset pack", "question": "Western or cyberpunk?", "question_changes_goal": True},
+                       {"goal": "Tidy the notes", "question": "Which folder?", "question_changes_goal": True},
+                       {"goal": "Make a cyberpunk asset pack"},
+                       "",                                            # planner for the pack
+                       {"goal": "Tidy the research notes"})
+        f = self.foundation(llm)
+        reply = await f.handle("delegate", "make me another pack")
+        self.assertIn("Western or cyberpunk?", reply)
+        reply = await f.handle("delegate", "clean up my notes")
+        self.assertIn("earlier question", reply)                     # the first question is not lost
+        self.assertIn("Western or cyberpunk?", reply)
+        self.assertEqual(autonomy.pending()["ask"], "make me another pack")
+        self.assertEqual(autonomy.pending_count(), 2)
+        reply = await f.handle(*commands.parse("cyberpunk"))         # answers the first ask, then asks the second
+        self.assertIn("Which folder?", reply)
+        self.assertIn("Western or cyberpunk", llm.calls[2][1])
+        self.assertEqual(autonomy.pending()["ask"], "clean up my notes")
+        await f.handle(*commands.parse("the research one"))
+        self.assertTrue(any("Which folder?" in c[1] and "the research one" in c[1] for c in llm.calls))
+        self.assertIsNone(autonomy.pending())
+        self.assertEqual(len(self.store.all()), 2)
+
+    def test_pending_queue_reads_old_file_and_drops_expired(self):
+        d = autonomy._dir()
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "pending.json").write_text(json.dumps({"ask": "a", "question": "q?", "ts": 1000.0}))
+        self.assertEqual(autonomy.pending(now=1001.0)["question"], "q?")
+        self.assertIsNone(autonomy.pending(now=1000.0 + autonomy.PENDING_TTL_SECONDS + 1))
+        autonomy.clear_pending()
+        self.assertFalse((d / "pending.json").exists())
+        autonomy.set_pending(autonomy.Brief(ask="x", goal="X", question="1?"))
+        autonomy.set_pending(autonomy.Brief(ask="x", goal="X", question="2?"))   # same ask re-asked: replaced, not doubled
+        self.assertEqual(autonomy.pending_count(), 1)
+        self.assertEqual(autonomy.pending()["question"], "2?")
+
     async def test_auto_detected_chat_is_answered_normally(self):
         f = self.foundation(llm_from({"kind": "chat", "goal": "chat"}))
         reply = await f.handle("delegate_auto", "can you look into how you are feeling")

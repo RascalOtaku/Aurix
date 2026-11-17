@@ -566,8 +566,12 @@ class Foundation:
         if brief.kind == "chat" and kind == "delegate_auto":
             return await self.run_agent(arg)                      # it was conversation after all: answer it normally
         if brief.question and kind != "delegate_answer":
+            earlier = autonomy.pending()
             autonomy.set_pending(brief)
             audit.append("autonomy_question")
+            if earlier is not None and earlier.get("ask") != brief.ask:
+                return ("Got it, I'll come back to this one. First I still need an answer to my earlier question: "
+                        + html.escape(earlier.get("question", "")))
             return html.escape(brief.question) + "\n<i>(Just reply; that's the only thing I need before I start.)</i>"
         try:
             sandboxed = await asyncio.to_thread(sandbox.available)
@@ -581,7 +585,12 @@ class Foundation:
             autonomy.update_board(m, "planned")
         except OSError:
             pass
-        return autonomy.render_brief(brief) + "\n\n" + await self._maybe_fast_lane(m)
+        reply = autonomy.render_brief(brief) + "\n\n" + await self._maybe_fast_lane(m)
+        nxt = autonomy.pending() if kind == "delegate_answer" else None
+        if nxt is not None:                                       # another unclear ask was queued meanwhile: ask it now
+            reply += ("\n\nNext, about \"" + html.escape(nxt.get("ask", "")) + "\": " + html.escape(nxt.get("question", ""))
+                      + "\n<i>(Just reply.)</i>")
+        return reply
 
     async def _start_runner(self, mission_id: str) -> None:
         kw = await self._presence()

@@ -192,22 +192,52 @@ def _read(path: Path, default):
         return default
 
 
+MAX_PENDING_QUESTIONS = 5
+
+
+def _pending_queue(now: Optional[float] = None) -> list:
+    """Unanswered questions, oldest first, expired ones dropped. Reads the old single-question file too."""
+    raw = _read(_dir() / "pending.json", None)
+    if isinstance(raw, dict) and "queue" in raw:
+        items = raw.get("queue") or []
+    elif isinstance(raw, dict) and raw.get("question"):
+        items = [raw]                                        # file written before the queue existed
+    else:
+        items = []
+    t = now or time.time()
+    return [q for q in items if isinstance(q, dict) and t - float(q.get("ts", 0)) <= PENDING_TTL_SECONDS]
+
+
+def _save_queue(items: list) -> None:
+    if items:
+        _write(_dir() / "pending.json", {"queue": items})
+    else:
+        try:
+            (_dir() / "pending.json").unlink()
+        except OSError:
+            pass
+
+
 def set_pending(b: Brief) -> None:
-    _write(_dir() / "pending.json", {"ask": b.ask, "question": b.question, "ts": time.time()})
+    """Queue a question. A second unclear `do:` no longer erases the first one's question: each waits its turn."""
+    items = [q for q in _pending_queue() if q.get("ask") != b.ask]
+    items.append({"ask": b.ask, "question": b.question, "ts": time.time()})
+    _save_queue(items[-MAX_PENDING_QUESTIONS:])
 
 
 def pending(now: Optional[float] = None) -> Optional[dict]:
-    p = _read(_dir() / "pending.json", None)
-    if not isinstance(p, dict) or (now or time.time()) - float(p.get("ts", 0)) > PENDING_TTL_SECONDS:
-        return None
-    return p
+    """The question the owner's next plain reply answers: the oldest one still waiting."""
+    items = _pending_queue(now)
+    return items[0] if items else None
+
+
+def pending_count(now: Optional[float] = None) -> int:
+    return len(_pending_queue(now))
 
 
 def clear_pending() -> None:
-    try:
-        (_dir() / "pending.json").unlink()
-    except OSError:
-        pass
+    """Drop the oldest question (the one just answered); later ones keep waiting."""
+    _save_queue(_pending_queue()[1:])
 
 
 def save_brief(mission_id: str, b: Brief) -> None:
