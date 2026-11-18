@@ -8,6 +8,16 @@ from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Some third-party wheels ship a top-level `tests` package into site-packages. A regular package always beats this
+# directory (which has no __init__.py, on purpose: several tests import siblings by bare name), so
+# `from tests.test_x import ...` resolved to the wrong package and collection stopped. Bind `tests` to this directory.
+_TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
+_tests_mod = sys.modules.get("tests")
+if _tests_mod is None or _TESTS_DIR not in [os.path.abspath(p) for p in getattr(_tests_mod, "__path__", [])]:
+    _tests_mod = types.ModuleType("tests")
+    _tests_mod.__path__ = [_TESTS_DIR]
+    sys.modules["tests"] = _tests_mod
+
 def _has_module(mod_name: str) -> bool:
     try:
         return importlib.util.find_spec(mod_name) is not None

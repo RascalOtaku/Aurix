@@ -49,6 +49,42 @@ def _verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
 
 
+# A real bcrypt hash checked when the username does not exist, so an unknown name costs the same ~bcrypt time as a
+# wrong password. Without it the login response time told an attacker which usernames are real.
+_DUMMY_HASH = _hash_password(secrets.token_hex(16))
+
+# Usernames are ownership keys in the database and appear in paths and logs: keep them to a plain, bounded charset.
+_USERNAME_MAX = 64
+_USERNAME_OK = set("abcdefghijklmnopqrstuvwxyz0123456789._-@")
+
+
+def valid_username(username: str) -> bool:
+    u = (username or "").strip().lower()
+    return 0 < len(u) <= _USERNAME_MAX and not u.startswith(("-", ".")) and set(u) <= _USERNAME_OK
+
+
+# Files holding password hashes, TOTP secrets and live session tokens are written owner-only.
+_SECRET_FILE_MODE = 0o600
+
+_BACKUP_HASH_PREFIX = "bcrypt:"
+
+
+def _hash_backup_code(code: str) -> str:
+    return _BACKUP_HASH_PREFIX + _hash_password(code.strip().lower())
+
+
+def _backup_code_matches(stored, code: str) -> bool:
+    """Match a presented backup code against a stored one: a bcrypt hash, or a legacy plain-text code (constant-time)."""
+    stored = str(stored)
+    code = (code or "").strip().lower()
+    if stored.startswith(_BACKUP_HASH_PREFIX):
+        try:
+            return _verify_password(code, stored[len(_BACKUP_HASH_PREFIX):])
+        except ValueError:
+            return False
+    return secrets.compare_digest(stored.lower(), code)
+
+
 class AuthManager:
     """Manages multi-user password + session-token auth system."""
 
@@ -64,6 +100,7 @@ class AuthManager:
         self._load_sessions()
         self._migrate_single_user()
         self._migrate_legacy_admin_role()
+        self._migrate_plaintext_backup_codes()
 
     def _load(self):
         try:
@@ -99,7 +136,7 @@ class AuthManager:
         try:
             with self._sessions_lock:
                 snapshot = dict(self._sessions)
-            _atomic_write_json(self._sessions_path, snapshot)
+            _atomic_write_json(self._sessions_path, snapshot, mode=_SECRET_FILE_MODE)
         except Exception as e:
             logger.error(f"Failed to save sessions: {e}")
 
@@ -131,8 +168,22 @@ class AuthManager:
         if changed:
             self._save()
 
+    def _migrate_plaintext_backup_codes(self):
+        """Hash backup codes that older versions stored in plain text. The codes keep working; only the file changes."""
+        changed = False
+        for username, user in self.users.items():
+            codes = user.get("totp_backup_codes")
+            if isinstance(codes, list) and any(not str(c).startswith(_BACKUP_HASH_PREFIX) for c in codes):
+                user["totp_backup_codes"] = [
+                    c if str(c).startswith(_BACKUP_HASH_PREFIX) else _hash_backup_code(str(c)) for c in codes
+                ]
+                changed = True
+                logger.info("Hashed %d stored 2FA backup code(s) for '%s'", len(codes), username)
+        if changed:
+            self._save()
+
     def _save(self):
-        _atomic_write_json(self.auth_path, self._config, indent=2)
+        _atomic_write_json(self.auth_path, self._config, indent=2, mode=_SECRET_FILE_MODE)
 
     @property
     def users(self) -> Dict[str, Any]:
@@ -164,7 +215,7 @@ class AuthManager:
     def create_user(self, username: str, password: str, is_admin: bool = False) -> bool:
         """Create a new user account."""
         username = username.strip().lower()
-        if username in self.users:
+        if not valid_username(username) or username in self.users:
             return False
         if "users" not in self._config:
             self._config["users"] = {}
@@ -184,9 +235,10 @@ class AuthManager:
         SECURITY: also revoke every active session token belonging to this
         user so any open browser tab they have gets kicked back to /login
         on the next request. Without this the user kept full access until
-        their cookie expired naturally (default ~30 days).
+        their cookie expired naturally (TOKEN_TTL, 7 days).
         """
         username = username.strip().lower()
+        requesting_user = (requesting_user or "").strip().lower()
         if username not in self.users:
             return False
         if username == requesting_user:
@@ -215,7 +267,7 @@ class AuthManager:
         old_username = old_username.strip().lower()
         new_username = new_username.strip().lower()
         requesting_user = (requesting_user or "").strip().lower()
-        if not old_username or not new_username:
+        if not old_username or not valid_username(new_username):
             return False
         if old_username not in self.users:
             return False
@@ -275,7 +327,13 @@ class AuthManager:
         logger.info(f"Updated privileges for '{username}': {current}")
         return True
 
-    def change_password(self, username: str, current_password: str, new_password: str) -> bool:
+    def change_password(self, username: str, current_password: str, new_password: str,
+                        keep_token: Optional[str] = None) -> bool:
+        """Change a password and sign out every other session of that user.
+
+        A password change is what an owner does after a suspected compromise; leaving the attacker's existing session
+        cookies valid for up to TOKEN_TTL defeated it. `keep_token` (the caller's own session) stays signed in.
+        """
         username = username.strip().lower()
         if username not in self.users:
             return False
@@ -283,7 +341,22 @@ class AuthManager:
             return False
         self._config["users"][username]["password_hash"] = _hash_password(new_password)
         self._save()
+        self.revoke_user_sessions(username, keep_token=keep_token)
         return True
+
+    def revoke_user_sessions(self, username: str, keep_token: Optional[str] = None) -> int:
+        """Drop every session token of `username` except `keep_token`. Returns how many were dropped."""
+        username = (username or "").strip().lower()
+        with self._sessions_lock:
+            to_drop = [tok for tok, sess in self._sessions.items()
+                       if (sess or {}).get("username") == username
+                       and not (keep_token and secrets.compare_digest(tok, keep_token))]
+            for tok in to_drop:
+                self._sessions.pop(tok, None)
+        if to_drop:
+            self._save_sessions()
+            logger.info("Revoked %d session(s) for '%s'", len(to_drop), username)
+        return len(to_drop)
 
     # ------------------------------------------------------------------
     # TOTP two-factor authentication
@@ -309,46 +382,83 @@ class AuthManager:
         totp = pyotp.TOTP(secret)
         return totp.provisioning_uri(name=username, issuer_name="Aurix")
 
-    def totp_confirm_enable(self, username: str, code: str) -> bool:
-        """Verify a TOTP code against the pending secret, then enable 2FA."""
+    @staticmethod
+    def _totp_match_step(secret: str, code: str, window: int = 1) -> Optional[int]:
+        """The TOTP time-step `code` is valid for (current step +/- `window`), or None."""
+        code = (code or "").strip()
+        if not code:
+            return None
+        totp = pyotp.TOTP(secret)
+        now = time.time()
+        step = int(totp.timecode(now))
+        for offset in range(-window, window + 1):
+            if secrets.compare_digest(str(totp.at(now, offset)), code):
+                return step + offset
+        return None
+
+    def totp_confirm_enable(self, username: str, code: str) -> Optional[List[str]]:
+        """Verify a TOTP code against the pending secret, then enable 2FA.
+
+        Returns the new backup codes in plain text (the ONLY time they exist unhashed; show them to the user once),
+        or None if the code was wrong."""
         username = username.strip().lower()
         user = self.users.get(username, {})
         secret = user.get("totp_secret_pending")
         if not secret:
-            return False
-        totp = pyotp.TOTP(secret)
-        if not totp.verify(code, valid_window=1):
-            return False
+            return None
+        step = self._totp_match_step(secret, code)
+        if step is None:
+            return None
         # Enable 2FA
         self._config["users"][username]["totp_secret"] = secret
         self._config["users"][username]["totp_enabled"] = True
+        self._config["users"][username]["totp_last_step"] = step  # the confirming code can't be replayed to log in
         self._config["users"][username].pop("totp_secret_pending", None)
-        # Generate backup codes
-        backup = [secrets.token_hex(4) for _ in range(8)]
-        self._config["users"][username]["totp_backup_codes"] = backup
+        # Backup codes: 40 random bits each, stored only as bcrypt hashes (auth.json used to hold them in plain text,
+        # so anyone who could read that file could pass 2FA).
+        backup = [secrets.token_hex(5) for _ in range(8)]
+        self._config["users"][username]["totp_backup_codes"] = [_hash_backup_code(c) for c in backup]
         self._save()
         logger.info(f"2FA enabled for '{username}'")
-        return True
+        return backup
 
     def totp_verify(self, username: str, code: str) -> bool:
-        """Verify a TOTP code for login."""
+        """Verify a TOTP code (or a one-time backup code) for login.
+
+        Each TOTP time-step is accepted at most once: a code seen over someone's shoulder, or captured, can't be
+        replayed within its ~90 s validity window. Fails closed when 2FA is on but its secret is missing."""
         username = username.strip().lower()
         user = self.users.get(username, {})
         if not user.get("totp_enabled"):
             return True  # 2FA not enabled, always pass
         secret = user.get("totp_secret")
         if not secret:
-            return True
-        # Check backup codes first
-        backup = user.get("totp_backup_codes", [])
-        if code in backup:
-            backup.remove(code)
+            logger.error("2FA is enabled for '%s' but no secret is stored: refusing (an admin must reset 2FA)", username)
+            return False
+        code = (code or "").strip()
+        if not code:
+            return False
+        # TOTP codes are 6 digits; backup codes are 8 (legacy) or 10 hex chars. Only pay the bcrypt checks for the latter.
+        backup = list(user.get("totp_backup_codes", []))
+        if not (len(code) == 6 and code.isdigit()):
+            matched = next((b for b in backup if _backup_code_matches(b, code)), None)
+            if matched is None:
+                return False
+            backup.remove(matched)
             self._config["users"][username]["totp_backup_codes"] = backup
             self._save()
             logger.info(f"Backup code used for '{username}' ({len(backup)} remaining)")
             return True
-        totp = pyotp.TOTP(secret)
-        return totp.verify(code, valid_window=1)
+        step = self._totp_match_step(secret, code)
+        if step is None:
+            return False
+        last = user.get("totp_last_step")
+        if isinstance(last, int) and step <= last:
+            logger.warning("Replayed or out-of-order 2FA code refused for '%s'", username)
+            return False
+        self._config["users"][username]["totp_last_step"] = step
+        self._save()
+        return True
 
     def totp_disable(self, username: str, password: str) -> bool:
         """Disable 2FA for a user. Requires password confirmation."""
@@ -369,9 +479,11 @@ class AuthManager:
 
     def verify_password(self, username: str, password: str) -> bool:
         username = username.strip().lower()
-        if username not in self.users:
+        user = self.users.get(username)
+        if not user or not user.get("password_hash"):
+            _verify_password(password, _DUMMY_HASH)  # equalise timing: see _DUMMY_HASH
             return False
-        return _verify_password(password, self.users[username]["password_hash"])
+        return _verify_password(password, user["password_hash"])
 
     def create_session(self, username: str, password: str) -> Optional[str]:
         """Verify credentials and return a session token, or None."""
@@ -384,6 +496,19 @@ class AuthManager:
                 "username": username,
                 "expiry": time.time() + TOKEN_TTL,
             }
+        self._save_sessions()
+        return token
+
+    def create_session_trusted(self, username: str) -> Optional[str]:
+        """A session for an EXISTING user, without re-checking the password. Only for a caller that has ALREADY proven
+        the identity (the login route, right after verify_password + 2FA): saves a second ~0.2 s bcrypt. Never call
+        this with a name taken straight from a request."""
+        username = username.strip().lower()
+        if username not in self.users:
+            return None
+        token = secrets.token_hex(32)
+        with self._sessions_lock:
+            self._sessions[token] = {"username": username, "expiry": time.time() + TOKEN_TTL}
         self._save_sessions()
         return token
 

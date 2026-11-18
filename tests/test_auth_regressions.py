@@ -249,8 +249,8 @@ def test_ship_paused_housekeeping_stays_paused_by_default():
     from routes import task_routes
     from src import task_scheduler
 
-    route_src = open(task_routes.__file__).read()
-    scheduler_src = open(task_scheduler.__file__).read()
+    route_src = open(task_routes.__file__, encoding="utf-8").read()
+    scheduler_src = open(task_scheduler.__file__, encoding="utf-8").read()
     assert '"ship_paused": True' in scheduler_src
     assert 'defs.get("ship_paused")' in scheduler_src
     assert 'defs.get("ship_paused")' in route_src

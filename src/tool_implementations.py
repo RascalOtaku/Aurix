@@ -5,6 +5,7 @@ Extracted tool implementation functions (do_* and helpers) from agent_tools.py.
 These handle the actual execution logic for each tool type.
 """
 
+from src.ssh_opts import hostkey_option as _ssh_hostkey_option
 import json
 import logging
 import os
@@ -3137,7 +3138,7 @@ async def _cookbook_kill_session(session_id: str, *, remote_host: str = "",
     if remote:
         _pf = f"-p {shlex.quote(str(sport))} " if sport and str(sport) != "22" else ""
         cmd = (
-            f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "
+            f"ssh -o ConnectTimeout=5 -o {_ssh_hostkey_option()} "
             f"{_pf}{shlex.quote(remote)} 'tmux kill-session -t {shlex.quote(session_id)}'"
         )
         target_label = f"{session_id} on {remote}"
@@ -3313,7 +3314,7 @@ async def do_adopt_served_model(content: str, owner: Optional[str] = None) -> Di
     # Verify tmux session exists on the target host
     headers = _internal_headers()
     if host:
-        check = f"ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no {shlex.quote(host)} 'tmux has-session -t {shlex.quote(sess)} 2>&1'"
+        check = f"ssh -o ConnectTimeout=5 -o {_ssh_hostkey_option()} {shlex.quote(host)} 'tmux has-session -t {shlex.quote(sess)} 2>&1'"
     else:
         check = f"tmux has-session -t {shlex.quote(sess)} 2>&1"
     try:
@@ -3932,24 +3933,14 @@ def _load_vault_config() -> Dict:
     return {}
 
 
-async def _run_bw(args: list, session: Optional[str] = None, input_text: Optional[str] = None) -> tuple:
-    """Run a bw CLI command with optional session + stdin. Returns (stdout, stderr, returncode)."""
-    import asyncio
-    env = {}
-    import os as _os
-    env.update(_os.environ)
-    if session:
-        env["BW_SESSION"] = session
+async def _run_bw(args: list, session: Optional[str] = None, input_text: Optional[str] = None,
+                  password: Optional[str] = None) -> tuple:
+    """Run a bw CLI command with optional session + stdin. Returns (stdout, stderr, returncode).
 
-    proc = await asyncio.create_subprocess_exec(
-        "bw", *args,
-        stdin=asyncio.subprocess.PIPE if input_text else None,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=env,
-    )
-    stdout, stderr = await proc.communicate(input=input_text.encode() if input_text else None)
-    return stdout.decode(errors="replace").strip(), stderr.decode(errors="replace").strip(), proc.returncode
+    Delegates to the one bw runner in routes/vault_routes.py: it finds bw outside PATH, has a timeout (this copy hung
+    forever on a bw prompt) and returns an error tuple instead of raising when bw is not installed."""
+    from routes.vault_routes import _run_bw as _vault_run_bw
+    return await _vault_run_bw(args, session=session, input_text=input_text, password=password)
 
 
 async def do_vault_search(content: str, owner: Optional[str] = None) -> Dict:
@@ -4065,7 +4056,9 @@ async def do_vault_unlock(content: str, owner: Optional[str] = None) -> Dict:
     if not master_password:
         return {"error": "master_password is required", "exit_code": 1}
 
-    stdout, stderr, rc = await _run_bw(["unlock", master_password, "--raw"])
+    # Password via environment, not argv (argv is visible to every local user in the process list).
+    from routes.vault_routes import _BW_PASSWORD_ENV
+    stdout, stderr, rc = await _run_bw(["unlock", "--passwordenv", _BW_PASSWORD_ENV, "--raw"], password=master_password)
     if rc != 0:
         return {"error": f"Unlock failed: {stderr[:300]}", "exit_code": 1}
 
@@ -4085,11 +4078,7 @@ async def do_vault_unlock(content: str, owner: Optional[str] = None) -> Dict:
     cfg["session"] = session
     from datetime import datetime as _dt
     cfg["unlocked_at"] = _dt.utcnow().isoformat()
-    p.write_text(json.dumps(cfg, indent=2))
-    try:
-        import os as _os
-        _os.chmod(str(p), 0o600)
-    except Exception:
-        pass
+    from routes.vault_routes import _save_config as _vault_save
+    _vault_save(cfg)  # owner-only + atomic
 
     return {"output": "Vault unlocked. Session saved.", "exit_code": 0}

@@ -261,12 +261,21 @@ async def _run_subprocess(argv, *, shell: bool = False, timeout: int = 120, labe
         return str(e), False
 
 
+def _ssh_host_ok(host: str) -> bool:
+    """A host ssh will treat as a destination, never as an option: "-oProxyCommand=..." would otherwise run a
+    LOCAL command even when the configured action was meant for a remote box."""
+    import re
+    return bool(host) and not host.startswith("-") and re.fullmatch(r"[A-Za-z0-9._@:\[\]-]{1,255}", host) is not None
+
+
 async def action_ssh_command(owner: str, command: str = "", host: str = "localhost", **kwargs) -> Tuple[str, bool]:
     """Run a shell command locally or on a remote host via SSH."""
     if not command:
         return "No command specified", False
     if host in ("localhost", "127.0.0.1", "local"):
         return await _run_subprocess(["bash", "-c", command], timeout=120, label="Command")
+    if not _ssh_host_ok(host):
+        return f"Invalid host: {host[:80]!r}", False
     return await _run_subprocess(
         ["ssh", "-o", "ConnectTimeout=10", host, command], timeout=120, label="Command",
     )
@@ -279,6 +288,8 @@ async def action_run_script(owner: str, script: str = "", host: str = "", **kwar
     target_host = (host or os.getenv("ODYSSEUS_SCRIPT_HOST", "localhost")).strip()
     if target_host in ("", "localhost", "127.0.0.1", "local"):
         return await _run_subprocess(script, shell=True, timeout=300, label="Script")
+    if not _ssh_host_ok(target_host):
+        return f"Invalid host: {target_host[:80]!r}", False
     return await _run_subprocess(["ssh", target_host, script], timeout=300, label="Script")
 
 

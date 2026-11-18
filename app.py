@@ -186,10 +186,10 @@ if AUTH_ENABLED:
             # (no admin cookie available in that context). Restricted to
             # loopback clients + matching token to keep it locked down.
             try:
-                from core.middleware import INTERNAL_TOOL_HEADER, INTERNAL_TOOL_TOKEN as _ITT
+                from core.middleware import INTERNAL_TOOL_HEADER, is_internal_tool_token
                 _hdr = request.headers.get(INTERNAL_TOOL_HEADER)
                 _client_host = request.client.host if request.client else None
-                if _hdr and _hdr == _ITT and _client_host in ("127.0.0.1", "::1"):
+                if _hdr and is_internal_tool_token(_hdr) and _client_host in ("127.0.0.1", "::1"):
                     # Impersonation: when the agent's loopback call sets
                     # X-Odysseus-Owner, attribute the request to that
                     # user so notes/calendar/etc. land in their account
@@ -231,12 +231,16 @@ if AUTH_ENABLED:
                     matched_id = None
                     matched_owner = None
                     matched_scopes = []
-                    for tid, thash, owner, scopes in candidates:
-                        if _bcrypt.checkpw(raw_token.encode(), thash.encode()):
-                            matched_id = tid
-                            matched_owner = owner
-                            matched_scopes = scopes or []
-                            break
+                    def _match():
+                        for tid, thash, owner, scopes in candidates:
+                            if _bcrypt.checkpw(raw_token.encode(), thash.encode()):
+                                return tid, owner, scopes or []
+                        return None, None, []
+                    # bcrypt is ~0.2 s of CPU per candidate: off the event loop, or each bearer request (valid or
+                    # not) froze every other request, including streaming chats, for that long.
+                    matched_id, matched_owner, matched_scopes = (
+                        await _asyncio.to_thread(_match) if candidates else (None, None, [])
+                    )
                     if matched_id:
                         # Update last_used_at off the hot path. Doing it
                         # inline used to keep the request open across an
@@ -283,8 +287,43 @@ if AUTH_ENABLED:
 
     app.add_middleware(AuthMiddleware)
     logger.info("Auth middleware enabled (AUTH_ENABLED=true)")
+    if LOCALHOST_BYPASS:
+        # Behind a reverse proxy / Tailscale serve on this host EVERY caller arrives from 127.0.0.1, so this switch
+        # turns authentication off for the whole internet-facing side. Make that impossible to miss.
+        logger.warning(
+            "LOCALHOST_BYPASS=true: every request from 127.0.0.1/::1 skips authentication. If anything proxies to "
+            "this server from the same machine (nginx, Caddy, Tailscale serve/funnel), auth is effectively OFF."
+        )
 else:
     logger.info("Auth middleware disabled (set AUTH_ENABLED=true to enable)")
+
+
+# ========= CSRF (Origin check on cookie-authenticated writes; core/csrf.py) =========
+from core import csrf as _csrf
+
+
+class _CsrfOriginMiddleware(_BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if _csrf.enabled() and not _csrf.request_allowed(
+            request.method, request.headers, SESSION_COOKIE in request.cookies
+        ):
+            origin = (request.headers.get("origin") or request.headers.get("referer") or "")[:200]
+            logger.warning("CSRF guard refused %s %s from origin %r", request.method, request.url.path, origin)
+            try:
+                from src.foundation import audit as _audit_log
+                _audit_log.append("security.csrf_refused", method=request.method, path=request.url.path[:200],
+                                  origin=origin)
+            except Exception:
+                pass
+            return JSONResponse(
+                status_code=403,
+                content={"error": "Cross-origin request refused. If this is your own setup behind a proxy, add its "
+                                  "URL to ALLOWED_ORIGINS (or set AURIX_CSRF_ORIGIN_CHECK=0)."},
+            )
+        return await call_next(request)
+
+
+app.add_middleware(_CsrfOriginMiddleware)
 
 # ========= STATIC FILES =========
 os.makedirs(STATIC_DIR, exist_ok=True)
