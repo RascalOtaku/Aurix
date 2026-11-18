@@ -1,12 +1,14 @@
 """Authentication routes — login, logout, signup, status, user management."""
 
+import asyncio
+
 from fastapi import APIRouter, Request, Response, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import logging
 import os
 
-from core.auth import AuthManager
+from core.auth import AuthManager, valid_username
 from src.rate_limiter import RateLimiter
 from src.settings import (
     load_settings as _load_settings,
@@ -66,12 +68,36 @@ class RenameUserRequest(BaseModel):
 
 
 SESSION_COOKIE = "odysseus_session"
+_USERNAME_RULE = "Username must be 1-64 characters: letters, digits, '.', '_', '-' or '@', not starting with '-' or '.'"
 
 
 def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
     router = APIRouter(prefix="/api/auth", tags=["auth"])
 
     _login_limiter = RateLimiter(max_requests=15, window_seconds=60)
+    # Per-ACCOUNT failure budget, on top of the per-IP one. Behind a reverse proxy or Tailscale every caller has the same
+    # client IP, so the IP limit alone let one attacker spread guesses (or lock out the owner) freely, and TOTP's
+    # ~1M codes were limited only by that shared bucket. Only FAILURES count, and a success resets the account.
+    # The lockout is short on purpose: an attacker can still delay the owner by LOGIN_FAIL_WINDOW_S, never longer.
+    _LOGIN_FAILS = int(os.getenv("AURIX_LOGIN_MAX_FAILS", "10"))
+    _TOTP_FAILS = int(os.getenv("AURIX_TOTP_MAX_FAILS", "5"))
+    _FAIL_WINDOW_S = int(os.getenv("AURIX_LOGIN_FAIL_WINDOW_S", "300"))
+    _pw_fail_limiter = RateLimiter(max_requests=max(1, _LOGIN_FAILS), window_seconds=_FAIL_WINDOW_S)
+    _totp_fail_limiter = RateLimiter(max_requests=max(1, _TOTP_FAILS), window_seconds=_FAIL_WINDOW_S)
+
+    def _audit(event: str, **fields):
+        try:
+            from src.foundation import audit as _audit_log
+            _audit_log.append(event, **fields)
+        except Exception:
+            logger.debug("audit append failed for %s", event, exc_info=True)
+
+    def _note_failure(limiter: RateLimiter, kind: str, username: str, request: Request):
+        limiter.hit(username)
+        if limiter.blocked(username):
+            logger.warning("Login for '%s' paused after repeated %s failures", username, kind)
+            _audit("auth.login_locked", username=username, kind=kind, window_s=_FAIL_WINDOW_S)
+
     _signup_limiter = RateLimiter(max_requests=3, window_seconds=300)
     _setup_limiter = RateLimiter(max_requests=3, window_seconds=300)
 
@@ -88,7 +114,9 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             raise HTTPException(400, "Already configured")
         if len(body.password) < 8:
             raise HTTPException(400, "Password must be at least 8 characters")
-        ok = auth_manager.setup(body.username, body.password)
+        if not valid_username(body.username):
+            raise HTTPException(400, _USERNAME_RULE)
+        ok = await asyncio.to_thread(auth_manager.setup, body.username, body.password)
         if not ok:
             raise HTTPException(500, "Setup failed")
         return {"ok": True, "message": "Admin account created"}
@@ -104,9 +132,9 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             raise HTTPException(403, "Registration is disabled. Ask an admin for an account.")
         if len(body.password) < 8:
             raise HTTPException(400, "Password must be at least 8 characters")
-        if len(body.username.strip()) < 1:
-            raise HTTPException(400, "Username is required")
-        ok = auth_manager.create_user(body.username, body.password, is_admin=False)
+        if not valid_username(body.username):
+            raise HTTPException(400, _USERNAME_RULE)
+        ok = await asyncio.to_thread(auth_manager.create_user, body.username, body.password, False)
         if not ok:
             raise HTTPException(409, "Username already taken")
         return {"ok": True, "message": "Account created"}
@@ -115,19 +143,26 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
     async def login(body: LoginRequest, request: Request, response: Response):
         if not _login_limiter.check(request.client.host):
             raise HTTPException(429, "Too many requests — try again later")
-        # Verify password first
-        username = body.username.strip().lower()
-        if not auth_manager.verify_password(username, body.password):
+        # Verify password first. bcrypt takes ~0.2 s of CPU: run it off the event loop, or every login attempt (and
+        # every brute-force try) stalls all other requests for that long.
+        username = body.username.strip().lower()[:256]  # bounded: it is also a rate-limiter key
+        if _pw_fail_limiter.blocked(username) or _totp_fail_limiter.blocked(username):
+            raise HTTPException(429, "Too many failed sign-ins for this account — try again in a few minutes")
+        if not await asyncio.to_thread(auth_manager.verify_password, username, body.password):
+            _note_failure(_pw_fail_limiter, "password", username, request)
             raise HTTPException(401, "Invalid credentials")
         # Check 2FA if enabled
         if auth_manager.totp_enabled(username):
             if not body.totp_code:
                 # Password OK but need TOTP — tell client to show code input
                 return {"ok": False, "requires_totp": True, "username": username}
-            if not auth_manager.totp_verify(username, body.totp_code):
+            if not await asyncio.to_thread(auth_manager.totp_verify, username, body.totp_code):
+                _note_failure(_totp_fail_limiter, "2fa", username, request)
                 raise HTTPException(401, "Invalid 2FA code")
-        # All checks passed — create session
-        token = auth_manager.create_session(username, body.password)
+        _pw_fail_limiter.reset(username)
+        _totp_fail_limiter.reset(username)
+        # All checks passed — create session (the password was verified above; don't pay bcrypt twice)
+        token = auth_manager.create_session_trusted(username)
         if not token:
             raise HTTPException(401, "Invalid credentials")
         cookie_kwargs = dict(
@@ -175,9 +210,13 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             raise HTTPException(401, "Not authenticated")
         if len(body.new_password) < 8:
             raise HTTPException(400, "Password must be at least 8 characters")
-        ok = auth_manager.change_password(user, body.current_password, body.new_password)
+        ok = await asyncio.to_thread(
+            auth_manager.change_password, user, body.current_password, body.new_password,
+            request.cookies.get(SESSION_COOKIE),
+        )
         if not ok:
             raise HTTPException(400, "Current password is incorrect")
+        _audit("auth.password_changed", username=user, other_sessions_revoked=True)
         return {"ok": True}
 
     # ------------------------------------------------------------------
@@ -213,9 +252,11 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         user = _get_current_user(request)
         if not user:
             raise HTTPException(401, "Not authenticated")
-        if not auth_manager.totp_confirm_enable(user, body.code):
+        # The returned plain-text codes are shown once; auth.json keeps only their hashes.
+        backup = await asyncio.to_thread(auth_manager.totp_confirm_enable, user, body.code)
+        if not backup:
             raise HTTPException(400, "Invalid code — try again")
-        backup = auth_manager.users.get(user, {}).get("totp_backup_codes", [])
+        _audit("auth.2fa_enabled", username=user)
         return {"ok": True, "backup_codes": backup}
 
     class TotpDisableRequest(BaseModel):
@@ -227,8 +268,9 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
         user = _get_current_user(request)
         if not user:
             raise HTTPException(401, "Not authenticated")
-        if not auth_manager.totp_disable(user, body.password):
+        if not await asyncio.to_thread(auth_manager.totp_disable, user, body.password):
             raise HTTPException(400, "Invalid password")
+        _audit("auth.2fa_disabled", username=user)
         return {"ok": True}
 
     @router.get("/2fa/status")
@@ -254,7 +296,9 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             raise HTTPException(403, "Admin only")
         if len(body.password) < 8:
             raise HTTPException(400, "Password must be at least 8 characters")
-        ok = auth_manager.create_user(body.username, body.password, body.is_admin)
+        if not valid_username(body.username):
+            raise HTTPException(400, _USERNAME_RULE)
+        ok = await asyncio.to_thread(auth_manager.create_user, body.username, body.password, body.is_admin)
         if not ok:
             raise HTTPException(409, "Username already taken")
         return {"ok": True}
@@ -277,8 +321,8 @@ def setup_auth_routes(auth_manager: AuthManager) -> APIRouter:
             raise HTTPException(403, "Admin only")
         old_username = (username or "").strip().lower()
         new_username = (body.username or "").strip().lower()
-        if not new_username:
-            raise HTTPException(400, "Username required")
+        if not valid_username(new_username):
+            raise HTTPException(400, _USERNAME_RULE)
         if old_username == new_username:
             return {"ok": True, "username": new_username, "renamed_self": old_username == user}
         if old_username not in auth_manager.users:

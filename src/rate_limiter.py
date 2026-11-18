@@ -38,6 +38,27 @@ class RateLimiter:
             self._log[key] = timestamps
             return True
 
+    def blocked(self, key: str) -> bool:
+        """True if `key` is at its limit, WITHOUT recording a request. Pair with `hit()` to count only failures
+        (failed logins), so a legitimate user's successful requests never use up the budget."""
+        now = time.monotonic()
+        with self._lock:
+            self._maybe_cleanup(now)
+            cutoff = now - self.window
+            timestamps = [t for t in self._log.get(key, []) if t > cutoff]
+            self._log[key] = timestamps
+            return len(timestamps) >= self.max_requests
+
+    def hit(self, key: str) -> None:
+        """Record one event for `key` (see `blocked`)."""
+        now = time.monotonic()
+        with self._lock:
+            self._log.setdefault(key, []).append(now)
+
+    def reset(self, key: str) -> None:
+        with self._lock:
+            self._log.pop(key, None)
+
     def _maybe_cleanup(self, now: float) -> None:
         """Periodically purge stale entries."""
         if now - self._last_cleanup < self._cleanup_interval:

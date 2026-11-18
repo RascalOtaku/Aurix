@@ -10,16 +10,25 @@ import logging
 import os
 import shutil
 import asyncio
+import re
 from pathlib import Path
 from datetime import datetime
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+from core.atomic_io import atomic_write_text
 from core.middleware import require_admin
 
 logger = logging.getLogger(__name__)
 
 VAULT_FILE = Path("data/vault.json")
+BW_TIMEOUT_S = 60
+# The master password reaches bw through this environment variable (`--passwordenv`), never argv: a command-line
+# argument is readable by every local user in the process list (ps, /proc/<pid>/cmdline) for as long as bw runs.
+_BW_PASSWORD_ENV = "AURIX_BW_MASTER_PASSWORD"
+# Not starting with "-", so an email can never be read by bw as an option.
+_EMAIL_RE = re.compile(r"^[^\s@-][^\s@]*@[^\s@]+$")
+_SERVER_URL_RE = re.compile(r"^https?://\S+$")
 
 
 def _find_bw() -> str:
@@ -54,19 +63,18 @@ def _load_config() -> dict:
 
 
 def _save_config(cfg: dict):
-    VAULT_FILE.parent.mkdir(parents=True, exist_ok=True)
-    VAULT_FILE.write_text(json.dumps(cfg, indent=2))
-    try:
-        os.chmod(str(VAULT_FILE), 0o600)
-    except Exception:
-        pass
+    # Holds the live BW_SESSION key: created owner-only (no world-readable window before a chmod) and written
+    # atomically (a crash mid-write no longer leaves a truncated file that then silently loads as {}).
+    atomic_write_text(str(VAULT_FILE), json.dumps(cfg, indent=2), mode=0o600)
 
 
-async def _run_bw(args: list, session: str = None, input_text: str = None) -> tuple:
+async def _run_bw(args: list, session: str = None, input_text: str = None, password: str = None) -> tuple:
     env = {}
     env.update(os.environ)
     if session:
         env["BW_SESSION"] = session
+    if password is not None:
+        env[_BW_PASSWORD_ENV] = password
     bw_path = _find_bw()
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -81,7 +89,17 @@ async def _run_bw(args: list, session: str = None, input_text: str = None) -> tu
     except Exception as e:
         return "", f"Failed to launch bw: {e}", 1
     try:
-        stdout, stderr = await proc.communicate(input=input_text.encode() if input_text else None)
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(input=input_text.encode() if input_text else None), timeout=BW_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        # bw waiting on an interactive prompt (2FA, a new-device check) used to hang the request forever.
+        try:
+            proc.kill()
+            await proc.wait()
+        except ProcessLookupError:
+            pass
+        return "", f"bw did not answer within {BW_TIMEOUT_S}s", 1
     except Exception as e:
         return "", f"bw subprocess error: {e}", 1
     return stdout.decode(errors="replace").strip(), stderr.decode(errors="replace").strip(), proc.returncode
@@ -124,6 +142,10 @@ def setup_vault_routes():
         cfg = _load_config()
         cfg["server_url"] = req.server_url.strip().rstrip("/")
         cfg["email"] = req.email.strip()
+        if cfg["server_url"] and not _SERVER_URL_RE.match(cfg["server_url"]):
+            return {"ok": False, "error": "Server URL must start with http:// or https://"}
+        if cfg["email"] and not _EMAIL_RE.match(cfg["email"]):
+            return {"ok": False, "error": "Invalid email address"}
 
         if cfg["server_url"]:
             _, stderr, rc = await _run_bw(["config", "server", cfg["server_url"]])
@@ -137,14 +159,17 @@ def setup_vault_routes():
     async def login(req: VaultLoginRequest, request: Request):
         """Log in to Vaultwarden (required once per account)."""
         require_admin(request)
+        email = (req.email or "").strip()
+        if not _EMAIL_RE.match(email):
+            return {"ok": False, "error": "Invalid email address"}
         cfg = _load_config()
         # Update email
-        cfg["email"] = req.email
+        cfg["email"] = email
         _save_config(cfg)
 
         stdout, stderr, rc = await _run_bw(
-            ["login", req.email, "--raw"],
-            input_text=req.master_password + "\n",
+            ["login", email, "--passwordenv", _BW_PASSWORD_ENV, "--raw"],
+            password=req.master_password,
         )
         if rc != 0:
             # Already logged in is OK
@@ -163,7 +188,8 @@ def setup_vault_routes():
         """Unlock the vault and save the session key."""
         require_admin(request)
         stdout, stderr, rc = await _run_bw(
-            ["unlock", req.master_password, "--raw"],
+            ["unlock", "--passwordenv", _BW_PASSWORD_ENV, "--raw"],
+            password=req.master_password,
         )
         if rc != 0:
             return {"ok": False, "error": f"Unlock failed: {stderr[:300]}"}

@@ -50,7 +50,8 @@ def require_privilege(request: Request, key: str) -> str:
     try:
         privs = auth_mgr.get_privileges(user) or {}
     except Exception:
-        return user
+        # Fail closed (AGENTS.md section 5): a broken privilege lookup must not grant the privilege.
+        raise HTTPException(403, "Could not check your account's permissions.")
     # True = permitted; missing key defaults to permitted (unknown privileges
     # fail open — the UI gates display-side).
     if not privs.get(key, True):

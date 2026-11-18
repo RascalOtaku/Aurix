@@ -229,7 +229,9 @@ def setup_webhook_routes(
             except Exception:
                 _tok_user = None
             _sess_owner = getattr(sess, "owner", None)
-            if _tok_user and _sess_owner and _sess_owner != _tok_user:
+            # Fail closed: an owner-less session (or a token with no known owner) is not resumable by a token. The old
+            # check skipped itself whenever either side was empty, so any token could read and extend those chats.
+            if not _tok_user or _sess_owner != _tok_user:
                 raise HTTPException(404, "Session not found")
 
         # --- Case 2: Direct API key + model (no pre-configured endpoint needed) ---
@@ -239,6 +241,14 @@ def setup_webhook_routes(
 
             # Resolve base_url: explicit > provider name > model prefix auto-detect
             base_url = body.base_url.strip().rstrip("/") if body.base_url else None
+            if base_url:
+                # SSRF: a chat-scoped token must not make this server POST to loopback / LAN / cloud-metadata
+                # addresses and hand back the body as the "reply". Local models belong in a configured endpoint
+                # (Case 3), which an admin set up.
+                try:
+                    await asyncio.to_thread(validate_webhook_url, base_url)  # resolves DNS: keep it off the loop
+                except ValueError as e:
+                    raise HTTPException(400, f"base_url rejected: {e}")
             if not base_url:
                 base_url = _resolve_base_url(model, body.provider)
             if not base_url:

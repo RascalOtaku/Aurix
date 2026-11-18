@@ -17,6 +17,11 @@ INTERNAL_TOOL_TOKEN = os.environ.get("ODYSSEUS_INTERNAL_TOKEN") or secrets.token
 INTERNAL_TOOL_HEADER = "X-Odysseus-Internal-Token"
 
 
+def is_internal_tool_token(value) -> bool:
+    """Constant-time check of a presented internal-tool token (a plain == leaks how many leading characters match)."""
+    return bool(value) and secrets.compare_digest(str(value).encode(), INTERNAL_TOOL_TOKEN.encode())
+
+
 def require_admin(request: Request):
     """Raise 403 if the current user isn't an admin.
     Allows access when auth is explicitly disabled, or when the request carries
@@ -27,7 +32,7 @@ def require_admin(request: Request):
     # (b) the auth middleware already validated the token and stamped
     #     request.state.current_user = "internal-tool".
     try:
-        if request.headers.get(INTERNAL_TOOL_HEADER) == INTERNAL_TOOL_TOKEN:
+        if is_internal_tool_token(request.headers.get(INTERNAL_TOOL_HEADER)):
             return
         if getattr(request.state, "current_user", None) == "internal-tool":
             return

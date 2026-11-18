@@ -25,17 +25,19 @@ def setup_upload_routes(upload_handler):
         client_ip = request.client.host if request.client else "unknown"
         out = []
         
-        # Limit concurrent uploads per IP
-        ip_upload_count = sum(
-            1 for f in files 
-            if client_ip in upload_handler.upload_rate_log and 
-            any(now > time.time() - 10 for now in upload_handler.upload_rate_log[client_ip][-len(files):])
-        )
-        
-        if ip_upload_count >= upload_handler.max_concurrent_uploads:
+        # The per-IP limit itself is enforced in save_upload (upload_rate_limit per upload_rate_window). Check the
+        # WHOLE batch against the remaining budget first: otherwise a batch that runs out half-way saved some files,
+        # then answered 429, leaving uploads the client never got ids for. (The check here used to count nothing
+        # meaningful and could never trigger as described.)
+        with upload_handler._upload_rate_lock:
+            cutoff = time.time() - upload_handler.upload_rate_window
+            recent = [t for t in upload_handler.upload_rate_log.get(client_ip, []) if t > cutoff]
+        remaining = upload_handler.upload_rate_limit - len(recent)
+        if len(files) > remaining:
             raise HTTPException(
                 status_code=429,
-                detail=f"Maximum concurrent uploads ({upload_handler.max_concurrent_uploads}) exceeded"
+                detail=(f"Upload limit: {upload_handler.upload_rate_limit} files per "
+                        f"{upload_handler.upload_rate_window}s ({max(0, remaining)} left right now)"),
             )
         
         for u in files:

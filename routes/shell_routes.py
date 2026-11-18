@@ -1,9 +1,11 @@
 """Shell routes — user-facing command execution endpoint."""
 
+from src.ssh_opts import hostkey_option as _ssh_hostkey_option
 import asyncio
 import json
 import logging
 import os
+import re
 import shlex
 import shutil
 import uuid
@@ -70,6 +72,10 @@ STREAM_TIMEOUT = 120  # default for short commands
 MAX_OUTPUT = 200_000  # truncate limit
 TMUX_LOG_DIR = Path(tempfile.gettempdir()) / "odysseus-tmux"
 PTY_UNSUPPORTED_ERROR = "pty_unsupported"
+# [user@]host or an ~/.ssh/config alias; no spaces, quotes or shell metacharacters.
+_SSH_HOST_RE = re.compile(r"^[A-Za-z0-9._@:\[\]-]{1,255}$")
+# ~/venv, /opt/venv, relative/venv ... (a leading ~ must stay unquoted for the remote shell to expand it).
+_VENV_RE = re.compile(r"^~?[A-Za-z0-9._/-]{1,512}$")
 
 
 class ShellExecRequest(BaseModel):
@@ -502,6 +508,12 @@ def setup_shell_routes() -> APIRouter:
         """
         _require_admin(request)
         import importlib, shlex, json as _json
+        # shlex.quote does not stop a host like "-oProxyCommand=..." being read by ssh as an option (a LOCAL command),
+        # and `venv` lands unquoted in the remote shell. Accept only plain host / path characters.
+        if host is not None and host != "" and (host.startswith("-") or not _SSH_HOST_RE.match(host)):
+            raise HTTPException(400, "Invalid host")
+        if venv and (venv.startswith("-") or not _VENV_RE.match(venv)):
+            raise HTTPException(400, "Invalid venv path")
         port_arg = ""
         if ssh_port and str(ssh_port).strip() not in ("", "22"):
             _port = str(ssh_port).strip()
@@ -548,7 +560,7 @@ def setup_shell_routes() -> APIRouter:
                     src = f". {act} && "
                 inner = f"{src}python3 -c {shlex.quote(py)}"
                 ssh_cmd = (
-                    f"ssh -o ConnectTimeout=6 -o StrictHostKeyChecking=no {port_arg}"
+                    f"ssh -o ConnectTimeout=6 -o {_ssh_hostkey_option()} {port_arg}"
                     f"{shlex.quote(host)} {shlex.quote(inner)}"
                 )
                 proc = await asyncio.create_subprocess_shell(
@@ -572,7 +584,7 @@ def setup_shell_routes() -> APIRouter:
                     checks.append(f"if command -v {qn} >/dev/null 2>&1; then echo {qn}=1; else echo {qn}=0; fi")
                 inner = " ; ".join(checks)
                 ssh_cmd = (
-                    f"ssh -o ConnectTimeout=6 -o StrictHostKeyChecking=no {port_arg}"
+                    f"ssh -o ConnectTimeout=6 -o {_ssh_hostkey_option()} {port_arg}"
                     f"{shlex.quote(host)} {shlex.quote(inner)}"
                 )
                 proc = await asyncio.create_subprocess_shell(
