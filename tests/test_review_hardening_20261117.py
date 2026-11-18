@@ -189,12 +189,41 @@ def test_ssh_hostkey_policy(monkeypatch):
     assert so.hostkey_option() == "StrictHostKeyChecking=accept-new"
 
 
+def _code_strings(tree):
+    """Every string literal in the module EXCEPT docstrings (text that merely talks about a flag is not a call)."""
+    import ast
+    docs = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and node.body:
+            first = node.body[0]
+            if isinstance(first, ast.Expr) and isinstance(getattr(first, "value", None), ast.Constant):
+                docs.add(id(first.value))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in docs:
+            yield node.value
+
+
 def test_no_ssh_call_disables_hostkey_checking():
+    import ast
     offenders = []
     for p in list(ROOT.glob("routes/*.py")) + list(ROOT.glob("src/**/*.py")) + list(ROOT.glob("services/**/*.py")):
-        if "StrictHostKeyChecking=no" in p.read_text(encoding="utf-8", errors="replace"):
+        try:
+            tree = ast.parse(p.read_text(encoding="utf-8", errors="replace"))
+        except SyntaxError:
+            continue
+        if any("StrictHostKeyChecking=no" in s for s in _code_strings(tree)):
             offenders.append(str(p.relative_to(ROOT)))
     assert offenders == [], offenders
+
+
+def test_hostkey_scan_ignores_docstrings_but_sees_code():
+    import ast
+    doc_only = ast.parse('"""Never use `ssh -o StrictHostKeyChecking=no`."""\nx = 1\n')
+    in_code = ast.parse('cmd = f"ssh -o StrictHostKeyChecking=no {h}"\n')
+    as_arg = ast.parse('argv = ["ssh", "-o", "StrictHostKeyChecking=no", h]\n')
+    assert not any("StrictHostKeyChecking=no" in s for s in _code_strings(doc_only))
+    assert any("StrictHostKeyChecking=no" in s for s in _code_strings(in_code))
+    assert any("StrictHostKeyChecking=no" in s for s in _code_strings(as_arg))
 
 
 class _H(dict):
