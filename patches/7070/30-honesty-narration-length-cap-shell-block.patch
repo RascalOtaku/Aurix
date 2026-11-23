@@ -1,0 +1,77 @@
+# Patch 30 — src/foundation/honesty.py: a long plan that shows a shell command is withheld as "narration" (2026-11-22)
+#
+# WHAT: honesty.py (new 2026-11-21) withholds a reply that only describes an action when the owner asked for one
+# (acting=True) and no tool ran. narrated_only() treats a shell code block as narration with NO length limit:
+#
+#     def narrated_only(text: str) -> bool:
+#         t = text or ""
+#         return bool(_NARRATE_BLOCK.search(t)) or (len(t) <= NARRATION_LIMIT and bool(_NARRATE_SHORT.search(t)))
+#
+# The short-phrase branch is capped at NARRATION_LIMIT (700) but the shell-block branch is not — so ANY reply
+# containing a ```bash block is withheld, however long it is.
+#
+# WHY IT MATTERS: the module's own stated rule is the opposite. NARRATION_LIMIT's comment says "a long answer is
+# a plan or an explanation, which IS the work for a design or research request", and its own test pins exactly
+# that principle — test_a_long_plan_and_a_reply_backed_by_tools_are_kept asserts a ~1,100-char plan is kept.
+# But that plan fixture contains no code block, so the test never exercises the block branch: a long design or
+# research answer that illustrates one step with a shell command (the normal way to write a plan) is withheld
+# whole and replaced with "Not done: my first reply only described the steps" — hiding a legitimate answer
+# the owner asked for, and telling him to re-ask as "task: ...". The 29%-narration measurement the module was
+# built on was short replies ("here are the commands" + a block); nothing in it justifies withholding long ones.
+#
+# FIX: apply the same NARRATION_LIMIT to both branches — a shell block counts as narration only while the reply
+# is short. Short replies with a block are still withheld exactly as before, and the long-plan test still passes.
+# The NARRATION_LIMIT comment is corrected to match (it previously read "only short narration and shell blocks
+# are withheld", which described the buggy behaviour, not the rule).
+#
+# VERIFIED HERE (verbatim gate-read copy of src/foundation/honesty.py, this VM, stdlib only):
+#   * unpatched copy: honesty.check(PLAN_WITH_BLOCK, [], acting=True) returns NOT_ACTED — a 1,361-char plan
+#     with one ```bash block is withheld. (PLAN_WITH_BLOCK = the test file's own PLAN fixture + one short
+#     ```bash block.)
+#   * patched copy: the same call returns the plan unchanged; SHELL and SHORT are still withheld when
+#     acting=True and no tool ran; PLAN (no block) is still kept; acting=False keeps everything; a reply
+#     backed by tools still keeps its receipt line. The existing test file's Narration cases pass unchanged
+#     against the patched copy (run here with the fixtures copied verbatim from tests/test_frontdoor_context.py).
+#   * this diff applies cleanly (patch -p1 --dry-run) to the verbatim copies of both files.
+# NOT VERIFIED HERE: the wiring that calls honesty.check() with acting=True lives in services/telegram/listener.py
+# past the gate read's 200-line cap, so the live call site was not re-read in this run; the bug is real in the
+# module as it stands, wired or not.
+# After applying, the applying lane should re-run via the gate:
+#     gate tests tests/test_frontdoor_context.py
+# and expect 6 passed (the new long-plan-with-block assertion is included in this patch).
+#
+--- a/src/foundation/honesty.py
++++ b/src/foundation/honesty.py
+@@ -35,5 +35,5 @@
+ _NARRATE_BLOCK = re.compile(r"```\s*(?:bash|sh|shell|powershell|ps1|cmd|bat)\b", re.I)
+ _NARRATE_SHORT = re.compile(r"\b(?:let'?s|i'?ll|i\s+will|first,?\s+(?:let'?s|i'?ll))\s+(?:start|begin|open|launch|install|run|restart|connect|check|fix|try|create|set\s+up)\b|\bhere\s+(?:are|is)\s+the\s+(?:commands?|steps?)\b", re.I)
+-NARRATION_LIMIT = 700          # a long answer is a plan or an explanation, which IS the work for a design or research request: only short narration and shell blocks are withheld
++NARRATION_LIMIT = 700          # a long answer is a plan or an explanation, which IS the work for a design or research request: only short narration is withheld
+ NOT_ACTED = ("\u274c Not done: my first reply only described the steps (it ran nothing), so I withheld it. If a background task was opened for your request (you would have seen \"On it\"), that is doing the real work "
+              "and will report back when it is actually done. Say \"task: <what you want>\" to start one.")
+@@ -42,3 +42,3 @@
+ def narrated_only(text: str) -> bool:
+     t = text or ""
+-    return bool(_NARRATE_BLOCK.search(t)) or (len(t) <= NARRATION_LIMIT and bool(_NARRATE_SHORT.search(t)))
++    return len(t) <= NARRATION_LIMIT and (bool(_NARRATE_BLOCK.search(t)) or bool(_NARRATE_SHORT.search(t)))
+--- a/tests/test_frontdoor_context.py
++++ b/tests/test_frontdoor_context.py
+@@ -9,16 +9,18 @@
+ SHELL = "Sure, let's check the PC. ```bash top -bn1 | grep Cpu``` Then I'll look at memory."
+ SHORT = "Sure, let's start by opening Blender and creating a new document."
+ PLAN = ("Here is the design for your build. " + "The battery pack should be 48 V and 20 Ah with a certified cell and a protection board. " * 14 + "Let's start by choosing the motor.")
++PLAN_WITH_BLOCK = PLAN + " For reference, the check is ```bash top -bn1 | grep Cpu```."
+ 
+ 
+ class Narration(unittest.TestCase):
+     def test_narrated_action_with_no_tool_is_withheld_only_when_an_action_was_asked(self):
+         for t in (SHELL, SHORT):
+             self.assertEqual(honesty.check(t, [], acting=True), honesty.NOT_ACTED)
+             self.assertEqual(honesty.check(t, [], acting=False), t)                         # a plain chat message keeps its reply
+ 
+     def test_a_long_plan_and_a_reply_backed_by_tools_are_kept(self):
+         self.assertEqual(honesty.check(PLAN, [], acting=True), PLAN)                        # a design or research answer IS the work
++        self.assertEqual(honesty.check(PLAN_WITH_BLOCK, [], acting=True), PLAN_WITH_BLOCK)  # still the work when the plan shows one command
+         out = honesty.check(SHORT, [{"tool": "bash", "exit_code": 0, "output": "ok"}], acting=True)
+         self.assertIn(SHORT, out)
+         self.assertIn("Ran:", out)
