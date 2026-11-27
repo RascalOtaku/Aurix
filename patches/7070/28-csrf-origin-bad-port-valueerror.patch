@@ -1,0 +1,75 @@
+# Patch 28 — core/csrf.py: _origin_of() raises ValueError on a malformed port instead of refusing the origin (2026-11-18)
+#
+# WHAT: core/csrf.py is new in commit 272cf270 ("fix(security): review
+# hardening - sessions, 2FA, CSRF, vault, SSH, SSRF"). _origin_of() guards
+# the urlsplit() call with try/except ValueError, but the .port access
+# sits OUTSIDE that try:
+#
+#     try:
+#         parts = urlsplit((url or "").strip())
+#     except ValueError:
+#         return None
+#     ...
+#     port = parts.port          # <- raises ValueError here
+#
+# Verified against CPython 3.12's urllib.parse (this VM, stdlib only):
+#   urlsplit("http://host:99999/").port  -> ValueError: Port out of range 0-65535
+#   urlsplit("http://host:abc/").port    -> ValueError: Port could not be cast to integer value as 'abc'
+#   urlsplit("http://example.com:80:80/").port -> ValueError: Port could not be cast to integer value as '80:80'
+#   urlsplit("http://host:65536/").port  -> ValueError: Port out of range 0-65535
+# while urlsplit() itself raises for the bracket cases ("http://[::1",
+# "http://[256.256.256.256]/"), so those are already covered — .port is
+# the only accessor that escapes.
+#
+# WHY IT MATTERS: request_allowed() calls _origin_of(raw) with the
+# request's Origin (or Referer) header — fully attacker-controlled — and
+# does not catch ValueError. A forged cross-origin POST with an
+# out-of-range port therefore raises out of the CSRF check instead of
+# being refused: a 500 on a state-changing, cookie-authenticated request
+# (fail-closed, not a bypass — the request does not proceed — but an
+# unhandled exception in a security boundary, and log noise an attacker
+# can generate at will). Worse, the same hole sits in trusted_origins(),
+# which runs _origin_of() over ALLOWED_ORIGINS / AURIX_PUBLIC_URL: a bad
+# port in either env var makes EVERY state-changing cookie request raise
+# (all admin POSTs 500 until the env is fixed).
+#
+# FIX: catch ValueError around parts.port and return None (untrustworthy
+# origin -> refused by the caller). No behaviour change for any valid
+# origin: a refused origin was never going to match a trusted host.
+#
+# VERIFIED HERE (verbatim gate-read copy of core/csrf.py):
+#   * unpatched copy: request_allowed("POST", {"origin":
+#     "http://evil:99999", "host": "box:8000"}, True) raises ValueError.
+#   * patched copy: same call returns False (refused), no exception.
+#     "http://host:abc" and "http://example.com:80:80" likewise False.
+#   * patched copy, still allowed: Origin "http://box:8000" with Host
+#     "box:8000" -> True; Origin "https://box" with Host "box" -> True;
+#     no Origin/Referer at all -> True (documented script rule);
+#     Origin "null" -> False; Origin "http://other:8000" with Host
+#     "box:8000" -> False.
+#   * this diff applies cleanly (patch -p1 --dry-run) to the verbatim copy.
+# NOT VERIFIED HERE: whether core/csrf.py is actually wired into a
+# middleware yet — no test file pins it (no tests/test_csrf.py) and the
+# call site is past the gate read's 200-line cap, so wiring is an open
+# item for the applying lane to confirm. The bug is real in the module
+# as it stands, wired or not.
+# After applying, the applying lane should re-run via the gate:
+#     gate tests tests/test_review_hardening_20261117.py
+# and expect 35 passed, plus add a CSRF test pinning the bad-port case.
+#
+--- a/core/csrf.py
++++ b/core/csrf.py
+@@ -42,6 +42,12 @@ def _origin_of(url: str) -> Optional[str]:
+     host = parts.hostname.lower()
+     if ":" in host:  # IPv6 literal
+         host = f"[{host}]"
+-    port = parts.port
++    try:
++        port = parts.port
++    except ValueError:
++        # Out-of-range, non-numeric or double-colon port (e.g. an Origin
++        # of "http://host:99999"): not a trustworthy origin. Refuse it
++        # instead of letting the exception escape the CSRF check.
++        return None
+     default = 443 if parts.scheme == "https" else 80
+     return f"{parts.scheme}://{host}" + (f":{port}" if port and port != default else "")
