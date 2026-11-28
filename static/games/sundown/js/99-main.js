@@ -18,9 +18,20 @@
     g.fillStyle = '#ff9a3c'; g.fillRect(SD.W / 2 - 100, SD.H / 2, Math.round(200 * p), 6);
   };
   loading(0);
-  const manifest = window.SD_ASSETS || null;
-  if (!manifest) console.warn('Sundown: assets/manifest.js not found. Build it with games/sundown/tools/build_assets.py; drawing placeholder blocks.');
-  SD.assets.load(manifest, loading).then(() => {
+  // The manifest is built locally (it is git-ignored), so load it here rather than from a static script tag;
+  // when it is missing the game still boots and draws placeholder blocks.
+  const loadManifest = () => new Promise(done => {
+    if (window.SD_ASSETS) return done(window.SD_ASSETS);
+    const tag = document.createElement('script');
+    tag.src = 'assets/manifest.js';
+    tag.onload = () => done(window.SD_ASSETS || null);
+    tag.onerror = () => done(null);
+    document.head.appendChild(tag);
+  });
+  loadManifest().then(manifest => {
+    if (!manifest) console.warn('Sundown: assets/manifest.js not found. Build it with games/sundown/tools/build_assets.py; drawing placeholder blocks.');
+    return SD.assets.load(manifest, loading);
+  }).then(() => {
     SD.Game.init();
     let last = performance.now();
     const tick = now => {
