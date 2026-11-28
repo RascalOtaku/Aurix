@@ -120,15 +120,23 @@ SD.World.prototype = {
 
   /* ---------- spawns ---------- */
   spawnPoint(rng, px, py, rift) {
-    const pts = [[20, (this.street.y0 + this.street.y1) / 2], [this.w - 20, (this.street.y0 + this.street.y1) / 2], [this.mine.x, this.mine.y + 30],
-      [80, 900], [this.w - 80, 900], [700, 60], [this.w / 2, this.h - 30], [60, 300], [this.w - 60, 320]];
-    let best = null, tries = 0;
-    while (tries++ < 12) {
-      const p = rift && rng.chance(0.35) ? [this.mine.x + rng.range(-60, 60), this.mine.y + rng.range(20, 60)] : rng.pick(pts);
-      if (SD.dist(p[0], p[1], px, py) > 260) { best = p; break; }
-      best = p;
+    const pts = [[30, (this.street.y0 + this.street.y1) / 2], [this.w - 30, (this.street.y0 + this.street.y1) / 2], [this.mine.x, this.mine.y + 40],
+      [90, 900], [this.w - 90, 900], [700, 70], [this.w / 2, this.h - 70], [70, 300], [this.w - 70, 320]];
+    let best = null;
+    for (let tries = 0; tries < 24; tries++) {
+      const c = rift && rng.chance(0.35) ? [this.mine.x + rng.range(-60, 60), this.mine.y + rng.range(30, 70)] : rng.pick(pts);
+      const q = { x: c[0] + rng.range(-20, 20), y: c[1] + rng.range(-16, 16), r: 10 };
+      this.pushOut(q);
+      if (!this.reachable(q.x, q.y)) continue;       // never behind a fence or inside a prop
+      best = q;
+      if (SD.dist(q.x, q.y, px, py) > 260) break;
     }
-    return { x: best[0] + rng.range(-20, 20), y: best[1] + rng.range(-20, 20) };
+    return best || { x: this.w - 30, y: (this.street.y0 + this.street.y1) / 2 };
+  },
+  reachable(x, y) { // can something standing here walk to the player? (uses the last flow field)
+    const N = this.nav; if (N.tx < 0) return true;
+    const i = SD.clamp(Math.floor(x / 16), 0, N.cols - 1), j = SD.clamp(Math.floor(y / 16), 0, N.rows - 1);
+    return N.dist[j * N.cols + i] >= 0;
   },
 
   /* ---------- the rift ---------- */

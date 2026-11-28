@@ -187,7 +187,7 @@ SD.Run.prototype = {
   },
   firePlayer(ang, mult) {
     const R = this, p = R.p, w = SD.WEAPONS[p.cur];
-    p.ammo[p.cur]--; p.fireT = w.rof; R.shots++;
+    p.ammo[p.cur]--; p.fireT = w.rof; R.shots += w.pellets;
     const mx = p.x + Math.cos(ang) * 12, my = p.y + Math.sin(ang) * 12;
     for (let i = 0; i < w.pellets; i++) {
       const a = ang + SD.rng.range(-w.spread, w.spread) * (w.pellets > 1 ? 1 : (p.moving ? 1.6 : 1));
@@ -247,6 +247,9 @@ SD.Run.prototype = {
       if (!d.fly && !d.static) W.pushOut(e); else { e.x = SD.clamp(e.x, 20, W.w - 20); e.y = SD.clamp(e.y, 60, W.h - 20); }
       if (Math.hypot(e.vx, e.vy) > 8) e.walk += dt * spd / 9;
       if (!d.static) e.dir = SD.dir8(e.face != null ? e.face : toP);
+      // anti-stuck: anything that has not seen the player for a long while comes back in from a fresh spot
+      if (!los && !e.boss && e.spawnT <= 0) { e.lostT = (e.lostT || 0) + dt; if (e.lostT > (d.static ? 10 : 16)) { const sp = W.spawnPoint(SD.rng, p.x, p.y, R.isRift()); e.x = sp.x; e.y = sp.y; e.lostT = 0; e.spawnT = 0.6; R.emit('teleport', e, e.x, e.y); } }
+      else e.lostT = 0;
       // contact damage
       if (dist < e.r + p.r + 2 && d.ai !== 'rusher' && !d.fly && e.spawnT <= 0) R.hurtPlayer(6, e.x, e.y);
     }
@@ -262,7 +265,7 @@ SD.Run.prototype = {
   damageEnemy(e, dmg, b, ang) {
     const R = this;
     if (e.dead || e.spawnT > 0.3) return;
-    e.hp -= dmg; e.flash = 0.09; R.hits++;
+    e.hp -= dmg; e.flash = 0.09;
     const k = (b && b.knock) || 60;
     if (!e.boss) { e.kx += Math.cos(ang) * k; e.ky += Math.sin(ang) * k; }
     R.floaters.push({ x: e.x + SD.fx.range(-6, 6), y: e.y - 44 - (e.d.lift || 0), v: Math.round(dmg), t: 0.7, crit: b && b.crit });
@@ -309,7 +312,7 @@ SD.Run.prototype = {
             if (e.dead || b.hit.includes(e.id)) continue;
             const ey = e.y - (e.d.fly ? (e.d.lift || 0) * 0.5 : 0);
             if (SD.dist2(b.x, b.y, e.x, ey) < (e.r + 4) * (e.r + 4)) {
-              b.hit.push(e.id);
+              b.hit.push(e.id); if (b.hit.length === 1) R.hits++;
               R.damageEnemy(e, b.dmg, b, Math.atan2(b.vy, b.vx));
               if (b.chain > 0) R.chainArc(e, b);
               if (b.pierce > 0) { b.pierce--; b.dmg *= 0.8; } else { b.dead = true; break; }
@@ -395,7 +398,7 @@ SD.Run.prototype = {
       if (d < radius + e.r) R.damageEnemy(e, dmg * (owner === 'e' ? 0.5 : 1) * (1 - 0.5 * d / (radius + e.r)), { knock: SD.DYNAMITE.knock }, SD.ang(x, y, e.x, e.y));
     }
     const dp = SD.dist(x, y, p.x, p.y);
-    if (dp < radius + p.r) R.hurtPlayer(Math.round((owner === 'p' ? 26 : dmg) * (1 - 0.5 * dp / (radius + p.r))), x, y);
+    if (dp < radius + p.r) R.hurtPlayer(Math.round((owner === 'p' ? 26 : owner === 'world' ? 38 : dmg) * (1 - 0.5 * dp / (radius + p.r))), x, y);
     for (const pr of R.world.props) {
       if (pr.dead || !pr.def.hp) continue;
       if (SD.dist(x, y, pr.x, pr.y) < radius + 16) { pr.hp -= dmg; pr.flash = 0.1; if (pr.hp <= 0) R.breakProp(pr); }

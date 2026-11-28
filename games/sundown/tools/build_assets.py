@@ -209,14 +209,14 @@ def build_tiles(out: Path, seed: int = 1864) -> dict:
                     d.point(p, fill=(112, 82, 54, 255))
                     d.point((p[0] + (0 if horiz else 1), p[1] + (1 if horiz else 0)), fill=(128, 94, 62, 255))
         tiles.append(r)
-    tiles.append(_noise_tile(rng, (176, 146, 102, 255), 5, [(196, 168, 124, 255)], 30))
+    tiles.append(_noise_tile(rng, (162, 126, 86, 255), 5, [(178, 144, 102, 255), (140, 106, 70, 255)], 30))
     # rift ground: dark asphalt with neon specks and a grid tile
     for i in range(2):
         tiles.append(_noise_tile(rng, (22, 20, 34, 255), 4, [(0, 240, 255, 255), (255, 46, 196, 255), (40, 36, 60, 255)], 6 + i * 4))
     grid = _noise_tile(rng, (18, 16, 30, 255), 3)
     d = ImageDraw.Draw(grid)
-    d.line([(0, 0), (T - 1, 0)], fill=(0, 200, 230, 255))
-    d.line([(0, 0), (0, T - 1)], fill=(0, 200, 230, 255))
+    d.line([(0, 0), (T - 1, 0)], fill=(0, 132, 160, 255))
+    d.line([(0, 0), (0, T - 1)], fill=(0, 132, 160, 255))
     d.point((T // 2, T // 2), fill=(255, 46, 196, 255))
     tiles.append(grid)
     plank = Image.new("RGBA", (T, T), (122, 86, 52, 255))

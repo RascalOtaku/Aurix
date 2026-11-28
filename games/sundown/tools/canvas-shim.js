@@ -6,7 +6,7 @@
 //   as #rgb/#rrggbb/rgb()/rgba().  No rotation, no text (the game draws its own bitmap font).
 'use strict';
 const fs = require('fs');
-const { PNG } = require('pngjs');
+const PNGIO = require('./png');
 
 function parseColor(s) {
   if (typeof s !== 'string') return [255, 0, 255, 1];
@@ -178,13 +178,12 @@ class Canvas {
   addEventListener() {}
   getBoundingClientRect() { return { left: 0, top: 0, width: this._w, height: this._h }; }
   toPNG(file, scale = 1) {
-    const W = this._w * scale, H = this._h * scale;
-    const png = new PNG({ width: W, height: H });
+    const W = this._w * scale, H = this._h * scale, out = new Uint8ClampedArray(W * H * 4);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const si = ((y / scale | 0) * this._w + (x / scale | 0)) * 4, di = (y * W + x) * 4;
-      png.data[di] = this.data[si]; png.data[di + 1] = this.data[si + 1]; png.data[di + 2] = this.data[si + 2]; png.data[di + 3] = 255;
+      out[di] = this.data[si]; out[di + 1] = this.data[si + 1]; out[di + 2] = this.data[si + 2]; out[di + 3] = 255;
     }
-    fs.writeFileSync(file, PNG.sync.write(png));
+    PNGIO.write(file, W, H, out);
   }
   toRGB() { // raw rgb24 for ffmpeg
     const out = Buffer.alloc(this._w * this._h * 3);
@@ -194,7 +193,7 @@ class Canvas {
 }
 
 function loadPNG(file) {
-  const png = PNG.sync.read(fs.readFileSync(file));
+  const png = PNGIO.read(file);
   return { width: png.width, height: png.height, data: png.data, complete: true, naturalWidth: png.width };
 }
 
