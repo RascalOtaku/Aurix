@@ -1,0 +1,6 @@
+{
+  "name": "sundown-tools",
+  "private": true,
+  "description": "Headless tests, balance bot and screenshots for Zero Hour: Sundown. No dependencies: Node 18+ only.",
+  "scripts": { "test": "node test.js", "bot": "node bot.js", "shots": "node shot.js" }
+}
