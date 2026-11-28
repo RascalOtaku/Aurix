@@ -113,7 +113,7 @@ def main():
         output_dir=OUTPUT_DIR,
         num_train_epochs=EPOCHS,
         per_device_train_batch_size=BATCH_SIZE,
-        gradient_accumulation_steps=GRAD_ACC,
+        gradient_accumulation_steps=GRAD_ACCUM,
         learning_rate=LEARNING_RATE,
         fp16=True,
         logging_steps=10,
