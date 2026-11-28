@@ -452,6 +452,8 @@ SD.Run.prototype = {
   },
 
   /* ===================================================================== shop */
+  // in endless the upgrades go twice as deep, so late-night bounty still has somewhere to go
+  maxOf(item) { return this.mode === 'endless' && !item.weapon && item.max < 50 ? item.max * 2 : item.max; },
   shopPrice(item) { const n = this.owned(item.id); return Math.round(item.cost * (item.max > 1 && item.max < 50 ? 1 + n * 0.5 : 1)); },
   owned(id) {
     const p = this.p;
@@ -461,7 +463,7 @@ SD.Run.prototype = {
   },
   canBuy(item) {
     if (item.rift && !this.isRift()) return 'AFTER MIDNIGHT';
-    if (this.owned(item.id) >= item.max) return 'SOLD OUT';
+    if (this.owned(item.id) >= this.maxOf(item)) return 'SOLD OUT';
     if (item.id === 'whiskey' && this.p.hp >= this.p.maxHp) return 'FULL HEALTH';
     if (this.p.money < this.shopPrice(item)) return 'NOT ENOUGH';
     return null;

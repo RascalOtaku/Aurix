@@ -1,6 +1,6 @@
 // Screenshots and a demo GIF, rendered headlessly through the real draw code.
 //   node shot.js              -> out/*.png (title, street fight, saloon, midnight rift, boss)
-//   node shot.js --gif        -> also out/demo.gif (needs ffmpeg on PATH)
+//   node shot.js --gif        -> also out/demo.gif and out/demo.mp4 (needs ffmpeg on PATH)
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -57,7 +57,7 @@ async function main() {
 
   if (args.includes('--gif')) {
     const frames = path.join(OUT, 'frames.rgb'); const fd = fs.openSync(frames, 'w'); let n = 0;
-    G.start('story'); const b2 = makeBrain(SD, { seed: 3 });
+    G.start('story'); const b2 = makeBrain(SD, { seed: 3 }); SD.input.mode = 'pad'; // no mouse crosshair: the bot aims with a stick
     G.run.p.weapons.winchester = true;
     for (let i = 0; i < 60 * 14; i++) {
       const Rn = G.run; if (G.state === 'shop') { b2.shop(Rn); G.state = 'play'; Rn.leaveShop(); }
@@ -66,10 +66,12 @@ async function main() {
       if (i % 3 === 0 && i > 60 * 2) { G.draw(); fs.writeSync(fd, canvas.toRGB()); n++; }
     }
     fs.closeSync(fd);
-    const ff = spawnSync('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', SD.W + 'x' + SD.H, '-r', '20', '-i', frames,
-      '-vf', 'scale=960:-1:flags=neighbor,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse=dither=none', path.join(OUT, 'demo.gif')], { stdio: 'inherit' });
+    const raw = ['-y', '-loglevel', 'error', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', SD.W + 'x' + SD.H, '-r', '20', '-i', frames];
+    // a small GIF for READMEs and a crisp MP4 for everything else
+    const ff = spawnSync('ffmpeg', raw.concat(['-t', '9', '-vf', 'fps=12,split[a][b];[a]palettegen=max_colors=64:stats_mode=diff[p];[b][p]paletteuse=dither=none:diff_mode=rectangle', path.join(OUT, 'demo.gif')]), { stdio: 'inherit' });
+    const mp4 = spawnSync('ffmpeg', raw.concat(['-vf', 'scale=1280:-2:flags=neighbor', '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '20', '-preset', 'slow', path.join(OUT, 'demo.mp4')]), { stdio: 'inherit' });
     fs.unlinkSync(frames);
-    console.log(ff.status === 0 ? 'wrote out/demo.gif (' + n + ' frames)' : 'ffmpeg failed');
+    console.log(ff.status === 0 && mp4.status === 0 ? 'wrote out/demo.gif and out/demo.mp4 (' + n + ' frames)' : 'ffmpeg failed');
   }
 }
 main().catch(e => { console.error(e); process.exit(1); });

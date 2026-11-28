@@ -175,6 +175,23 @@ function stateHash(R) {
     eq(G.state, 'play'); eq(R.wave, 2);
   });
 
+  await test('every sound and every song plays through a WebAudio graph without errors', () => {
+    const { FakeAudioContext } = require('./fake-audio');
+    env.sandbox.AudioContext = FakeAudioContext;
+    const A = SD.audio; A.ctx = null; A.on = false; A.unlock();
+    assert(A.on, 'audio unlocked');
+    const src = require('fs').readFileSync(require('path').join(H.GAME, 'js/04-audio.js'), 'utf8');
+    const names = [...src.matchAll(/case '([a-zA-Z]+)'/g)].map(m => m[1]);
+    assert(names.length > 30, 'found sounds');
+    for (const n of names) A.play(n, 1);
+    // every event the game wires to a sound must name one that exists
+    const used = [...require('fs').readFileSync(require('path').join(H.GAME, 'js/13-game.js'), 'utf8').matchAll(/A\.play\('([a-zA-Z]+)'/g)].map(m => m[1]);
+    for (const u of used) assert(names.includes(u), 'unknown sound ' + u);
+    for (const w of Object.values(SD.WEAPONS)) { assert(names.includes(w.sfx), 'weapon sound ' + w.sfx); if (w.after) assert(names.includes(w.after)); }
+    for (const song of Object.keys(A.SONGS)) { A.music(song); for (let k = 0; k < 64; k++) { A.ctx.currentTime += 0.05; A.tick(); } }
+    A.stopMusic(); A.on = false; A.ctx = null; delete env.sandbox.AudioContext;
+  });
+
   await test('game over saves a best score', () => {
     const G = SD.Game; G.start('endless'); G.run.score = 4321; G.finish(false);
     eq(SD.store.get('best.endless', 0), 4321); assert(G.lastResult.newBest);
