@@ -21,8 +21,10 @@ SD.Game = {
     let seed = (Date.now() & 0x7fffffff) >>> 0;
     if (mode === 'daily') { this.daily = SD.dailySeed(); seed = this.daily.seed; }
     this.quiet = false;
-    this.banner = null; this.later = []; this.pending = null; this.acc = 0;
+    this.banner = null; this.later = []; this.pending = null; this.acc = 0; this.carry = null;
     this.run = new SD.Run({ mode, seed });
+    // the constructor emits wave 1's intro before this.run is set, so the phase listener skipped it
+    SD.bus.emit('phase', this.run.phase, this.run);
     const p = this.run.p; this.cx = p.x; this.cy = p.y;
     this.hurtV = 0; this.whiteout = 0; this.lastResult = null;
     this.state = 'play';
@@ -63,10 +65,13 @@ SD.Game = {
   stepFrame(dt, inp) {
     const G = this;
     if (G.state === 'play') {
-      if (inp.pause) { G.state = 'pause'; SD.UI.openPause(G); SD.audio.play('select'); }
+      if (inp.pause) { G.state = 'pause'; G.carry = null; SD.UI.openPause(G); SD.audio.play('select'); }
       else {
+        // on displays faster than 60 Hz some frames run no step; keep their one-shot presses for the next step
+        if (G.carry) inp = G.mergePresses(G.carry, inp);
         G.acc += dt; let first = true, n = 0;
         while (G.acc >= SD.DT && n < 6) { G.run.step(first ? inp : G.held(inp)); G.updateCamera(SD.DT); first = false; G.acc -= SD.DT; n++; }
+        G.carry = n === 0 ? inp : null;
         if (n >= 6) G.acc = 0;
       }
     } else if (G.state !== 'boot') {
@@ -83,6 +88,12 @@ SD.Game = {
     const R = G.run;
     G.focusV = SD.approach(G.focusV, R && R.p.focusing ? 1 : 0, dt * 5);
     if (SD.audio.tick) SD.audio.tick();
+  },
+  mergePresses(prev, s) { // the newest snapshot, plus any one-shot press from a frame that ran no step
+    const m = Object.assign({}, s);
+    for (const k of ['reload', 'dyn', 'dash', 'interact']) m[k] = s[k] || prev[k];
+    m.slot = s.slot || prev.slot; m.swap = s.swap || prev.swap;
+    return m;
   },
   held(s) { // the same snapshot with one-shot presses removed, for extra sim steps in one frame
     const h = Object.assign({}, s);

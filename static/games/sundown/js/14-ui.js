@@ -8,9 +8,9 @@ SD.UI = {
   /* ------------------------------------------------------------------ shared */
   openTitle() { this.screen = 'title'; this.sel = 0; },
   onStart() { this.shopSel = 0; this.pauseSel = 0; },
-  openPause() { this.pauseSel = 0; },
-  openShop(G) { this.shopSel = 0; this.shopMsg = null; this.quip = (G.run.wave * 7 + 3) % this.QUIPS.length; },
-  openEnd() { this.endSel = 0; },
+  openPause() { this.prevDown = SD.input.mouse.down; this.pauseSel = 0; },
+  openShop(G) { this.prevDown = SD.input.mouse.down; this.shopSel = 0; this.shopMsg = null; this.quip = (G.run.wave * 7 + 3) % this.QUIPS.length; },
+  openEnd() { this.prevDown = SD.input.mouse.down; this.endSel = 0; },
 
   // menu navigation shared by every screen. items: [{label, act, disabled?}]
   nav(inp, count, sel) {
@@ -236,7 +236,7 @@ SD.UI = {
     R.panel(X, Y, Wd, SD.H - 20, { corner: '#ffd166', alpha: 0.9 });
     R.text(SD.fmtMoney(p.money), X + 10, Y + 8, { scale: 2, color: 'y' });
     R.text('HP ' + Math.ceil(p.hp) + '/' + p.maxHp + '   TNT ' + p.dynamite, X + Wd - 10, Y + 8, { align: 'right', color: 'w' });
-    R.text('NEXT: ' + SD.fmtClock(((Run.mode !== 'endless' || Run.wave < 10) ? (SD.WAVES[Run.wave] ? SD.WAVES[Run.wave].hour : Run.wave) : Run.wave) * 60) + '  //  WAVE ' + (Run.wave + 1), X + Wd - 10, Y + 20, { align: 'right', color: 'd' });
+    R.text('NEXT: ' + SD.fmtClock(((Run.mode !== 'endless' || Run.wave < 10) ? (SD.WAVES[Run.wave] ? SD.WAVES[Run.wave].hour : Run.wave + 1) : Run.wave + 1) * 60) + '  //  WAVE ' + (Run.wave + 1), X + Wd - 10, Y + 20, { align: 'right', color: 'd' });
     const rows = this.shopRows(Run);
     rows.forEach((r, i) => {
       const y = Y + 40 + i * 16, on = i === this.shopSel;

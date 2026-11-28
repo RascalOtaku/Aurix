@@ -168,7 +168,7 @@ SD.Run.prototype = {
       p.fanQ = p.ammo.revolver; p.fanT = 0; R.emit('fan');
     } else if (inp.fire && p.fireT <= 0 && p.reloadT <= 0) {
       if (p.ammo[p.cur] > 0) {
-        if (wpn.auto || !p._held) R.firePlayer(p.aim, 1);
+        if (wpn.auto || inp.autoFire || !p._held) R.firePlayer(p.aim, 1);
       } else if (!p._held) R.emit('empty');
     }
     p._held = inp.fire && !wpn.auto;
@@ -465,6 +465,7 @@ SD.Run.prototype = {
     if (item.rift && !this.isRift()) return 'AFTER MIDNIGHT';
     if (this.owned(item.id) >= this.maxOf(item)) return 'SOLD OUT';
     if (item.id === 'whiskey' && this.p.hp >= this.p.maxHp) return 'FULL HEALTH';
+    if (item.id === 'dynamite' && this.p.dynamite >= 9) return 'FULL';
     if (this.p.money < this.shopPrice(item)) return 'NOT ENOUGH';
     return null;
   },

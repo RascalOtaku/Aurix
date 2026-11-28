@@ -49,7 +49,7 @@ SD.audio = {
   burst(t, dur, peak, type, freq, dest, o) {
     o = o || {};
     const c = this.ctx, s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
-    s.buffer = this.noise; s.playbackRate.value = o.rate || 1;
+    s.buffer = this.noise; s.loop = true; s.playbackRate.value = o.rate || 1;
     f.type = type || 'lowpass'; f.frequency.setValueAtTime(freq, t); if (o.to) f.frequency.exponentialRampToValueAtTime(o.to, t + dur);
     f.Q.value = o.q || 0.7;
     this.env(g, t, o.a || 0.002, peak, dur);

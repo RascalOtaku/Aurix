@@ -128,7 +128,7 @@ SD.input = {
     if (this.mode === 'touch') {
       const T = this.touch;
       if (T.move) { const dx = T.move.x - T.move.ox, dy = T.move.y - T.move.oy, m = Math.hypot(dx, dy); if (m > 4) { const k = Math.min(1, m / 34) / m; s.mx = dx * k; s.my = dy * k; } }
-      if (T.aim) { const dx = T.aim.x - T.aim.ox, dy = T.aim.y - T.aim.oy; if (Math.hypot(dx, dy) > 6) { s.aimVec = { x: dx, y: dy }; s.fire = true; } }
+      if (T.aim) { const dx = T.aim.x - T.aim.ox, dy = T.aim.y - T.aim.oy; if (Math.hypot(dx, dy) > 6) { s.aimVec = { x: dx, y: dy }; s.fire = true; s.autoFire = true; } }
       s.dash = s.dash || !!P.T_dash; s.dyn = s.dyn || !!P.T_dyn; s.reload = s.reload || !!P.T_reload; s.pause = s.pause || !!P.T_pause; if (P.T_swap) s.swap = 1;
       if (P.Tap) { s.confirm = true; s.tap = this.tapAt; }
     }

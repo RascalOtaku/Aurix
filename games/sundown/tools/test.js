@@ -198,6 +198,41 @@ function stateHash(R) {
     G.start('endless'); G.run.score = 10; G.finish(false); eq(SD.store.get('best.endless', 0), 4321);
   });
 
+  await test('wave 1 opens with its banner (the intro fires before the run is assigned)', () => {
+    const G = SD.Game; G.start('story');
+    assert(G.banner && /WAVE 1/.test(JSON.stringify(G.banner)), 'wave 1 banner shown');
+  });
+
+  await test('a press on a frame that runs no sim step still lands (displays faster than 60 Hz)', () => {
+    const G = SD.Game; G.start('story'); const p = G.run.p; p.dashCd = 0; p.dashT = 0;
+    const d = SD.blankInput(); d.dash = true; d.mx = 1;
+    G.stepFrame(SD.DT * 0.4, d); G.stepFrame(SD.DT * 0.4, SD.blankInput()); G.stepFrame(SD.DT * 0.4, SD.blankInput());
+    assert(p.dashT > 0, 'dash pressed between steps went through');
+    eq(G.carry, null, 'nothing carried after the step');
+  });
+
+  await test('holding the touch aim stick keeps firing a semi-auto gun', () => {
+    const shots = autoFire => {
+      const G = SD.Game; G.start('story'); const R = G.run, p = R.p; p.cur = 'revolver'; const before = p.ammo.revolver;
+      for (let i = 0; i < 60; i++) { const t = SD.blankInput(); t.fire = true; t.autoFire = autoFire; t.aimVec = { x: 1, y: 0 }; R.step(t); }
+      return before - p.ammo.revolver;
+    };
+    eq(shots(false), 1, 'a held mouse button fires once');
+    assert(shots(true) > 1, 'a held touch stick fires repeatedly');
+  });
+
+  await test('the saloon will not sell dynamite past the 9-stick cap', () => {
+    const G = SD.Game; G.start('story'); const R = G.run, dyn = SD.SHOP.find(i => i.id === 'dynamite');
+    R.p.dynamite = 9; R.p.money = 999; eq(R.canBuy(dyn), 'FULL');
+    R.p.dynamite = 3; eq(R.canBuy(dyn), null);
+  });
+
+  await test('a mouse button already held when a menu opens is not a click', () => {
+    const M = SD.input.mouse; M.down = true;
+    SD.UI.openEnd(); eq(SD.UI.prevDown, true); SD.UI.openPause(); eq(SD.UI.prevDown, true);
+    M.down = false;
+  });
+
   console.log('Zero Hour: Sundown tests\n' + results.join('\n'));
   console.log(failed ? failed + ' failed' : 'all ' + results.length + ' passed');
   process.exit(failed ? 1 : 0);
